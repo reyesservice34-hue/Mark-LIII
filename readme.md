@@ -53,6 +53,7 @@ It's not just an assistant — it's an extension of your digital life.
 | 🗺️ Dynamic Content Panel | Scrollable display layer beneath the HUD that renders web results, news, and search data |
 | 🔍 Multi-Mode Web Search | `news` / `research` / `price` / `compare` / `search` — Gemini Grounded first, DDG fallback |
 | ⏰ Smart Reminders | OS-native scheduled notifications (Windows Task Scheduler / macOS LaunchAgent / Linux systemd) |
+| 🗓️ Calendar | Real appointments — create, list, move, cancel — in Google Calendar when connected, otherwise as .ics files your own calendar app opens |
 | ✈️ Flight Finder | Live flight price and availability lookup |
 | 🎮 Game Updater | Checks and triggers game updates on Steam and Epic Games on demand |
 | 📂 File Processor | Read, summarize, and answer questions about local files |
@@ -98,6 +99,23 @@ Three things make it a system rather than a prompt that says "you are a team":
 Ask it to `roster` and it reads the team back to you. It runs on Gemini like the rest of the assistant, and falls back to your local model from `core/llm_client.py` when no API key is configured.
 
 > When *not* to use it: one question with one obvious tool is faster and cheaper straight through that tool. The tool description says so explicitly, so JARVIS routes a plain lookup to `web_search`, not to four agents.
+
+### 🗓️ Calendar — appointments, not just alarms
+
+JARVIS could set a **reminder** — an OS notification that fires once — but it could not put anything in a calendar. No duration, no place, nothing that reaches your phone or a colleague. Ask it to book Tuesday at nine and the honest answer was that no such tool existed; what you actually got was talk about planning, because the prompt still advertised an `agent_task` tool that had never been written. Both halves of that are fixed: the phantom tool is gone from `core/prompt.txt`, and `plugins/calendar.py` is the real thing.
+
+**One tool, two backends.** Two competing calendar tools would be a routing hazard — the model would have to guess which one you meant — so the choice happens inside the plugin:
+
+* **Google Calendar** when connected. One-time OAuth from ⚙ → PLUGIN SETTINGS → CONNECT GOOGLE; the token lands in `config/` under a name `.gitignore` already covers.
+* **Local** otherwise: a JSON store plus one `.ics` per appointment, handed straight to whatever your OS opens calendar files with. No account, works offline.
+
+`auto` prefers Google and falls back to local — and **says so in the answer** when it does, because a booking you believe is in your shared calendar but is actually a file on one machine is worse than a refusal. Pick `google` explicitly and an unconnected account is refused outright rather than quietly written somewhere else.
+
+Three details that decide whether this is trustworthy:
+
+* **It refuses what it cannot read.** Dates come as `YYYY-MM-DD`, and beyond that only the handful of forms a model really emits — `morgen`, `tomorrow`, `Freitag`, `14.03.`, `14 Uhr`. Anything else is refused with the format it wanted. A meeting silently booked on the wrong day is worse than one not booked.
+* **It never guesses which appointment you meant.** "Cancel the Müller appointment" with two matches lists both and asks. Cancelling the wrong meeting is not a mistake an assistant gets to make on a guess.
+* **The `.ics` is spec-correct**, down to CRLF line endings and line folding counted in *bytes* — an umlaut is two octets, and a naive character-count split writes a file some calendar apps reject outright.
 
 > Built on the Mark LI/LII foundation: the **🧩 Plugin System**, **♾️ Unlimited Sessions**, **🎨 Live Theming**, **〰️ Reactive HUD** and **🎙️ Voice Picker** are all still here.
 
@@ -210,7 +228,7 @@ It is held in memory only, deliberately: writing it to disk would make a fresh l
 | **LII** | Voice picker · live theming · reactive HUD · recallable memory · undo · real confirmation · audio device picker · session continuity |
 | **LIII** | Wake word · Gemini 3.1 Flash Live · instant acknowledgment · self-describing action/plugin architecture |
 | *shared* | The last five above also shipped to LIII, LIV and LV at the same time — moving up a Mark never loses them |
-| **LIV+** | Plugin files: email · quiz mode · calendar · home assistant · 3D-printer · and more |
+| **LIV+** | Plugin files: email · quiz mode · home assistant · 3D-printer · and more |
 
 ---
 
