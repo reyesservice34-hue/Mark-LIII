@@ -40,6 +40,7 @@ It's not just an assistant — it's an extension of your digital life.
 | ♾️ Unlimited Sessions | Sliding-window context compression — one conversation can last for hours |
 | 🖥️ System Control | Launch apps, adjust volume/brightness, WiFi, shortcuts, power — all by voice |
 | 🧩 Autonomous Tasks | High-level planning for complex multi-step goals via agent mode |
+| 🏛️ Agency Mode | A team of specialists — coordinator, researcher, analyst, engineer — that delegate to each other along a permission graph and answer with one voice |
 | 👁️ Visual Awareness | Real-time screen capture and webcam vision piped into your main Gemini session |
 | 🧠 Persistent Memory | Deeply remembers projects, preferences, and personal context across sessions |
 | ⌨️ Hybrid Input | Seamlessly switch between keyboard typing and voice commands |
@@ -83,6 +84,20 @@ The live session moved to **`gemini-3.1-flash-live-preview`**, cutting the time-
 
 ### 🧩 Self-Describing Skills — a Scalable Core
 Every bundled **action** now carries its own `TOOL` declaration in its own file (exactly like a drop-in **plugin's** `PLUGIN` dict), and the core auto-discovers them at launch. `main.py` no longer holds a giant list of tool definitions and dispatch branches — it shrank by hundreds of lines. Adding a new built-in skill, or promoting an `actions/*.py` file into a shareable plugin, is now just… moving a file.
+
+### 🏛️ Agency Mode — several specialists, one answer
+
+`dev_agent` is one model doing one job. **Agency Mode** is a *team*: say something that needs more than one kind of work — *"compare the three cheapest mini PCs that can run Ollama, then write me the install script"* — and the **coordinator** breaks it up, hands the lookup to the **researcher**, the judgement call to the **analyst**, the script to the **engineer**, and answers you once, in your language, with no mention of the machinery.
+
+Three things make it a system rather than a prompt that says "you are a team":
+
+* **The flow graph is the permission model.** An agent can delegate only along a `[sender, receiver]` pair it appears in — a request off the graph is refused and told which peers it actually has. Same for tools: each agent carries its own whitelist (`researcher` has `web_search`, `engineer` has `code_helper` and `dev_agent`), and a call outside it never reaches the registry.
+* **The budget is shared, not per agent.** `max_steps` counts every model call in the whole run, so two agents passing work back and forth cannot multiply the cost. Running out is not a dead end: the engine hands back what it established instead of nothing.
+* **The roster is data.** Drop a `config/agency.json` next to your API keys — agents, instructions, tools, flows, entry point — and you have your own team without touching a line of Python. A malformed file is reported and ignored rather than half-applied, because a roster with the file's agents and the defaults' flows would quietly rewire who may talk to whom.
+
+Ask it to `roster` and it reads the team back to you. It runs on Gemini like the rest of the assistant, and falls back to your local model from `core/llm_client.py` when no API key is configured.
+
+> When *not* to use it: one question with one obvious tool is faster and cheaper straight through that tool. The tool description says so explicitly, so JARVIS routes a plain lookup to `web_search`, not to four agents.
 
 > Built on the Mark LI/LII foundation: the **🧩 Plugin System**, **♾️ Unlimited Sessions**, **🎨 Live Theming**, **〰️ Reactive HUD** and **🎙️ Voice Picker** are all still here.
 
