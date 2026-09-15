@@ -54,6 +54,7 @@ It's not just an assistant — it's an extension of your digital life.
 | 🔍 Multi-Mode Web Search | `news` / `research` / `price` / `compare` / `search` — Gemini Grounded first, DDG fallback |
 | ⏰ Smart Reminders | OS-native scheduled notifications (Windows Task Scheduler / macOS LaunchAgent / Linux systemd) |
 | 🗓️ Calendar | Real appointments — create, list, move, cancel — in Google Calendar when connected, otherwise as .ics files your own calendar app opens |
+| 💬 WhatsApp Voice Notes | JARVIS reaches your phone as a spoken voice note — in the same voice it speaks with — over a WhatsApp Web session you link once |
 | ✈️ Flight Finder | Live flight price and availability lookup |
 | 🎮 Game Updater | Checks and triggers game updates on Steam and Epic Games on demand |
 | 📂 File Processor | Read, summarize, and answer questions about local files |
@@ -116,6 +117,18 @@ Three details that decide whether this is trustworthy:
 * **It refuses what it cannot read.** Dates come as `YYYY-MM-DD`, and beyond that only the handful of forms a model really emits — `morgen`, `tomorrow`, `Freitag`, `14.03.`, `14 Uhr`. Anything else is refused with the format it wanted. A meeting silently booked on the wrong day is worse than one not booked.
 * **It never guesses which appointment you meant.** "Cancel the Müller appointment" with two matches lists both and asks. Cancelling the wrong meeting is not a mistake an assistant gets to make on a guess.
 * **The `.ics` is spec-correct**, down to CRLF line endings and line folding counted in *bytes* — an umlaut is two octets, and a naive character-count split writes a file some calendar apps reject outright.
+
+### 💬 Voice notes on WhatsApp — and one voice everywhere
+
+An assistant you can only hear while sitting in front of it is not much use on a building site. `plugins/whatsapp_voice.py` sends you a real WhatsApp message, spoken, over a WhatsApp Web session you link **once** by scanning a QR code. Playwright was already a dependency and `.gitignore` already reserved `config/whatsapp_web/` for exactly this, so it costs nothing and needs no business account.
+
+**The voice is the point.** `core/speech_out.py` asks Gemini's TTS for the same prebuilt voice `get_voice()` hands the live session — one setting, read by both, so the note in your pocket sounds like the assistant in the room rather than a stranger reading your mail. When no key is reachable it falls back to the free EdgeTTS, which cannot imitate a Gemini voice; that fallback is therefore *pinned to one configured voice and named in the answer*, because "always the same voice" honestly means the same one every time and a known second-best when the first is down.
+
+Three deliberate refusals:
+
+* **A failed recording still reaches you.** If synthesis dies, the message goes as text — and the log says why, because you asked for a voice note and silently getting something else is how trust goes.
+* **The OGG conversion may not happen.** WhatsApp renders OGG/Opus as a voice bubble; `ffmpeg` is not a dependency of this project, so when it is missing the original audio is sent as it is. A cosmetic step never fails a delivery.
+* **Every selector is a named constant.** WhatsApp Web is someone else's web app and changes without notice. Each step checks what it found and says which step failed, instead of reporting a success that never left the browser. Start with `dry_run`.
 
 > Built on the Mark LI/LII foundation: the **🧩 Plugin System**, **♾️ Unlimited Sessions**, **🎨 Live Theming**, **〰️ Reactive HUD** and **🎙️ Voice Picker** are all still here.
 
