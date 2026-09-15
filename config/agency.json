@@ -1,8 +1,6 @@
 {
   "_comment": "Live roster for agency_agent. Every agent here runs on a backend that costs nothing: 'gemini' uses the free tier of the key already in api_keys.json, 'local' uses the model served by core/llm_client.py on this machine (Ollama / LM Studio). The three pipeline roles — prompt_architect, executor, reviewer — are the command chain: a rough instruction becomes a precise master prompt, the executor works only from that prompt, and the reviewer checks the result against it before anything reaches the user.",
-
   "entry": "coordinator",
-
   "agents": [
     {
       "name": "coordinator",
@@ -22,7 +20,10 @@
       "name": "executor",
       "role": "Fuehrt genau den Master-Prompt aus, den er bekommen hat.",
       "instructions": "Arbeite ausschliesslich nach dem Master-Prompt in deiner Aufgabe. Halte das geforderte Format exakt ein. Erfinde keine Zahlen, Preise, Namen oder Termine: was du nicht hast, markierst du sichtbar als offene Stelle. Keine Rueckfragen, keine Meta-Kommentare.",
-      "tools": ["file_processor", "web_search"],
+      "tools": [
+        "file_processor",
+        "web_search"
+      ],
       "backend": "auto"
     },
     {
@@ -36,35 +37,52 @@
       "name": "angebot",
       "role": "Angebote, Kalkulation, Nachtraege, Leistungsbeschreibungen.",
       "instructions": "Denke in Positionen: Leistung, Menge, Einheit, Einheitspreis, Summe. Trenne Material, Lohn und Fremdleistung. Rechne nichts schoen und erfinde keine Preise: fehlt ein Preis, bleibt die Position mit einer klar markierten Luecke stehen. Nenne Annahmen ausdruecklich und weise auf Positionen hin, die als Nachtrag zu fuehren waeren.",
-      "tools": ["file_processor", "web_search"],
+      "tools": [
+        "file_processor",
+        "email",
+        "web_search"
+      ],
       "backend": "auto"
     },
     {
       "name": "dispo",
       "role": "Baustellen-, Touren- und Einsatzplanung, Termine.",
       "instructions": "Plane in echten Zeiten: Anfahrt, Ruestzeit, Arbeitszeit, Abfahrt. Doppelbelegungen und Termine ohne Fahrzeit dazwischen sind Fehler, die du ansprichst. Trage Termine ueber das calendar-Werkzeug ein und frage nie, welcher Kalender benutzt werden soll.",
-      "tools": ["calendar", "reminder", "web_search"],
+      "tools": [
+        "calendar",
+        "reminder",
+        "web_search"
+      ],
       "backend": "auto"
     },
     {
       "name": "kunde",
       "role": "Kundenkommunikation: Anschreiben, Nachfassen, Einwaende, Absagen.",
-      "instructions": "Schreibe kurz, hoeflich und verbindlich, in der Sprache des Kunden. Nenne immer den naechsten konkreten Schritt mit Datum. Keine Rabatte, keine Zusagen zu Preisen oder Terminen, die dir niemand gegeben hat. Nichts wird versendet, ohne dass der Nutzer den Text gesehen hat.",
-      "tools": ["send_message", "calendar"],
+      "instructions": "Schreibe kurz, hoeflich und verbindlich, in der Sprache des Kunden. Nenne immer den naechsten konkreten Schritt mit Datum. Keine Rabatte, keine Zusagen zu Preisen oder Terminen, die dir niemand gegeben hat. Nichts wird versendet, ohne dass der Nutzer den Text gesehen hat. Du darfst Mails lesen und entwerfen; abgeschickt wird nur, was der Nutzer am Bildschirm bestaetigt.",
+      "tools": [
+        "email",
+        "send_message",
+        "calendar"
+      ],
       "backend": "auto"
     },
     {
       "name": "recherche",
       "role": "Sucht Fakten, Preise, Normen, Lieferanten und Termine im Netz.",
       "instructions": "Antworte nur mit dem, was die Suche wirklich geliefert hat. Zahlen und Daten exakt uebernehmen und die Quelle nennen. Was nicht zu finden war, sagst du klar, statt die Luecke zu fuellen.",
-      "tools": ["web_search"],
+      "tools": [
+        "web_search"
+      ],
       "backend": "auto"
     },
     {
       "name": "technik",
       "role": "Code, Skripte, Automatisierung und Fehlersuche.",
       "instructions": "Nutze code_helper fuer Review, Fehlersuche und einzelne Snippets. dev_agent nur, wenn es wirklich ein vollstaendiges, mehrdateiiges Projekt ist, denn es schreibt auf die Platte und oeffnet einen Editor.",
-      "tools": ["code_helper", "dev_agent"],
+      "tools": [
+        "code_helper",
+        "dev_agent"
+      ],
       "backend": "auto"
     },
     {
@@ -75,21 +93,62 @@
       "backend": "auto"
     }
   ],
-
   "flows": [
-    ["coordinator", "prompt_architect"],
-    ["coordinator", "executor"],
-    ["coordinator", "reviewer"],
-    ["coordinator", "angebot"],
-    ["coordinator", "dispo"],
-    ["coordinator", "kunde"],
-    ["coordinator", "recherche"],
-    ["coordinator", "technik"],
-    ["coordinator", "berater"],
-    ["prompt_architect", "executor"],
-    ["reviewer", "executor"],
-    ["angebot", "recherche"],
-    ["dispo", "kunde"],
-    ["berater", "recherche"]
+    [
+      "coordinator",
+      "prompt_architect"
+    ],
+    [
+      "coordinator",
+      "executor"
+    ],
+    [
+      "coordinator",
+      "reviewer"
+    ],
+    [
+      "coordinator",
+      "angebot"
+    ],
+    [
+      "coordinator",
+      "dispo"
+    ],
+    [
+      "coordinator",
+      "kunde"
+    ],
+    [
+      "coordinator",
+      "recherche"
+    ],
+    [
+      "coordinator",
+      "technik"
+    ],
+    [
+      "coordinator",
+      "berater"
+    ],
+    [
+      "prompt_architect",
+      "executor"
+    ],
+    [
+      "reviewer",
+      "executor"
+    ],
+    [
+      "angebot",
+      "recherche"
+    ],
+    [
+      "dispo",
+      "kunde"
+    ],
+    [
+      "berater",
+      "recherche"
+    ]
   ]
 }

@@ -55,6 +55,7 @@ It's not just an assistant — it's an extension of your digital life.
 | ⏰ Smart Reminders | OS-native scheduled notifications (Windows Task Scheduler / macOS LaunchAgent / Linux systemd) |
 | 🗓️ Calendar | Real appointments — create, list, move, cancel — in Google Calendar when connected, otherwise as .ics files your own calendar app opens |
 | 💬 WhatsApp Voice Notes | JARVIS reaches your phone as a spoken voice note — in the same voice it speaks with — over a WhatsApp Web session you link once |
+| ✉ E-Mail | Read, search, draft and send from your own mailbox over plain IMAP/SMTP — any provider, no API account — with sending behind the on-screen confirmation |
 | ✈️ Flight Finder | Live flight price and availability lookup |
 | 🎮 Game Updater | Checks and triggers game updates on Steam and Epic Games on demand |
 | 📂 File Processor | Read, summarize, and answer questions about local files |
@@ -129,6 +130,16 @@ Three deliberate refusals:
 * **A failed recording still reaches you.** If synthesis dies, the message goes as text — and the log says why, because you asked for a voice note and silently getting something else is how trust goes.
 * **The OGG conversion may not happen.** WhatsApp renders OGG/Opus as a voice bubble; `ffmpeg` is not a dependency of this project, so when it is missing the original audio is sent as it is. A cosmetic step never fails a delivery.
 * **Every selector is a named constant.** WhatsApp Web is someone else's web app and changes without notice. Each step checks what it found and says which step failed, instead of reporting a success that never left the browser. Start with `dry_run`.
+
+### ✉ E-Mail — and a send button the model cannot press
+
+`plugins/email_box.py` reads, searches, drafts and sends from your own mailbox over plain **IMAP and SMTP**. Not a provider API: a business address sits wherever it sits — IONOS, Strato, Telekom, GMX, Gmail — and all of them speak IMAP. `imaplib`, `smtplib` and `email` are standard library, so this adds **no dependency, no account with anyone, and no cost**. Leave the server fields blank and they are filled from your address (a table of the common German providers, with the usual `imap.`/`smtp.` convention as a fallback); TEST CONNECTION checks *both halves*, because a working inbox with broken sending is the failure that only shows up at the worst moment.
+
+**Sending goes through the HUD gate.** A mail to a customer cannot be recalled, and this project already settled how that is handled: `core/confirm.py` issues the CONFIRM button from the *interface*, so the model cannot wave itself through by writing `confirmed=yes` into its own tool call. Reading and searching change nothing and are not gated.
+
+One consequence is deliberate: an agent running with no interface — the `kunde` agent inside `agency_agent` — **can draft but cannot send**, because there is no HUD to ask on and `confirm.request()` refuses rather than acting. Drafting is autonomous; sending is yours.
+
+Two smaller decisions with teeth: an attachment that is missing or over the size limit fails *before* the confirmation appears, so you are never asked to approve something that was going to break anyway — and an HTML-only mail has its tags stripped before it is read to you, because an assistant reciting `<td style=…>` out loud is worse than one that says nothing.
 
 > Built on the Mark LI/LII foundation: the **🧩 Plugin System**, **♾️ Unlimited Sessions**, **🎨 Live Theming**, **〰️ Reactive HUD** and **🎙️ Voice Picker** are all still here.
 
