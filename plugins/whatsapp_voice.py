@@ -231,10 +231,18 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
                     "settings, or name one in the request.")
 
         audio = None
+        voice_note = ""
         if action in ("voice", "voice_note", "sprachnachricht", ""):
             log("Recording the voice note…")
             try:
-                audio = synthesize(message, name=f"note_{int(time.time())}")
+                speech = synthesize(message, name=f"note_{int(time.time())}")
+                audio = speech.path
+                log(f"Recorded with {speech.describe()}")
+                # If it is not the live voice, the user hears that immediately —
+                # so the answer has to say why, instead of leaving them to
+                # wonder why the assistant suddenly sounds like someone else.
+                if speech.engine != "gemini":
+                    voice_note = f" (Voice: {speech.describe()})"
             except SpeechError as e:
                 # Falling back to text is better than sending nothing, but the
                 # user must know it happened — they asked for a voice note.
@@ -247,11 +255,11 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
         if dry_run:
             return (f"Dry run: would send to {contact} — "
                     f"{'voice note ' + audio.name if audio else 'text'} "
-                    f"({len(message)} characters, voice: {describe_voice()}).")
+                    f"({len(message)} characters, voice: {describe_voice()}).{voice_note}")
 
         result = _deliver(contact, message if audio is None else "", audio)
         log(result)
-        return result
+        return result + voice_note
 
     except WhatsAppError as e:
         return str(e)

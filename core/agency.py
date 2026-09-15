@@ -47,7 +47,7 @@ API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 ROSTER_PATH     = BASE_DIR / "config" / "agency.json"
 ACTIONS_DIR     = BASE_DIR / "actions"
 
-DEFAULT_MODEL   = "gemini-flash-latest"
+from core.free_llm import DEFAULT_MODEL   # one default, one place
 MAX_STEPS       = 12      # total model calls per run, across every agent
 MAX_DEPTH       = 3       # how deep one delegation chain may nest
 OBS_CHARS       = 1200    # per-observation trim kept in an agent's context
@@ -206,41 +206,10 @@ def load_roster(logger: Callable[[str], None] = print) -> Roster:
 
 # ── Model backend ────────────────────────────────────────────────────────────
 
-def _gemini_key() -> Optional[str]:
-    try:
-        key = json.loads(API_CONFIG_PATH.read_text(encoding="utf-8")).get("gemini_api_key", "")
-        return key.strip() or None
-    except Exception:
-        return None
-
-
-def _complete(prompt: str, system: str, model: str, backend: str = "auto") -> str:
-    """
-    One text completion.
-
-    "auto"   — Gemini when a key is configured, the local model otherwise.
-    "gemini" — always Gemini (free tier).
-    "local"  — always the local model from core.llm_client (Ollama / LM Studio),
-               which runs on the user's own machine and costs nothing per call.
-
-    Neither backend bills anything, which is the point: an agency that quietly
-    turns into a metered API call is an agency nobody runs twice.
-    """
-    backend = (backend or "auto").strip().lower()
-    key = None if backend == "local" else _gemini_key()
-    if backend == "gemini" and not key:
-        raise RuntimeError("this agent is pinned to Gemini, but no API key is configured")
-    if key:
-        from google import genai   # imported lazily: keeps this module importable
-        client = genai.Client(api_key=key)     # without google-genai installed
-        resp = client.models.generate_content(
-            model=model,
-            contents=f"{system}\n\n{prompt}",
-        )
-        return (resp.text or "").strip()
-
-    from core.llm_client import call_llm_text
-    return call_llm_text(prompt=prompt, system=system)
+# The implementation lives in core/free_llm.py now that the quiz plugin needs it
+# too. The name stays bound here because this module's call sites — and its
+# tests — reach for _complete.
+from core.free_llm import complete as _complete   # noqa: E402  (kept local to this block)
 
 
 # ── The JARVIS tools an agent may call ───────────────────────────────────────

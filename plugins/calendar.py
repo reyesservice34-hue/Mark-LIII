@@ -21,12 +21,14 @@ section of core/prompt.txt).
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 
 from memory.config_manager import get_plugin_setting
 from plugins._calendar_core import (
     DEFAULT_DURATION,
+    split_datetime,
     CalendarError,
     Event,
     LocalCalendar,
@@ -117,13 +119,43 @@ def _resolve_one(backend, query: str, what: str) -> Event:
 
 # ── Actions ──────────────────────────────────────────────────────────────────
 
+# A model does not fill in the exact field names a schema asks for, every time,
+# in every language. Reading only `title` and `date` means a perfectly clear
+# instruction from the user dies in the gap between two spellings — so every
+# name the model plausibly reaches for is accepted.
+_TITLE_KEYS = ("title", "summary", "subject", "event", "name", "what", "titel", "termin")
+_DATE_KEYS  = ("date", "day", "datum", "start", "start_date", "start_time", "datetime", "when")
+_TIME_KEYS  = ("time", "start_time", "uhrzeit", "begin", "at")
+
+
+def _first(p: dict, keys) -> str:
+    for key in keys:
+        value = p.get(key)
+        if value not in (None, ""):
+            return str(value).strip()
+    return ""
+
+
+def _when(p: dict) -> tuple[str, str]:
+    """(date, time), however the model split them — or did not split them."""
+    raw_date = _first(p, _DATE_KEYS)
+    raw_time = _first(p, _TIME_KEYS)
+    date_part, embedded_time = split_datetime(raw_date)
+    if not raw_time and embedded_time:
+        raw_time = embedded_time          # "2026-09-16T10:00" carried both
+    if raw_time:
+        raw_time = split_datetime(raw_time)[1] or raw_time
+    return date_part, raw_time
+
+
 def _create(p: dict, backend, note: str) -> str:
-    title = str(p.get("title", "")).strip()
+    title = _first(p, _TITLE_KEYS)
     if not title:
         return "What should the appointment be called?"
 
-    when_date = parse_date(str(p.get("date", "")))
-    when_time = parse_time(str(p.get("time", "")))
+    raw_date, raw_time = _when(p)
+    when_date = parse_date(raw_date)
+    when_time = parse_time(raw_time)
     minutes = parse_duration(p.get("duration_minutes"), default=_default_duration())
 
     event = build_event(
@@ -152,7 +184,7 @@ def _list(p: dict, backend, note: str) -> str:
 
 
 def _cancel(p: dict, backend, note: str) -> str:
-    query = str(p.get("query") or p.get("title") or "")
+    query = str(p.get("query") or _first(p, _TITLE_KEYS) or "")
     event = _resolve_one(backend, query, "cancel")
     backend.delete(event)
     return f"Cancelled — {event.spoken()}.{note}"
@@ -162,8 +194,11 @@ def _move(p: dict, backend, note: str) -> str:
     query = str(p.get("query") or p.get("title") or "")
     event = _resolve_one(backend, query, "move")
 
-    new_date_raw = str(p.get("new_date") or p.get("date") or "")
-    new_time_raw = str(p.get("new_time") or p.get("time") or "")
+    raw_date, raw_time = _when(p)
+    new_date_raw = str(p.get("new_date") or raw_date or "")
+    new_time_raw = str(p.get("new_time") or raw_time or "")
+    new_date_raw, embedded = split_datetime(new_date_raw)
+    new_time_raw = new_time_raw or embedded
     if not new_date_raw and not new_time_raw:
         return "What is the new date or time for that appointment?"
 
@@ -190,6 +225,16 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
     if handler is None:
         return (f"I do not know the calendar action '{action}'. "
                 f"I can create, list, move or cancel appointments.")
+
+    # The call itself goes into the activity log. When an appointment does not
+    # appear, the first question is always "what did the model actually send",
+    # and guessing at that from the outside costs days.
+    if player:
+        try:
+            player.write_log("SYS: calendar " + action + " " + json.dumps(
+                {k: v for k, v in p.items() if k != "action"}, ensure_ascii=False)[:160])
+        except Exception:
+            pass
 
     try:
         backend, note = _pick_backend()

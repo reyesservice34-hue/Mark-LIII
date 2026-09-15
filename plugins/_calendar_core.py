@@ -67,11 +67,35 @@ _TOMORROW = {"tomorrow", "morgen"}
 _DAY_AFTER = {"übermorgen", "uebermorgen", "day after tomorrow", "overmorrow"}
 
 
+def split_datetime(raw: str) -> tuple[str, str]:
+    """Pull a combined value apart into (date, time).
+
+    A model asked for an appointment "tomorrow at ten" will just as happily send
+    ``2026-09-16T10:00:00`` in the date field as it will send the two parts
+    separately — and the strict parser below rejected the whole string, so the
+    appointment was never created and the user was told something vague. One
+    unglamorous split is the difference between a tool that works and a tool
+    that looks like it does.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return "", ""
+    for separator in ("T", "t", " "):
+        if separator in text:
+            head, _, tail = text.partition(separator)
+            tail = tail.strip()
+            # Only treat it as a time when it actually looks like one — "14.
+            # Mai" must not lose its month.
+            if re.fullmatch(r"\d{1,2}[:.]\d{2}(:\d{2})?(\s*(am|pm|uhr))?", tail, re.IGNORECASE):
+                return head.strip(), tail
+    return text, ""
+
+
 def parse_date(raw: str, *, today: Optional[date] = None) -> date:
     """`YYYY-MM-DD`, `DD.MM.YYYY`, `DD.MM.`, today/tomorrow/übermorgen, or a
     weekday name meaning its next occurrence. Raises CalendarError otherwise."""
     today = today or date.today()
-    text = (raw or "").strip().lower()
+    text = split_datetime(raw)[0].lower()
     if not text:
         raise CalendarError("I need a date — say it as YYYY-MM-DD, or 'tomorrow'.")
 
@@ -127,7 +151,7 @@ def parse_time(raw: str) -> dtime:
         suffix = m.group(1)
         text = text[:m.start()].strip()
 
-    m = re.fullmatch(r"(\d{1,2})(?:[:.h](\d{2}))?", text)
+    m = re.fullmatch(r"(\d{1,2})(?:[:.h](\d{2}))?(?::\d{2})?", text)
     if not m:
         raise CalendarError(f"I could not read '{raw}' as a time. Use HH:MM, for example 14:30.")
 

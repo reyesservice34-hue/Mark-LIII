@@ -26,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import wave
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -46,13 +47,36 @@ PCM_RATE   = 24000
 PCM_WIDTH  = 2
 PCM_CHANNELS = 1
 
-DEFAULT_TTS_MODEL     = "gemini-2.5-flash-preview-tts"
+# One guessed model id was a bad bet: when it is wrong, every note falls back
+# silently and the user hears a different voice than the one they were promised.
+# These are tried in order, and whichever answers is remembered for next time.
+TTS_MODEL_CANDIDATES = (
+    "gemini-2.5-flash-preview-tts",
+    "gemini-2.5-pro-preview-tts",
+    "gemini-2.0-flash-exp",
+)
+DEFAULT_TTS_MODEL     = TTS_MODEL_CANDIDATES[0]
 DEFAULT_FALLBACK_VOICE = "de-DE-ConradNeural"   # free, no key, stable across runs
 MAX_CHARS = 1500     # a voice note nobody listens to is a voice note wasted
 
 
 class SpeechError(Exception):
     """Synthesis failed on every available path."""
+
+
+@dataclass
+class Speech:
+    """What was produced, and by what. The engine is part of the result because
+    the caller has to be able to tell the user the truth: a note that fell back
+    to EdgeTTS does NOT sound like the live session, and claiming otherwise is
+    how "why does it sound like that" becomes a bug report with no cause."""
+    path: Path
+    engine: str          # "gemini" | "edge"
+    voice: str
+    note: str = ""       # why this is not the live voice, when it is not
+
+    def describe(self) -> str:
+        return f"{self.voice} via {self.engine}" + (f" — {self.note}" if self.note else "")
 
 
 def _setting(key: str, default: str) -> str:
@@ -81,8 +105,28 @@ def _gemini_tts(text: str, path: Path) -> Path:
     from google.genai import types
 
     client = genai.Client(api_key=key)
-    resp = client.models.generate_content(
-        model=_setting("tts_model", DEFAULT_TTS_MODEL),
+
+    configured = _setting("tts_model", "")
+    models = ([configured] if configured else []) + [
+        m for m in TTS_MODEL_CANDIDATES if m != configured]
+
+    resp = None
+    errors = []
+    for candidate in models:
+        try:
+            resp = _one_tts_call(client, types, candidate, text)
+            _remember_model(candidate)
+            break
+        except Exception as e:
+            errors.append(f"{candidate}: {str(e)[:120]}")
+    if resp is None:
+        raise SpeechError("no TTS model answered — " + "; ".join(errors))
+    return _wav_from(resp, path)
+
+
+def _one_tts_call(client, types, model: str, text: str):
+    return client.models.generate_content(
+        model=model,
         contents=text,
         config=types.GenerateContentConfig(
             response_modalities=["AUDIO"],
@@ -96,6 +140,20 @@ def _gemini_tts(text: str, path: Path) -> Path:
         ),
     )
 
+
+def _remember_model(model: str) -> None:
+    """Write the model that worked back into the config, so the next note skips
+    the candidates that do not exist on this key."""
+    try:
+        data = json.loads(API_CONFIG_PATH.read_text(encoding="utf-8"))
+        if data.get("tts_model") != model:
+            data["tts_model"] = model
+            API_CONFIG_PATH.write_text(json.dumps(data, indent=4), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _wav_from(resp, path: Path) -> Path:
     pcm = None
     for cand in (getattr(resp, "candidates", None) or []):
         for part in (getattr(getattr(cand, "content", None), "parts", None) or []):
@@ -165,15 +223,18 @@ def _to_opus(src: Path) -> Path:
 
 
 def describe_voice() -> str:
-    """What the next voice note will sound like, in one line."""
+    """What the next voice note will be ATTEMPTED with. Deliberately worded as
+    an intention: whether the live voice is actually reachable is only known
+    once a note has been recorded, and the Speech result reports that."""
     key = (load_api_keys().get("gemini_api_key") or "").strip()
+    fallback = _setting("tts_fallback_voice", DEFAULT_FALLBACK_VOICE)
     if key:
-        return f"{get_voice()} (same voice as the live session)"
-    return f"{_setting('tts_fallback_voice', DEFAULT_FALLBACK_VOICE)} (fallback — no API key configured)"
+        return f"{get_voice()} via Gemini if reachable, otherwise {fallback}"
+    return f"{fallback} (no API key — the live voice is not available)"
 
 
 def synthesize(text: str, out_dir: Optional[Path] = None,
-               name: str = "note", as_opus: bool = True) -> Path:
+               name: str = "note", as_opus: bool = True) -> Speech:
     """
     Text to an audio file on disk. Returns its path.
 
@@ -192,11 +253,23 @@ def synthesize(text: str, out_dir: Optional[Path] = None,
     stem = target_dir / name
 
     errors = []
-    for attempt in (_gemini_tts, _edge_tts):
-        try:
-            produced = attempt(text, stem)
-            return _to_opus(produced) if as_opus else produced
-        except Exception as e:
-            errors.append(f"{attempt.__name__.strip('_')}: {e}")
+    try:
+        produced = _gemini_tts(text, stem)
+        return Speech(path=_to_opus(produced) if as_opus else produced,
+                      engine="gemini", voice=get_voice())
+    except Exception as e:
+        errors.append(f"gemini: {e}")
+
+    try:
+        produced = _edge_tts(text, stem)
+        fallback_voice = _setting("tts_fallback_voice", DEFAULT_FALLBACK_VOICE)
+        return Speech(
+            path=_to_opus(produced) if as_opus else produced,
+            engine="edge", voice=fallback_voice,
+            note=("this is NOT the live session's voice — Gemini TTS was unreachable: "
+                  + errors[0][:160]),
+        )
+    except Exception as e:
+        errors.append(f"edge: {e}")
 
     raise SpeechError("could not produce audio — " + "; ".join(errors))
