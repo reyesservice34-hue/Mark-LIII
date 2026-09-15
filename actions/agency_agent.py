@@ -59,7 +59,7 @@ def agency_agent(
     try:
         agency = build_agency(logger=log, max_steps=max_steps, only=only or None)
     except Exception as e:
-        return f"Sir, I could not assemble the agency: {e}"
+        return f"I could not assemble the agency: {e}"
 
     if mode == "roster" or not goal:
         return agency.describe()
@@ -68,7 +68,7 @@ def agency_agent(
     try:
         result = agency.run(goal)
     except Exception as e:
-        return f"Sir, the agency run failed: {e}"
+        return f"The agency run failed: {e}"
 
     log(f"Done in {result.steps} step{'s' if result.steps != 1 else ''}.")
 

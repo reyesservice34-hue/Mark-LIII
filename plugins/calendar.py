@@ -197,7 +197,7 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
     except CalendarError as e:
         result = str(e)
     except Exception as e:
-        result = f"Sir, the calendar failed: {e}"
+        result = f"The calendar failed: {e}"
 
     if player:
         try:

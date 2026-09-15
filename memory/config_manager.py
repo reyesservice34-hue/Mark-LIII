@@ -61,6 +61,33 @@ def get_user_name() -> str:
     return load_api_keys().get("user_name", "")
 
 
+# ── How the assistant addresses the user ─────────────────────────────────────
+# Stored, not hardcoded: the vocative belongs to the person, not to the code.
+# Tool result strings carry NO vocative at all — they are data the model
+# rephrases, and a fixed English "sir" inside them was leaking into German
+# sentences. The one rule below is the only place the address is decided.
+DEFAULT_ADDRESS = "mein Herr"
+
+
+def get_user_address() -> str:
+    """The form of address to use, e.g. 'mein Herr'. Never empty."""
+    v = (load_api_keys().get("user_address") or "").strip()
+    return v or DEFAULT_ADDRESS
+
+
+def save_user_address(address: str) -> None:
+    """Persist the form of address. An empty value restores the default."""
+    ensure_config_dir()
+    data: dict = {}
+    if CONFIG_FILE.exists():
+        try:
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    data["user_address"] = (address or "").strip() or DEFAULT_ADDRESS
+    CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
+
+
 def save_assistant_config(assistant_name: str, user_name: str) -> None:
     """Persist assistant name and user name to config."""
     ensure_config_dir()

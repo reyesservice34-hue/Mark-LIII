@@ -70,6 +70,7 @@ from actions.background_monitor import (
 from actions.web_search        import _news as _fetch_news_sync
 from memory.config_manager     import (
     get_brief_enabled, get_voice, get_wake_word_enabled, save_wake_word_enabled,    get_input_device, get_output_device,
+    get_user_address,
 )
 from core.plugin_loader        import discover_plugins
 from core                      import undo as undo_stack
@@ -666,7 +667,7 @@ class JarvisLive:
     def speak_error(self, tool_name: str, error: str):
         short = str(error)[:120]
         self.ui.write_log(f"ERR: {tool_name} — {short}")
-        self.speak(f"Sir, {tool_name} encountered an error. {short}")
+        self.speak(f"The {tool_name} tool ran into an error. {short}")
 
     def _build_config(self) -> types.LiveConnectConfig:
         from datetime import datetime
@@ -693,14 +694,20 @@ class JarvisLive:
         )
 
         # Identity injection — overrides any hardcoded name in prompt.txt
-        _addr = (f"ADDRESS: Always call the user '{_user_name}'."
-                 if _user_name
-                 else "ADDRESS: Address the user with the ordinary respectful form "
-                      "for a superior in the language you are currently speaking — "
-                      "\"sir\" in English, its everyday equivalent in any other "
-                      "language. Never an archaic or aristocratic form, and never "
-                      "the form from a different language than the one you are "
-                      "speaking in this sentence.")
+        # One rule, one source. Tool results carry no vocative of their own, so
+        # this is the only thing that decides how the user is addressed.
+        _address = get_user_address()
+        _addr = (
+            f"ADDRESS: Address the user as \"{_address}\". Use that exact wording "
+            f"when you speak German. In another language, use the closest natural "
+            f"equivalent of it — never \"sir\" inside a German sentence, and never a "
+            f"form borrowed from a language you are not speaking right now. Do not "
+            f"open every single sentence with it; once in a reply is warm, three "
+            f"times is servile."
+        )
+        if _user_name:
+            _addr += (f" The user's name is {_user_name}; use the name where it makes "
+                      f"the sentence more personal.")
         identity_ctx = (
             f"[IDENTITY]\n"
             f"Your name is {self._asst_name}. "

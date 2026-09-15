@@ -65,8 +65,9 @@ class Agent:
     name: str
     role: str = ""
     instructions: str = ""
-    tools: list[str] = field(default_factory=list)   # JARVIS action names
+    tools: list[str] = field(default_factory=list)   # JARVIS tool names
     model: str = DEFAULT_MODEL
+    backend: str = "auto"   # "auto" | "gemini" | "local" — both free to run
 
 
 DEFAULT_AGENTS: list[Agent] = [
@@ -141,6 +142,7 @@ def _coerce_agent(raw: dict) -> Optional[Agent]:
         instructions=str(raw.get("instructions", "")).strip(),
         tools=[t for t in tools if t != SELF_TOOL_NAME],
         model=str(raw.get("model") or DEFAULT_MODEL).strip(),
+        backend=str(raw.get("backend") or "auto").strip().lower(),
     )
 
 
@@ -212,13 +214,22 @@ def _gemini_key() -> Optional[str]:
         return None
 
 
-def _complete(prompt: str, system: str, model: str) -> str:
+def _complete(prompt: str, system: str, model: str, backend: str = "auto") -> str:
     """
-    One text completion. Gemini when a key is configured (same backend the rest
-    of the assistant runs on), otherwise the local LLM from core.llm_client, so
-    an offline install still gets an agency instead of an error.
+    One text completion.
+
+    "auto"   — Gemini when a key is configured, the local model otherwise.
+    "gemini" — always Gemini (free tier).
+    "local"  — always the local model from core.llm_client (Ollama / LM Studio),
+               which runs on the user's own machine and costs nothing per call.
+
+    Neither backend bills anything, which is the point: an agency that quietly
+    turns into a metered API call is an agency nobody runs twice.
     """
-    key = _gemini_key()
+    backend = (backend or "auto").strip().lower()
+    key = None if backend == "local" else _gemini_key()
+    if backend == "gemini" and not key:
+        raise RuntimeError("this agent is pinned to Gemini, but no API key is configured")
     if key:
         from google import genai   # imported lazily: keeps this module importable
         client = genai.Client(api_key=key)     # without google-genai installed
@@ -237,17 +248,47 @@ def _complete(prompt: str, system: str, model: str) -> str:
 _ability_registry = None   # cached for the process, like the app's own registries
 
 
+class _Abilities:
+    """Actions and plugins behind one lookup, so an agent's tool whitelist can
+    name either. Without this the calendar — a plugin — would be invisible to
+    every agent, and the dispatcher's whole job is the working day."""
+
+    def __init__(self, actions, plugins):
+        self._actions = actions
+        self._plugins = plugins
+
+    def get_tool_declarations(self) -> list[dict]:
+        return self._actions.get_tool_declarations() + self._plugins.get_tool_declarations()
+
+    def run(self, name: str, args: dict, ctx: dict) -> str:
+        if self._actions.has(name):
+            return self._actions.run(name, args, ctx)
+        if self._plugins.has(name):
+            return self._plugins.run(name, args,
+                                     player=ctx.get("player"),
+                                     session_memory=ctx.get("session_memory"))
+        return f"Tool '{name}' is not available."
+
+
 def _abilities(logger: Callable[[str], None]):
-    """The live action registry, discovered the same way main.py discovers it.
+    """The live tool registries, discovered the way main.py discovers them.
     Modules already imported by the running app are reused, so this is cheap."""
     global _ability_registry
     if _ability_registry is None:
         from core.action_loader import discover_actions
-        _ability_registry = discover_actions(
+        from core.plugin_loader import discover_plugins
+        quiet = lambda m: None           # discovery chatter belongs to startup, not a run
+        actions = discover_actions(
             actions_dir=ACTIONS_DIR,
             reserved_names={SELF_TOOL_NAME},
-            logger=lambda m: None,       # discovery chatter belongs to startup, not a run
+            logger=quiet,
         )
+        plugins = discover_plugins(
+            plugins_dir=BASE_DIR / "plugins",
+            core_tool_names=actions.names() | {SELF_TOOL_NAME},
+            logger=quiet,
+        )
+        _ability_registry = _Abilities(actions, plugins)
     return _ability_registry
 
 
@@ -342,7 +383,8 @@ class Agency:
             tools = ", ".join(agent.tools) if agent.tools else "no tools"
             peers = ", ".join(self.peers_of(agent.name)) or "no one"
             lines.append(f"  {agent.name} — {agent.role or 'no role set'} "
-                         f"[tools: {tools}] [can delegate to: {peers}]")
+                         f"[tools: {tools}] [can delegate to: {peers}] "
+                         f"[runs on: {agent.backend}]")
         return "\n".join(lines)
 
     # -- the run --
@@ -415,7 +457,7 @@ Rules:
             )
 
             try:
-                raw = _complete(prompt, system, agent.model)
+                raw = _complete(prompt, system, agent.model, agent.backend)
             except Exception as e:
                 state.note(f"Agency: '{agent.name}' could not reach the model — {e}")
                 return f"[{agent.name} could not reach the model: {e}]"
