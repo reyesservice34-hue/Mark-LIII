@@ -42,7 +42,8 @@ BASE_DIR    = get_base_dir()
 CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 
 DEFAULT_BASE_URL = "https://jarvis-reyes.de/jarvis-api"
-DEFAULT_ACTOR    = "desktop-windows"      # stable, so the server ties desktop turns together
+DEFAULT_ACTOR    = "mark-liii-windows"    # stable and EXACT: the server's ownership and
+                                          # calendar authorisation check for this actor by name
 DEFAULT_TIMEOUT  = 30
 POLL_INTERVAL    = 1.5
 MAX_WAIT         = 180                     # a multi-step order can take a while; do not give up early
