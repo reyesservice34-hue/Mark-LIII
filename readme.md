@@ -141,6 +141,18 @@ One consequence is deliberate: an agent running with no interface — the `kunde
 
 Two smaller decisions with teeth: an attachment that is missing or over the size limit fails *before* the confirmation appears, so you are never asked to approve something that was going to break anyway — and an HTML-only mail has its tags stripped before it is read to you, because an assistant reciting `<td style=…>` out loud is worse than one that says nothing.
 
+### 🛰️ One JARVIS — desktop and WhatsApp on the same control plane
+
+The desktop used to answer with its own local session and its own persona. That is exactly why the JARVIS on WhatsApp and the JARVIS at the machine disagreed — two brains, two identities, one saying "Sir" while the other said "mein Herr". `core/control_plane.py` and `core/desktop_bridge.py` end that: when a gateway token is configured, the desktop stops being a second brain and becomes a **client** of the one server-side JARVIS.
+
+- A typed or spoken command goes to `POST /v1/commands`; the desktop polls `GET /v1/commands/{job_id}` until the server says the whole job is **completed, failed or awaiting approval** — a multi-step order stays one job, and the desktop never stops after the first part.
+- It reads back **exactly** the server's answer, in the one configured voice (`speech_out`, the same voice as the WhatsApp notes). Nothing local rephrases it, so no local persona can put "Sir" or an invented tool result into your ear.
+- A stable **actor** and a persisted **conversation_id** mean desktop and WhatsApp land on the same server-side identity and memory — continue on the phone what you started at the desk.
+- When the control plane is on, the local Live session runs **ears-only** (transcription, no spoken answer of its own), so the server is the only voice.
+- Failures are named, never faked: offline, a rejected token, or a timeout are said plainly, and nothing is executed locally to paper over them.
+
+**Setup.** Put the two `jarvis_*` keys from `config/control_plane.example.json` into `config/api_keys.json` (gitignored) — or, better, leave the token out of the file and set the `JARVIS_GATEWAY_TOKEN` environment variable, so the secret never touches disk in the project. No token → the desktop runs the old local way, unchanged.
+
 > Built on the Mark LI/LII foundation: the **🧩 Plugin System**, **♾️ Unlimited Sessions**, **🎨 Live Theming**, **〰️ Reactive HUD** and **🎙️ Voice Picker** are all still here.
 
 ---

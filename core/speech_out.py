@@ -222,6 +222,38 @@ def _to_opus(src: Path) -> Path:
     return src
 
 
+def play_file(path: Path) -> bool:
+    """Play an audio file through the speakers. Used by the desktop to read a
+    control-plane answer aloud in the unified voice. Best effort: WAV plays with
+    the standard library; anything else is tried through soundfile if present.
+    Returns True if audio actually played. Never raises — a silent failure just
+    means the answer was shown as text, which the caller already did."""
+    path = Path(path)
+    try:
+        import numpy as np
+        import sounddevice as sd
+    except Exception:
+        return False
+
+    try:
+        if path.suffix.lower() == ".wav":
+            with wave.open(str(path), "rb") as w:
+                rate = w.getframerate()
+                frames = w.readframes(w.getnframes())
+            data = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+        else:
+            try:
+                import soundfile as sf
+            except Exception:
+                return False
+            data, rate = sf.read(str(path), dtype="float32")
+        sd.play(data, rate)
+        sd.wait()
+        return True
+    except Exception:
+        return False
+
+
 def describe_voice() -> str:
     """What the next voice note will be ATTEMPTED with. Deliberately worded as
     an intention: whether the live voice is actually reachable is only known

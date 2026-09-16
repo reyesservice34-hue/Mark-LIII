@@ -19,6 +19,7 @@ config/whatsapp_web/          # a LINKED WhatsApp session — committing it hand
 memory/long_term.json
 memory/calendar/             # your appointments, and the .ics files written for them
 memory/voice_notes/          # audio JARVIS generated to send you
+memory/conversation_state.json  # which server-side conversation this desktop is continuing
 memory/*.db
 
 # ── Python build noise ────────────────────────────────────────────────────────

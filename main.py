@@ -76,6 +76,8 @@ from core.plugin_loader        import discover_plugins
 from core                      import undo as undo_stack
 from core                      import confirm as confirm_gate
 from core                      import audio_devices
+from core.desktop_bridge        import DesktopBridge
+from core                      import speech_out
 from core.action_loader        import discover_actions
 from core.wake_word            import (
     WakeWordDetector, is_ready as wake_is_ready, install_and_download as wake_install,
@@ -423,6 +425,23 @@ class JarvisLive:
         self.ui.get_plugin_settings = self._plugin_registry.settings_schemas  # ⚙ settings tab
         self.ui.request_say = self.plugin_say   # plugins: mid-task speech channel
 
+        # ── Control plane ────────────────────────────────────────────────────
+        # When a gateway token is configured, the desktop stops answering with
+        # its own local persona and becomes a client of the one server-side
+        # JARVIS — so Desktop and WhatsApp share a single identity, memory,
+        # queue, calendar and voice. No token → nothing changes, the local Live
+        # session runs exactly as before.
+        self._bridge = DesktopBridge()
+        try:
+            _cp_cfg = json.loads(open(API_CONFIG_PATH, encoding="utf-8").read())
+        except Exception:
+            _cp_cfg = {}
+        self._cp_enabled = (self._bridge.client.configured()
+                            and _cp_cfg.get("control_plane_enabled", True) is not False)
+        if self._cp_enabled:
+            print(f"[JARVIS] Control plane active — routing to {self._bridge.client.base_url} "
+                  f"as '{self._bridge.client.actor}'")
+
         # ── Wake word ────────────────────────────────────────────────────────
         # _awake gates the mic (see _listen_audio) and the background speakers.
         # It is True whenever wake word is OFF, so default behaviour is unchanged.
@@ -610,13 +629,20 @@ class JarvisLive:
         return url, key, f"{url}/auto-login?key={key}", manual
 
     def _on_text_command(self, text: str):
-        if not self._loop or not self.session:
-            return
         # Respect wake-word sleep: a typed command must not be answered while
         # asleep either (the sleep gate is not just for the mic). Wake first with
         # "Hey Jarvis" or the WAKE NOW button.
         if self._wake_enabled and not self._awake:
             self.ui.write_log("SYS: I'm asleep — say 'Hey Jarvis' or tap WAKE NOW first.")
+            return
+
+        # Control plane on → the server is the brain. Route there and read back
+        # exactly what it says. The local Live session is not asked to answer.
+        if self._cp_enabled:
+            self._route_to_control_plane(text)
+            return
+
+        if not self._loop or not self.session:
             return
         asyncio.run_coroutine_threadsafe(
             self.session.send_client_content(
@@ -625,6 +651,40 @@ class JarvisLive:
             ),
             self._loop
         )
+
+    def _route_to_control_plane(self, text: str) -> None:
+        """Send one command to the control plane, wait for the whole job, and
+        speak back exactly the server's answer with the unified voice. Runs off
+        the UI thread so a multi-step order does not freeze the interface."""
+        command = (text or "").strip()
+        if not command:
+            return
+        self.ui.write_log(f"You: {command}")
+        self.ui.set_state("THINKING")
+
+        def _worker():
+            reply = self._bridge.handle(command)
+            # The server's own words are the record — no local rephrasing.
+            self.ui.write_log(f"{self._asst_name}: {reply.speak}")
+            self._speak_verbatim(reply.speak)
+            if not self.ui.muted:
+                self.ui.set_state("LISTENING")
+
+        threading.Thread(target=_worker, daemon=True, name="control-plane").start()
+
+    def _speak_verbatim(self, text: str) -> None:
+        """Read a string out loud UNCHANGED, in the one configured voice — the
+        same voice the WhatsApp notes use. Never routed through the local model,
+        so no persona can rewrite it. Failure to play audio is never fatal: the
+        text is already on the HUD."""
+        text = (text or "").strip()
+        if not text:
+            return
+        try:
+            speech = speech_out.synthesize(text, name=f"say_{int(time.time())}", as_opus=False)
+            speech_out.play_file(speech.path)
+        except Exception as e:
+            print(f"[JARVIS] Voice playback unavailable ({e}) — answer shown as text.")
 
     def set_speaking(self, value: bool):
         with self._speaking_lock:
@@ -720,8 +780,14 @@ class JarvisLive:
             parts.append(mem_str)
         parts.append(sys_prompt)
 
+        # Control plane on → the Live session is ears only. It transcribes what
+        # the user says and answers nothing itself (TEXT mode, no spoken output);
+        # the brain and the voice are the server plus speech_out. This is what
+        # stops the local persona ("Sir", invented tool results) from ever
+        # speaking on the voice path.
+        _modalities = ["TEXT"] if getattr(self, "_cp_enabled", False) else ["AUDIO"]
         cfg = dict(
-            response_modalities=["AUDIO"],
+            response_modalities=_modalities,
             output_audio_transcription={},
             input_audio_transcription={},
             system_instruction="\n".join(parts),
@@ -1062,7 +1128,6 @@ class JarvisLive:
 
                             full_in = " ".join(in_buf).strip()
                             if full_in:
-                                self.ui.write_log(f"You: {full_in}")
                                 self._session_log.append(f"User: {full_in}")
                                 if self._dashboard:
                                     asyncio.create_task(self._dashboard.broadcast({
@@ -1070,6 +1135,16 @@ class JarvisLive:
                                         "text": full_in,
                                         "ts": datetime.now().isoformat(),
                                     }))
+                                # Control plane on → the transcribed speech is a
+                                # command for the server, not for the local model
+                                # (which is in TEXT mode and stays silent). Route
+                                # it and speak back the server's own answer.
+                                if self._cp_enabled:
+                                    self._route_to_control_plane(full_in)
+                                    in_buf = []
+                                    out_buf = []
+                                    continue
+                                self.ui.write_log(f"You: {full_in}")
                             in_buf = []
 
                             full_out = " ".join(out_buf).strip()

@@ -1,0 +1,8 @@
+{
+  "_comment": "How to connect the Windows desktop to the server-side JARVIS control plane so Desktop and WhatsApp share one identity, memory, queue, calendar and voice. Copy the two 'jarvis_*' keys into config/api_keys.json (which is gitignored — the real token NEVER goes into git). Better still: leave jarvis_gateway_token out of the file entirely and set the JARVIS_GATEWAY_TOKEN environment variable instead, so the secret never touches disk in the project at all. Delete jarvis_gateway_token (and set no env var) to run the desktop the old local way.",
+
+  "jarvis_gateway_url": "https://jarvis-reyes.de/jarvis-api",
+  "jarvis_gateway_token": "<PUT-YOUR-TOKEN-IN-THE-ENV-VAR-JARVIS_GATEWAY_TOKEN-INSTEAD>",
+  "jarvis_actor": "desktop-windows",
+  "control_plane_enabled": true
+}
