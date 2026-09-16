@@ -185,6 +185,11 @@ class GoogleCalendar:
         except CalendarError:
             raise
         except Exception as e:
+            text = str(e)
+            if "403" in text or "insufficient" in text.lower() or "scope" in text.lower():
+                raise CalendarError(
+                    "the stored Google login has no permission to write to this calendar "
+                    "(press CONNECT GOOGLE again to re-grant it)")
             raise CalendarError(f"Google refused the appointment: {e}")
         event.backend = self.name
         event.remote_id = created.get("id", "")

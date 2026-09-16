@@ -148,6 +148,20 @@ def _when(p: dict) -> tuple[str, str]:
     return date_part, raw_time
 
 
+def _create_local_fallback(event: Event, reason: str) -> str:
+    """Google took the login but refused the write. Rather than leave the user
+    with no appointment at all, put it in the local calendar and say plainly
+    what happened — an entry they can see beats a promise they cannot."""
+    local = LocalCalendar(
+        store_file=STORE_FILE,
+        open_files=bool(get_plugin_setting(NAMESPACE, "open_ics", True)),
+    )
+    saved = local.create(event)
+    return (f"Booked locally — {saved.spoken()}. Google refused to write it ({reason}). "
+            f"Press CONNECT GOOGLE in plugin settings to grant write access, then I can "
+            f"move it over.")
+
+
 def _create(p: dict, backend, note: str) -> str:
     title = _first(p, _TITLE_KEYS)
     if not title:
@@ -166,7 +180,12 @@ def _create(p: dict, backend, note: str) -> str:
         location=str(p.get("location", "")),
         notes=str(p.get("notes", "")),
     )
-    saved = backend.create(event)
+    try:
+        saved = backend.create(event)
+    except CalendarError as e:
+        if getattr(backend, "name", "") == "google":
+            return _create_local_fallback(event, str(e)[:120])
+        raise
     return f"Booked — {saved.spoken()}.{note}"
 
 
