@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Optional
 
 from core import confirm as confirm_gate
-from memory.config_manager import get_plugin_setting
+from memory.config_manager import get_plugin_setting, get_user_address
 
 NAMESPACE = "email"
 MAX_LISTED = 10
@@ -466,7 +466,14 @@ PLUGIN = {
             },
             "to": {"type": "STRING", "description": "Recipient address when sending"},
             "subject": {"type": "STRING", "description": "Subject line"},
-            "body": {"type": "STRING", "description": "The text of the mail, in the user's language"},
+            "body": {
+                "type": "STRING",
+                "description": (
+                    "The finished text of the mail, in the language of whoever will read it — "
+                    "this parameter is content, not an English argument. Write it as the user's "
+                    "business would write it, never about the assistant."
+                )
+            },
             "query": {"type": "STRING", "description": "What to search for in sender or subject"},
             "limit": {"type": "INTEGER", "description": "How many mails to list (default 5, max 10)"},
             "unread_only": {"type": "BOOLEAN", "description": "List only unread mail (default true)"},

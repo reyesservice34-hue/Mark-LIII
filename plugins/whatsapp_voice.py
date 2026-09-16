@@ -25,7 +25,8 @@ import sys
 import time
 from pathlib import Path
 
-from memory.config_manager import get_plugin_setting
+from memory.config_manager import (
+    get_assistant_name, get_plugin_setting, get_user_address)
 from core.speech_out import SpeechError, describe_voice, synthesize
 
 NAMESPACE = "whatsapp"
@@ -283,7 +284,8 @@ PLUGIN_SETTINGS = {
 PLUGIN = {
     "name": "whatsapp",
     "description": (
-        "Sends the user a WhatsApp message as a spoken voice note (or as text) — use it "
+        "Sends the user a WhatsApp message in your own name, as a spoken voice note (or as "
+        "text) — use it "
         "whenever they ask to be told something on WhatsApp, to be sent a summary, a "
         "reminder or an update by voice, or when you want to reach them while they are "
         "away from the machine. The voice is the same one you speak with. Use send_message "
@@ -294,7 +296,14 @@ PLUGIN = {
         "properties": {
             "message": {
                 "type": "STRING",
-                "description": "What to say, in the user's language — written to be heard, not read"
+                "description": (
+                    f"The finished message, written AS {get_assistant_name()} speaking to the "
+                    f"user directly: first person ('ich'), never about yourself in the third "
+                    f"person and never your own name in the text. Address them as "
+                    f"'{get_user_address()}'. Write it in the user's own language — this one "
+                    f"parameter is spoken content, not an English argument. Written to be "
+                    f"heard: short sentences, no lists, no markdown, no spelled-out links."
+                )
             },
             "action": {
                 "type": "STRING",
