@@ -65,7 +65,9 @@ echo "🤖 Starting Claude ↔ OpenAI Orchestrator..."
 echo "=========================================="
 echo ""
 
+set -a
 source .env
+set +a
 python3 scripts/claude_openai_orchestrator.py --all
 
 # Step 7: Upload results
