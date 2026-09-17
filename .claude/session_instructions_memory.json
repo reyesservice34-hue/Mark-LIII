@@ -179,6 +179,30 @@
     "testing_command": "./test_whatsapp_integration.sh",
     "start_command": "./jarvis_whatsapp_start.sh"
   },
+  "prompt_optimization_engine_snapshot": {
+    "description": "Natural language → Perfect optimized prompt → Agent execution",
+    "purpose": "Transform user's natural language into perfectly structured prompts for agent system",
+    "file": "scripts/prompt_optimization_engine.py",
+    "coordinator_integration": "scripts/jarvis_with_prompt_optimization.py",
+    "categories": [
+      "pricing (preis, kosten, angebot, budget)",
+      "planning (plan, termin, zeitplan, deadline)",
+      "research (recherche, suche, finde, infos)",
+      "technical (code, script, automation)",
+      "advisory (rat, vorschlag, strategie)",
+      "communication (kunde, mitteilen, email)",
+      "analysis (analysiere, untersuche)",
+      "creative (erstelle, designiere, brainstorm)",
+      "optimization (optimiere, verbessere, schneller)"
+    ],
+    "complexity_levels": ["low", "medium", "high"],
+    "language_detection": ["German", "English"],
+    "output_format": "Structured prompt with Task, Requirements, Output Format, Tone, Detail Level",
+    "learning": "All optimizations stored in optimized_prompts_history.json for continuous improvement",
+    "api_endpoint": "POST /process_natural_language",
+    "testing": "python3 scripts/prompt_optimization_engine.py 'your input'",
+    "demo": "bash test_prompt_optimization.sh"
+  },
   "memory_update_triggers": {
     "when_to_update": [
       "After major milestone completion",

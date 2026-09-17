@@ -1,0 +1,34 @@
+{
+  "optimizations": [
+    {
+      "timestamp": "2026-09-17T13:30:08.467987",
+      "user_input": "Erstelle einen Preisplan f\u00fcr mein neues Projekt mit verschiedenen Paketen",
+      "context": {
+        "original_input": "Erstelle einen Preisplan f\u00fcr mein neues Projekt mit verschiedenen Paketen",
+        "category": "pricing",
+        "complexity": "low",
+        "word_count": 10,
+        "timestamp": "2026-09-17T13:30:08.467962",
+        "is_german": true
+      },
+      "optimized_prompt": "Task: Create pricing plan or quotation\nUser Request: Erstelle einen Preisplan f\u00fcr mein neues Projekt mit verschiedenen Paketen\n\nContext: LOW complexity\nLanguage: German\n\nRequirements:\n1. Analyze the user's pricing requirements\n2. Break down costs by component\n3. Provide clear, professional pricing options\n4. Include value justification\n5. Consider market rates and competitiveness\n\nOutput Format:\n- Overview (2-3 sentences)\n- Pricing Options (with breakdown)\n- What's Included / Not Included\n- Next Steps\n\nTone: Professional, clear, persuasive\nDetail Level: LOW",
+      "category": "pricing",
+      "complexity": "low"
+    },
+    {
+      "timestamp": "2026-09-17T13:30:10.498897",
+      "user_input": "Erstelle einen Preisplan f\u00fcr mein neues Projekt",
+      "context": {
+        "original_input": "Erstelle einen Preisplan f\u00fcr mein neues Projekt",
+        "category": "pricing",
+        "complexity": "low",
+        "word_count": 7,
+        "timestamp": "2026-09-17T13:30:10.498875",
+        "is_german": true
+      },
+      "optimized_prompt": "Task: Create pricing plan or quotation\nUser Request: Erstelle einen Preisplan f\u00fcr mein neues Projekt\n\nContext: LOW complexity\nLanguage: German\n\nRequirements:\n1. Analyze the user's pricing requirements\n2. Break down costs by component\n3. Provide clear, professional pricing options\n4. Include value justification\n5. Consider market rates and competitiveness\n\nOutput Format:\n- Overview (2-3 sentences)\n- Pricing Options (with breakdown)\n- What's Included / Not Included\n- Next Steps\n\nTone: Professional, clear, persuasive\nDetail Level: LOW",
+      "category": "pricing",
+      "complexity": "low"
+    }
+  ]
+}
