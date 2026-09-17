@@ -1,0 +1,301 @@
+{
+  "generated_at": "2026-09-17T13:09:44.983709",
+  "workflows": {
+    "semantic_search": {
+      "name": "Semantic Search with Qdrant + OpenAI Embeddings",
+      "active": false,
+      "nodes": [
+        {
+          "parameters": {},
+          "id": "uuid.v4()",
+          "name": "When Called",
+          "type": "n8n-nodes-base.webhook",
+          "typeVersion": 1,
+          "position": [
+            250,
+            300
+          ],
+          "webhookId": "workflow-start"
+        },
+        {
+          "parameters": {
+            "promptType": "define",
+            "text": "=You are a document processor. Extract the query or document content from the input."
+          },
+          "id": "uuid.v4()",
+          "name": "Process Input",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            450,
+            300
+          ]
+        },
+        {
+          "parameters": {
+            "model": "text-embedding-3-small",
+            "text": "={{ $json.content }}",
+            "resource": "openai",
+            "credentials": "openai_api_key"
+          },
+          "id": "uuid.v4()",
+          "name": "Generate Embeddings",
+          "type": "n8n-nodes-openai.embeddings",
+          "typeVersion": 1,
+          "position": [
+            650,
+            300
+          ]
+        },
+        {
+          "parameters": {
+            "connectionType": "apiKey",
+            "credentials": "qdrant_credential",
+            "collectionName": "documents",
+            "vectorField": "vector",
+            "queryVector": "={{ $json.embedding }}",
+            "limit": 5,
+            "scoreThreshold": 0.7
+          },
+          "id": "uuid.v4()",
+          "name": "Search Qdrant",
+          "type": "n8n-nodes-base.qdrant",
+          "typeVersion": 1,
+          "position": [
+            850,
+            300
+          ]
+        },
+        {
+          "parameters": {
+            "mappingMode": "defineBelow",
+            "mapping": {
+              "results": "={{ $json.results }}",
+              "count": "={{ $json.results.length }}",
+              "totalScore": "={{ $json.results.reduce((s, r) => s + r.score, 0) }}"
+            }
+          },
+          "id": "uuid.v4()",
+          "name": "Format Results",
+          "type": "n8n-nodes-base.set",
+          "typeVersion": 3,
+          "position": [
+            1050,
+            300
+          ]
+        },
+        {
+          "parameters": {
+            "statusCode": 200,
+            "responseBody": "={{ JSON.stringify({ results: $json.results, count: $json.count, score: $json.totalScore }) }}"
+          },
+          "id": "uuid.v4()",
+          "name": "Return Response",
+          "type": "n8n-nodes-base.respondToWebhook",
+          "typeVersion": 1,
+          "position": [
+            1250,
+            300
+          ]
+        },
+        {
+          "parameters": {
+            "deploymentUrl": "http://localhost:3000",
+            "credentials": "n8n_api_key",
+            "operation": "activate",
+            "workflowId": "{{ $json.workflowId }}"
+          },
+          "id": "uuid.v4()",
+          "name": "Auto Activate",
+          "type": "n8n-nodes-base.n8n",
+          "typeVersion": 1,
+          "position": [
+            1250,
+            450
+          ]
+        }
+      ],
+      "connections": {
+        "When Called": {
+          "main": [
+            [
+              {
+                "node": "Process Input",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Process Input": {
+          "main": [
+            [
+              {
+                "node": "Generate Embeddings",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Generate Embeddings": {
+          "main": [
+            [
+              {
+                "node": "Search Qdrant",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Search Qdrant": {
+          "main": [
+            [
+              {
+                "node": "Format Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Format Results": {
+          "main": [
+            [
+              {
+                "node": "Return Response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      },
+      "settings": {
+        "timezone": "Europe/Berlin",
+        "errorHandler": "retry"
+      },
+      "staticData": {
+        "generatedAt": "2026-09-17T13:09:44.983277",
+        "version": "1.0",
+        "description": "Semantic search pipeline with Qdrant vector DB and OpenAI embeddings"
+      }
+    },
+    "document_classification": {
+      "name": "Document Classification with Embeddings",
+      "active": false,
+      "nodes": [
+        {
+          "parameters": {},
+          "id": "uuid.v4()",
+          "name": "Input",
+          "type": "n8n-nodes-base.webhook",
+          "typeVersion": 1,
+          "position": [
+            250,
+            300
+          ]
+        },
+        {
+          "parameters": {
+            "model": "text-embedding-3-small",
+            "text": "={{ $json.document }}"
+          },
+          "id": "uuid.v4()",
+          "name": "Embed Document",
+          "type": "n8n-nodes-openai.embeddings",
+          "typeVersion": 1,
+          "position": [
+            450,
+            300
+          ]
+        },
+        {
+          "parameters": {
+            "connectionType": "apiKey",
+            "credentials": "qdrant_credential",
+            "collectionName": "document_classes",
+            "queryVector": "={{ $json.embedding }}",
+            "limit": 1
+          },
+          "id": "uuid.v4()",
+          "name": "Find Category",
+          "type": "n8n-nodes-base.qdrant",
+          "typeVersion": 1,
+          "position": [
+            650,
+            300
+          ]
+        },
+        {
+          "parameters": {
+            "responseBody": "={{ { category: $json.results[0]?.category, confidence: $json.results[0]?.score } }}"
+          },
+          "id": "uuid.v4()",
+          "name": "Output",
+          "type": "n8n-nodes-base.respondToWebhook",
+          "typeVersion": 1,
+          "position": [
+            850,
+            300
+          ]
+        }
+      ],
+      "connections": {
+        "Input": {
+          "main": [
+            [
+              {
+                "node": "Embed Document",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Embed Document": {
+          "main": [
+            [
+              {
+                "node": "Find Category",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Find Category": {
+          "main": [
+            [
+              {
+                "node": "Output",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "qdrant_config": {
+    "host": "172.17.0.1",
+    "port": 6333,
+    "collections": [
+      "documents",
+      "document_classes"
+    ]
+  },
+  "openai_config": {
+    "model": "text-embedding-3-small",
+    "embedding_dimension": 1536,
+    "max_tokens_per_call": 8191
+  },
+  "n8n_setup": {
+    "qdrant_credential_name": "Qdrant Local",
+    "openai_credential_name": "OpenAI API",
+    "webhook_auth": "required",
+    "timeout_seconds": 30
+  }
+}
