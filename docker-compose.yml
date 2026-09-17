@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  # Ollama Local LLM Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jarvis-ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_MODELS=/models
+    volumes:
+      - ollama-models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: always
+    networks:
+      - jarvis-network
+
+  # JARVIS Coordinator API
+  jarvis-coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile.jarvis
+    container_name: jarvis-coordinator
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=mistral
+      - FLASK_APP=scripts/jarvis_coordinator_api.py
+      - FLASK_ENV=production
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: always
+    networks:
+      - jarvis-network
+    command: python scripts/jarvis_coordinator_api.py
+
+  # WhatsApp Gateway with Voice
+  whatsapp-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.whatsapp
+    container_name: jarvis-whatsapp
+    ports:
+      - "5000:5000"
+    environment:
+      - JARVIS_COORDINATOR_URL=http://jarvis-coordinator:8000
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER:-}
+    volumes:
+      - .:/app
+      - /app/__pycache__
+      - whatsapp-history:/app/data
+    depends_on:
+      jarvis-coordinator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: always
+    networks:
+      - jarvis-network
+    command: python scripts/whatsapp_gateway_with_voice.py
+
+  # Optional: Continuous Health Monitor
+  health-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile.monitor
+    container_name: jarvis-monitor
+    ports:
+      - "9000:9000"
+    environment:
+      - JARVIS_COORDINATOR_URL=http://jarvis-coordinator:8000
+      - WHATSAPP_GATEWAY_URL=http://whatsapp-gateway:5000
+      - OLLAMA_URL=http://ollama:11434
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    depends_on:
+      - jarvis-coordinator
+      - whatsapp-gateway
+      - ollama
+    restart: always
+    networks:
+      - jarvis-network
+    command: python scripts/continuous_health_monitor.py
+
+networks:
+  jarvis-network:
+    driver: bridge
+
+volumes:
+  ollama-models:
+  whatsapp-history:
+
+# Usage:
+# docker-compose up -d          # Start all services
+# docker-compose down           # Stop all services
+# docker-compose logs -f        # View logs
+# docker-compose ps             # Check status
