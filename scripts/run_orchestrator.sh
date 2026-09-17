@@ -4,8 +4,8 @@
 
 set -e
 
-PROJECT_DIR="/home/user/Mark-LIII"
-cd "$PROJECT_DIR"
+# Use current directory instead of hardcoded path
+PROJECT_DIR="$(pwd)"
 
 echo "🚀 Claude ↔ OpenAI Orchestrator Setup & Run"
 echo "=========================================="
