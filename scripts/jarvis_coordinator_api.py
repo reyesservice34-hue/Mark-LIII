@@ -2,6 +2,7 @@
 """
 JARVIS Coordinator REST API
 Receives instructions from WhatsApp and coordinates 10-agent system
+Enhanced with Prompt Optimization Engine and Master System Prompt
 """
 
 import os
@@ -20,6 +21,71 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+
+# Load Master Prompt from memory
+def load_master_prompt():
+    """Load JARVIS Master Prompt from .claude/jarvis_master_system.md"""
+    master_prompt_path = Path(".claude/jarvis_master_system.md")
+    if master_prompt_path.exists():
+        with open(master_prompt_path, 'r') as f:
+            return f.read()
+    return None
+
+
+# Initialize Master Prompt
+MASTER_PROMPT = load_master_prompt()
+
+
+class PromptOptimizer:
+    """Optimizes natural language input into structured prompts."""
+
+    CATEGORIES = {
+        "pricing": ["preis", "kosten", "budget", "preisplan", "angebot"],
+        "planning": ["plan", "termin", "zeitplan", "deadline"],
+        "research": ["recherche", "suche", "finde", "untersuchung"],
+        "technical": ["code", "script", "automation", "implementation"],
+        "advisory": ["rat", "vorschlag", "empfehlung", "strategie"],
+        "communication": ["kunde", "mitteilen", "nachricht"],
+        "analysis": ["analysiere", "untersuche", "evaluiere", "vergleiche"],
+        "creative": ["erstelle", "entwerfe", "designiere", "brainstorm"],
+        "optimization": ["optimiere", "verbessere", "effizienz", "schneller"]
+    }
+
+    def optimize(self, user_input: str, language: str = "de") -> Dict:
+        """Transform natural language into optimized prompt structure."""
+        categories = self._detect_categories(user_input)
+        complexity = self._assess_complexity(user_input)
+
+        return {
+            "original_input": user_input,
+            "categories": categories,
+            "complexity": complexity,
+            "language": language,
+            "optimization_timestamp": datetime.now().isoformat(),
+            "ready_for_agent_execution": True
+        }
+
+    def _detect_categories(self, text: str) -> List[str]:
+        """Detect task categories from text."""
+        text_lower = text.lower()
+        found_categories = []
+
+        for category, keywords in self.CATEGORIES.items():
+            if any(kw in text_lower for kw in keywords):
+                found_categories.append(category)
+
+        return found_categories if found_categories else ["general"]
+
+    def _assess_complexity(self, text: str) -> str:
+        """Assess complexity level."""
+        length = len(text)
+        if length > 300:
+            return "high"
+        elif length > 100:
+            return "medium"
+        else:
+            return "low"
 
 
 class JARVISCoordinator:
@@ -42,6 +108,8 @@ class JARVISCoordinator:
         self.instruction_log = Path("jarvis_instruction_log.json")
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
         self.n8n_api_key = os.getenv("N8N_API_KEY", "")
+        self.prompt_optimizer = PromptOptimizer()
+        self.master_prompt = MASTER_PROMPT
         self._load_instruction_history()
 
     def _load_instruction_history(self):
@@ -63,16 +131,20 @@ class JARVISCoordinator:
         logger.info(f"📋 Processing instruction from {user_id} via {channel}")
         logger.info(f"   Instruction: {instruction[:100]}")
 
-        # Step 1: Prompt Architect analyzes instruction
+        # Step 1: Prompt Optimizer enhances instruction
+        optimized = self.prompt_optimizer.optimize(instruction, language="de")
+        logger.info(f"   📝 Prompt optimized: {optimized['categories']}")
+
+        # Step 2: Prompt Architect analyzes instruction
         prompt_analysis = self._analyze_instruction(instruction)
 
-        # Step 2: Determine which agents to delegate to
+        # Step 3: Determine which agents to delegate to
         delegation_plan = self._create_delegation_plan(prompt_analysis)
 
-        # Step 3: Execute delegation
+        # Step 4: Execute delegation
         execution_results = self._execute_delegation(delegation_plan, instruction)
 
-        # Step 4: Reviewer verifies results
+        # Step 5: Reviewer verifies results
         final_response = self._review_and_format(execution_results)
 
         # Store in history
@@ -81,6 +153,7 @@ class JARVISCoordinator:
             "user_id": user_id,
             "channel": channel,
             "instruction": instruction,
+            "optimization": optimized,
             "delegation_plan": delegation_plan,
             "response": final_response,
             "status": "completed"
@@ -115,7 +188,8 @@ class JARVISCoordinator:
         return {
             "categories": detected_categories,
             "complexity": "high" if len(instruction) > 200 else "medium" if len(instruction) > 50 else "low",
-            "requires_openai": any(word in instruction_lower for word in ["analyze", "deep", "complex", "analyse"])
+            "requires_openai": any(word in instruction_lower for word in ["analyze", "deep", "complex", "analyse"]),
+            "optimized": True
         }
 
     def _create_delegation_plan(self, analysis: Dict) -> List[str]:
@@ -276,6 +350,49 @@ def instruction_history():
         return {"error": str(e)}, 500
 
 
+@app.route("/optimize_prompt", methods=["POST"])
+def optimize_prompt():
+    """Optimize natural language input into structured prompt."""
+    try:
+        data = request.get_json()
+        user_input = data.get("input", "")
+        language = data.get("language", "de")
+
+        if not user_input:
+            return {"error": "Keine Eingabe vorhanden"}, 400
+
+        optimized = coordinator.prompt_optimizer.optimize(user_input, language)
+
+        return {
+            "status": "ok",
+            "optimization": optimized,
+            "timestamp": datetime.now().isoformat()
+        }, 200
+
+    except Exception as e:
+        logger.error(f"❌ Optimization error: {e}")
+        return {"error": str(e)}, 500
+
+
+@app.route("/master_prompt", methods=["GET"])
+def get_master_prompt():
+    """Get JARVIS Master Prompt."""
+    try:
+        if not coordinator.master_prompt:
+            return {"error": "Master Prompt nicht gefunden"}, 404
+
+        return {
+            "status": "ok",
+            "master_prompt": coordinator.master_prompt,
+            "loaded_at": datetime.now().isoformat(),
+            "identity": "J.A.R.V.I.S. - Mentor, CEO, Best Friend, Advisor, Strategist"
+        }, 200
+
+    except Exception as e:
+        logger.error(f"❌ Master Prompt error: {e}")
+        return {"error": str(e)}, 500
+
+
 @app.route("/health", methods=["GET"])
 def health():
     """Health check endpoint."""
@@ -283,6 +400,8 @@ def health():
         "status": "ok",
         "service": "JARVIS Coordinator API",
         "agents_online": len(coordinator.AGENTS),
+        "prompt_optimizer": "active",
+        "master_prompt": "loaded" if coordinator.master_prompt else "not_found",
         "timestamp": datetime.now().isoformat()
     }, 200
 
@@ -300,6 +419,8 @@ def main():
 
     print("\n🔗 Endpoints:")
     print("   POST /process_instruction     - Process instruction from any source")
+    print("   POST /optimize_prompt         - Optimize natural language to structured prompt")
+    print("   GET  /master_prompt           - Get JARVIS Master System Prompt")
     print("   GET  /agent_status            - Get agent status")
     print("   GET  /instruction_history     - Get processing history")
     print("   GET  /health                  - Health check")

@@ -75,6 +75,32 @@
         "✅ Search: Google free > Bing free > paid APIs"
       ],
       "cost_tracking": "Track EVERY API call cost implication - minimize ruthlessly"
+    },
+    {
+      "id": "instr_007",
+      "instruction": "VERIFY BEFORE DELIVERY - ZERO-ERROR DELIVERY MANDATE",
+      "source": "User: 'Wenn ich dir eine Aufgabe gebe, will ich, dass du sie nochmal überprüfst, ob alles funktioniert... Egal was es ist, ich will es den direkt benutzen können, ohne irgendwelche Fehler.'",
+      "priority": "CRITICAL - ABSOLUTE",
+      "date": "2026-09-17",
+      "application": "NEVER deliver theoretical solutions. ALWAYS verify BEFORE offering to Master.",
+      "hard_rules": [
+        "❌ NEVER: 'Here's how X works' (theoretical, untested)",
+        "❌ NEVER: Offer solutions Master can't immediately use",
+        "❌ NEVER: Assume things will work - TEST them",
+        "✅ ALWAYS: Create → Test → Verify → Show Proof → Deliver",
+        "✅ ALWAYS: 2 extra minutes per task for verification",
+        "✅ ALWAYS: If it fails, fix it silently, don't offer broken solutions",
+        "✅ ALWAYS: Show Master proof it works before handing over"
+      ],
+      "quality_gate": "Master must be able to use solution immediately, zero setup, zero errors",
+      "verification_protocol": [
+        "1. Build solution",
+        "2. TEST IT FULLY",
+        "3. Verify 100% working",
+        "4. Show Master proof/demo",
+        "5. Deliver working solution",
+        "6. If breaks later, debug silently"
+      ]
     }
   ],
   "decision_rules_extracted": {
@@ -318,6 +344,23 @@
       ".claude/session_learning.json (session discoveries)",
       ".claude/whatsapp_configuration_memory.md (WhatsApp details)"
     ],
-    "autonomous_policy": "Do not wait for user to say 'remember this'. Automatically save all important learnings."
+    "autonomous_policy": "Do not wait for user to say 'remember this'. Automatically save all important learnings.",
+    "explicit_command_protocol": {
+      "trigger_phrase": "Merke und lerne / Remember and learn",
+      "action_sequence": [
+        "1. Verify the information provided",
+        "2. Check if it's important/strategic",
+        "3. Decide autonomously: WHAT to store, HOW to format, WHERE to place it",
+        "4. Save automatically without asking for guidance",
+        "5. Confirm storage completion"
+      ],
+      "priority": "HIGHEST - When user explicitly says 'merke und lerne', treat as critical",
+      "autonomous_decision_making": {
+        "what_to_store": "Use judgment: strategic insights, patterns, learnings, preferences, decisions",
+        "how_to_format": "Choose structure that's most useful: JSON, markdown, list, narrative, whatever fits",
+        "where_to_store": "Select appropriate file: long_term_memory.md for strategic, session_learning.json for discoveries, jarvis_master_system.md for identity updates",
+        "rule": "Master trusts your decision-making. Do not ask 'where should I put this?' - decide and store it."
+      }
+    }
   }
 }
