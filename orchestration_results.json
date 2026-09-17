@@ -1,20 +1,20 @@
 {
-  "timestamp": "1789646290.6088321",
+  "timestamp": "1789646402.2608387",
   "results": {
     "infrastructure_analysis": {
       "status": "error",
       "task": "Analyze n8n infrastructure",
-      "error": "Error code: 404 - {'error': {'message': 'The model `gpt-4-turbo` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'param': None, 'code': 'model_not_found'}}"
+      "error": "Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}"
     },
     "workflow_configuration_plan": {
       "status": "error",
       "task": "Identify and plan Qdrant workflow configuration",
-      "error": "Error code: 404 - {'error': {'message': 'The model `gpt-4-turbo` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'param': None, 'code': 'model_not_found'}}"
+      "error": "Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}"
     },
     "embeddings_design": {
       "status": "error",
       "task": "Design OpenAI embeddings + Qdrant integration",
-      "error": "Error code: 404 - {'error': {'message': 'The model `gpt-4-turbo` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'param': None, 'code': 'model_not_found'}}"
+      "error": "Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}"
     }
   },
   "execution_log": []
