@@ -1,0 +1,44 @@
+{
+  "messages": [
+    {
+      "timestamp": "2026-09-17T13:37:00.157575",
+      "from": "+49123456789",
+      "message": "Erstelle einen Preisplan f\u00fcr meine Firma",
+      "type": "incoming"
+    },
+    {
+      "timestamp": "2026-09-17T13:37:21.859555",
+      "from": "+49123456789",
+      "message": "Hallo JARVIS, wie geht es dir?",
+      "type": "incoming"
+    },
+    {
+      "timestamp": "2026-09-17T13:37:27.940502",
+      "from": "+49123456789",
+      "message": "Erstelle einen Preisplan f\u00fcr KMU mit Staffelungen",
+      "type": "incoming"
+    }
+  ],
+  "conversations": {
+    "+49123456789": [
+      {
+        "timestamp": "2026-09-17T13:37:00.157575",
+        "from": "+49123456789",
+        "message": "Erstelle einen Preisplan f\u00fcr meine Firma",
+        "type": "incoming"
+      },
+      {
+        "timestamp": "2026-09-17T13:37:21.859555",
+        "from": "+49123456789",
+        "message": "Hallo JARVIS, wie geht es dir?",
+        "type": "incoming"
+      },
+      {
+        "timestamp": "2026-09-17T13:37:27.940502",
+        "from": "+49123456789",
+        "message": "Erstelle einen Preisplan f\u00fcr KMU mit Staffelungen",
+        "type": "incoming"
+      }
+    ]
+  }
+}

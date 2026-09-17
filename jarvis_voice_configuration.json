@@ -1,0 +1,22 @@
+{
+  "jarvis_profile": {
+    "name": "JARVIS",
+    "actor": "Paul Bettany",
+    "language": "en-GB",
+    "style": "formal",
+    "tone": "calm, sophisticated, professional",
+    "pitch": 1.0,
+    "speed": 0.95,
+    "accent": "British",
+    "personality": "Respectful, intelligent, slightly witty"
+  },
+  "provider": "pyttsx3",
+  "settings": {
+    "language": "en-GB",
+    "pitch": 1.0,
+    "speed": 0.95,
+    "volume": 1.0
+  },
+  "cache_directory": "jarvis_voice_cache",
+  "created": "2026-09-17T13:36:54.082191"
+}
