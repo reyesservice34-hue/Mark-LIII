@@ -15,25 +15,30 @@ echo "📥 Pulling latest scripts from GitHub..."
 git pull origin claude/session-01a0ae45-continuation-lmlahz 2>/dev/null || echo "⚠️  Git pull skipped"
 
 # Step 2: Get API Keys
-echo ""
-echo "🔑 API Key Setup"
-echo "=========================================="
-echo ""
+if [ -f .env ]; then
+    echo "✅ .env file already exists"
+    echo "Using existing credentials..."
+else
+    echo ""
+    echo "🔑 API Key Setup"
+    echo "=========================================="
+    echo ""
 
-read -sp "Enter your NEW OpenAI API Key (sk-...): " OPENAI_KEY
-echo ""
-read -sp "Enter your n8n API Key: " N8N_KEY
-echo ""
+    read -sp "Enter your NEW OpenAI API Key (sk-...): " OPENAI_KEY
+    echo ""
+    read -sp "Enter your n8n API Key: " N8N_KEY
+    echo ""
 
-# Step 3: Create .env file
-echo "💾 Creating .env file..."
-cat > .env << EOF
+    # Step 3: Create .env file
+    echo "💾 Creating .env file..."
+    cat > .env << EOF
 OPENAI_API_KEY=$OPENAI_KEY
 N8N_API_KEY=$N8N_KEY
 EOF
 
-chmod 600 .env
-echo "✅ .env created (secure, not tracked by git)"
+    chmod 600 .env
+    echo "✅ .env created (secure, not tracked by git)"
+fi
 
 # Step 4: Verify scripts exist
 echo ""
