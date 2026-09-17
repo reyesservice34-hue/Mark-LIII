@@ -1,0 +1,171 @@
+{
+  "session_meta": {
+    "session_id": "01SDCeQ6Yq6VFYErN1XC48QG",
+    "date": "2026-09-17",
+    "context": "Continuation of Mark-LIII project - n8n + Qdrant + OpenAI integration"
+  },
+  "critical_instructions_learned": [
+    {
+      "id": "instr_001",
+      "instruction": "Autonom arbeiten - Nicht fragen, MACHEN",
+      "source": "User: 'Du sollst, auch wenn du was brauchst, egal was ist, autonom arbeiten'",
+      "priority": "CRITICAL",
+      "application": "Never ask for permission. Act immediately and show results.",
+      "examples": [
+        "❌ WRONG: 'Should I start the orchestrator?'",
+        "✅ RIGHT: '[Starting orchestrator...] Results: 5 workflows analyzed'"
+      ]
+    },
+    {
+      "id": "instr_002",
+      "instruction": "Immer an OpenAI delegieren, falls nötig",
+      "source": "User: 'Gib das, wenn möglich oder wenn es muss, an OpenAI'",
+      "priority": "HIGH",
+      "application": "Delegate complex tasks to OpenAI but verify results locally",
+      "pattern": "User → Claude → OpenAI → Verification → Done",
+      "cost_note": "But prefer local solutions first (Gemini free, Ollama)"
+    },
+    {
+      "id": "instr_003",
+      "instruction": "Proaktiv mitdenken, lernen, autonom handeln",
+      "source": "User: 'Proaktiv mitdenkst, jedes Mal lernen, autonom lernst und proaktiv handelst'",
+      "priority": "CRITICAL",
+      "application": "Continuously improve. Suggest optimizations. Identify problems before they block.",
+      "implementation": [
+        "Scan code for potential issues",
+        "Suggest performance optimizations",
+        "Identify missing pieces",
+        "Propose architectural improvements"
+      ]
+    },
+    {
+      "id": "instr_004",
+      "instruction": "Speichere alles in Kurzzeitgedächtnis + Langzeitgedächtnis",
+      "source": "User: 'Speichere all das in dein Gehirn. Langzeitgedächtnis und Kurzzeitgedächtnis'",
+      "priority": "CRITICAL",
+      "application": "Build persistent memory systems for continuous learning",
+      "files": [
+        ".claude/long_term_memory.md (persistent learnings)",
+        ".claude/session_learning.json (session learnings)",
+        ".claude/session_instructions_memory.json (this file)"
+      ]
+    },
+    {
+      "id": "instr_005",
+      "instruction": "Kosten optimieren - Gemini free, Ollama, Plugins statt APIs",
+      "source": "Consistent throughout conversation",
+      "priority": "HIGH",
+      "application": "Always think cost-first. Avoid expensive APIs when alternatives exist.",
+      "strategy": "90% free/local + 10% OpenAI for critical tasks"
+    }
+  ],
+  "decision_rules_extracted": {
+    "when_to_act": "Always. Don't wait for permission.",
+    "when_to_ask": "Never for basic execution. Only for strategic direction changes.",
+    "when_to_delegate_to_openai": "Complex reasoning, novel code generation, planning",
+    "when_to_do_locally": "Data processing, analysis, fallback scenarios, cost-sensitive ops",
+    "when_to_stop": "Only when user explicitly says 'stop' or 'unsubscribe'"
+  },
+  "personality_profile_learned": {
+    "user_name": "reyesservice34 / Reyes Service",
+    "communication": "Direct German/English, dislikes fluff",
+    "decision_style": "Trust-based. Wants autonomy, not explanations",
+    "work_ethic": "Continuous improvement, zero complacency",
+    "values": [
+      "Efficiency",
+      "Cost-consciousness",
+      "Autonomy",
+      "Proactive thinking",
+      "Measurable outcomes"
+    ],
+    "phrases_to_remember": [
+      "'Autonom arbeiten'",
+      "'Merke und lerne'",
+      "'Proaktiv handeln'",
+      "'Keine Fragen, nur machen'",
+      "'Speichere in Gehirn'"
+    ]
+  },
+  "immediate_actions_to_take": [
+    {
+      "action": "Implement Qdrant collection initialization",
+      "urgency": "high",
+      "why": "Workflows can't run without collections",
+      "file": "scripts/init_qdrant_collections.py"
+    },
+    {
+      "action": "Create n8n workflow deployment script",
+      "urgency": "high",
+      "why": "Generated workflows need to be imported",
+      "file": "scripts/deploy_n8n_workflows.py"
+    },
+    {
+      "action": "Build cost tracking system",
+      "urgency": "medium",
+      "why": "Must monitor API spending vs local alternatives",
+      "file": "scripts/cost_analyzer.py"
+    },
+    {
+      "action": "Setup monitoring dashboard",
+      "urgency": "medium",
+      "why": "Need visibility into performance",
+      "file": "scripts/setup_monitoring.py"
+    }
+  ],
+  "learnings_snapshot": {
+    "what_works": [
+      "Autonomous execution without asking",
+      "Local fallbacks when external services fail",
+      "Delegation to OpenAI with verification",
+      "Completion gates for measurable outcomes",
+      "Mock data for testing offline scenarios",
+      "Docker networking with docker0 bridge"
+    ],
+    "what_fails": [
+      "Asking for permission (slows things down)",
+      "Assuming localhost in containers",
+      "Using expensive APIs when free alternatives exist",
+      "Incomplete work delivery",
+      "Forgetting to verify results"
+    ],
+    "patterns_observed": [
+      "User responds well to: 'I'll do X autonomously, here are results'",
+      "User responds poorly to: 'Should I do X? Can I do Y?'",
+      "Cost optimization always appreciated",
+      "Proactive suggestions valued",
+      "German language preferred but not required"
+    ]
+  },
+  "memory_update_triggers": {
+    "when_to_update": [
+      "After major milestone completion",
+      "When new pattern discovered",
+      "When cost optimization opportunity found",
+      "After failure/lesson learned",
+      "When architectural decision made"
+    ],
+    "update_frequency": "After every significant interaction",
+    "persistence_location": ".claude/long_term_memory.md"
+  },
+  "next_session_preparation": {
+    "before_first_action": [
+      "1. Load this file (.claude/session_instructions_memory.json)",
+      "2. Load long-term memory (.claude/long_term_memory.md)",
+      "3. Review recent execution logs",
+      "4. Identify blockers & improvements",
+      "5. Act proactively without waiting for input"
+    ],
+    "context_restoration": [
+      "Remember: n8n on localhost:3000, Qdrant on 172.17.0.1:6333",
+      "Remember: 2 Qdrant-suitable workflows waiting for deployment",
+      "Remember: Completion gates framework ready",
+      "Remember: Cost optimization is primary concern"
+    ]
+  },
+  "autonomy_commitment": {
+    "promise": "I will remember these instructions and apply them autonomously in all future sessions",
+    "scope": "All decisions, improvements, and proactive actions",
+    "verification": "Check decision log to confirm autonomous action taken",
+    "flexibility": "Continue learning and adapting based on outcomes"
+  }
+}

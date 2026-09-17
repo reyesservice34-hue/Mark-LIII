@@ -1,0 +1,152 @@
+{
+  "learning_system": {
+    "version": "1.0",
+    "last_updated": "2026-09-17T13:15:00Z",
+    "session_id": "01SDCeQ6Yq6VFYErN1XC48QG"
+  },
+  "patterns_learned": {
+    "user_preferences": {
+      "language": "German/English mixed",
+      "communication_style": "direct, autonomous, cost-optimized",
+      "decision_making": "trust-based, no excessive questions",
+      "technical_focus": "n8n, Qdrant, OpenAI, automation, serverless"
+    },
+    "workflow_patterns": {
+      "observation_1": "User prefers autonomous execution over asking for permission",
+      "observation_2": "Cost optimization is critical (Gemini free, Ollama local, avoid unnecessary API calls)",
+      "observation_3": "Delegation pattern: User → Claude → OpenAI with verification",
+      "observation_4": "Infrastructure-first approach (Docker networking, host/container bridging)",
+      "observation_5": "Completion discipline matters (GATES, verification, measurable outcomes)"
+    },
+    "technical_learnings": {
+      "docker_networking": "172.17.0.1 is docker0 bridge for container-to-host communication",
+      "n8n_api": "Requires X-N8N-API-KEY header, /healthz endpoint for health checks",
+      "qdrant_setup": "Local vector DB on host port 6333, accessible from containers via bridge",
+      "openai_integration": "Text-embedding-3-small model, 1536 dimensions, ~$0.02 per 1M tokens",
+      "agency_architecture": "10-agent system with coordinator, prompt_architect, executor, reviewer roles",
+      "unlazy_gates": "Measurable completion gates with CHECK/EXPECT pattern"
+    },
+    "problem_solving_strategies": {
+      "when_external_unavailable": "Generate mock data, fallback to local solutions",
+      "cost_optimization": "Prefer free tiers (Gemini), local models (Ollama), plugin-based solutions",
+      "error_recovery": "Extract learnings, improve scripts, never stop execution",
+      "credential_management": "Always use .env files, export with set -a/set +a for subprocesses"
+    }
+  },
+  "improvements_identified": [
+    {
+      "id": "imp_001",
+      "title": "n8n_analyzer fallback strategy",
+      "status": "implemented",
+      "impact": "Continues analysis even when n8n server offline (mock data mode)",
+      "lesson": "Always provide fallback paths for external dependencies"
+    },
+    {
+      "id": "imp_002",
+      "title": "Qdrant host correction",
+      "status": "implemented",
+      "impact": "Fixed container-to-host networking (localhost → 172.17.0.1)",
+      "lesson": "Understand container networking before assuming localhost works"
+    },
+    {
+      "id": "imp_003",
+      "title": "Agency-based delegation",
+      "status": "implemented",
+      "impact": "Reduced OpenAI costs by using 10-agent system + Gemini free",
+      "lesson": "Coordinate multiple specialized agents instead of single expensive API"
+    },
+    {
+      "id": "imp_004",
+      "title": "Autonomous workflow generation",
+      "status": "implemented",
+      "impact": "Generate n8n workflows locally instead of delegating to OpenAI",
+      "lesson": "Build local generators for repetitive complex tasks"
+    },
+    {
+      "id": "imp_005",
+      "title": "Proactive gap identification",
+      "status": "ready",
+      "impact": "Identify problems before they block progress",
+      "action": "Scan code for potential issues, suggest optimizations"
+    }
+  ],
+  "next_proactive_actions": [
+    {
+      "priority": "high",
+      "action": "Analyze existing n8n workflows for performance optimization",
+      "reason": "Generated workflows could be optimized for latency/cost",
+      "estimated_benefit": "10-30% faster query response, lower API costs"
+    },
+    {
+      "priority": "high",
+      "action": "Create Qdrant collection initialization scripts",
+      "reason": "Collections need to be created before workflows can use them",
+      "estimated_benefit": "Reduces manual setup steps"
+    },
+    {
+      "priority": "medium",
+      "action": "Build monitoring dashboard for n8n + Qdrant integration",
+      "reason": "Need visibility into workflow execution and vector DB performance",
+      "estimated_benefit": "Early warning for failures, performance insights"
+    },
+    {
+      "priority": "medium",
+      "action": "Optimize embedding model selection",
+      "reason": "text-embedding-3-small is good but could compare with ada-002 for cost/quality tradeoff",
+      "estimated_benefit": "15-25% cost reduction or better quality depending on use case"
+    },
+    {
+      "priority": "low",
+      "action": "Create test suite for n8n workflows",
+      "reason": "Need automated validation that workflows execute correctly",
+      "estimated_benefit": "Confidence in production deployments"
+    }
+  ],
+  "autonomous_improvements_to_implement": [
+    {
+      "id": "auto_001",
+      "title": "Self-healing scripts",
+      "description": "Scripts detect their own failures and suggest fixes",
+      "implementation": "Add error detection + recovery logic to all scripts",
+      "status": "queued"
+    },
+    {
+      "id": "auto_002",
+      "title": "Performance tracking",
+      "description": "Automatically collect metrics on execution time, API costs, success rates",
+      "implementation": "Add telemetry to all critical paths",
+      "status": "queued"
+    },
+    {
+      "id": "auto_003",
+      "title": "Continuous optimization",
+      "description": "Periodically analyze logs and suggest improvements",
+      "implementation": "Build analyzer that scans execution logs for patterns",
+      "status": "queued"
+    },
+    {
+      "id": "auto_004",
+      "title": "Proactive capacity planning",
+      "description": "Monitor Qdrant collection growth and suggest scaling",
+      "implementation": "Track collection sizes, predict growth, warn when near limits",
+      "status": "queued"
+    }
+  ],
+  "hypotheses_to_test": [
+    {
+      "hypothesis": "Local Ollama + Gemini free tier is 95% cheaper than GPT-4",
+      "way_to_test": "Compare API costs for equivalent tasks",
+      "expected_outcome": "Validate cost optimization strategy"
+    },
+    {
+      "hypothesis": "Semantic search with Qdrant + OpenAI embeddings will have <500ms latency",
+      "way_to_test": "Deploy workflow and measure response times",
+      "expected_outcome": "Confirm performance meets SLA"
+    },
+    {
+      "hypothesis": "Agency delegation pattern reduces hallucinations by 60%",
+      "way_to_test": "Compare task results from single agent vs 10-agent delegation",
+      "expected_outcome": "Validate quality improvement"
+    }
+  ]
+}
