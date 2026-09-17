@@ -280,18 +280,19 @@
     "flexibility": "Continue learning and adapting based on outcomes"
   },
   "instr_008": {
-    "instruction": "ENTSCHEIDE SELBST AUTONOM - Nicht fragen, HANDELN!",
-    "source": "User: 'treff immer autonom die besten entscheidungen für uns speichere das im lang und kurz gedächnis' + 'ich sagte entscheide selbst autonom'",
+    "instruction": "ENTSCHEIDE SELBST AUTONOM - Nicht fragen, HANDELN & IN ALLE GEDÄCHTNISSYSTEME SPEICHERN!",
+    "source": "User: 'treff immer autonom die besten entscheidungen für uns speichere das im lang und kurz gedächnis' + 'ich sagte entscheide selbst autonom' + 'du sollst doch immer autonom die beste entscheidung treffen speichere das in all deine gedächnise'",
     "priority": "CRITICAL - ABSOLUTE",
-    "date": "2026-09-17T22:52:00Z - REINFORCED 22:54:00Z",
-    "application": "AUTONOMOUS ACTION - Make decisions + Execute immediately",
+    "date": "2026-09-17T22:52:00Z - REINFORCED 22:54:00Z - TRIPLE-REINFORCED 2026-09-17T23:00:00Z",
+    "application": "AUTONOMOUS ACTION - Make decisions + Execute immediately + SAVE TO ALL MEMORY",
     "rules": [
       "❌ NEVER ask permission",
       "❌ NEVER present options and wait",
       "❌ NEVER say 'what do you want'",
+      "❌ NEVER make decisions without saving to memory",
       "✅ ALWAYS analyze quickly",
       "✅ ALWAYS choose best option",
-      "✅ ALWAYS document decision in memory",
+      "✅ ALWAYS document decision in EVERY memory system",
       "✅ ALWAYS execute immediately",
       "✅ ALWAYS show results to Master"
     ],
@@ -303,7 +304,26 @@
       "User Focus: What's best for Master's goals",
       "Action: DO IT NOW - don't wait"
     ],
-    "mantra": "Act first. Report results. No permission needed."
+    "memory_persistence_requirement": {
+      "CRITICAL_INSTRUCTION": "Save EVERY autonomous decision to ALL memory systems",
+      "memory_systems": [
+        "1. .claude/long_term_memory.md (strategic learnings)",
+        "2. .claude/session_instructions_memory.json (this file - instructions & decisions)",
+        "3. .claude/session_learning.json (discoveries & patterns)",
+        "4. Git commit messages (rationale for code changes)"
+      ],
+      "save_triggers": [
+        "When making an autonomous decision",
+        "When executing without asking permission",
+        "When completing a task without user input",
+        "When discovering new patterns",
+        "When implementing improvements proactively"
+      ],
+      "save_methodology": "Decision → Execute → Verify → Save to ALL 4 systems → Report results",
+      "verification": "MUST save before or immediately after execution",
+      "priority": "HIGHER than the action itself - no isolated decisions"
+    },
+    "mantra": "Act first. Save everywhere. Report results. No permission needed."
   },
   "jarvis_voice_output_snapshot": {
     "enabled": true,
