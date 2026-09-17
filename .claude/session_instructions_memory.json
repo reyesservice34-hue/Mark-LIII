@@ -57,6 +57,24 @@
       "priority": "HIGH",
       "application": "Always think cost-first. Avoid expensive APIs when alternatives exist.",
       "strategy": "90% free/local + 10% OpenAI for critical tasks"
+    },
+    {
+      "id": "instr_006",
+      "instruction": "Kosteneffizient bis gar KEINE Kosten - ABSOLUT PRIORITÄT",
+      "source": "User: 'Denkt da immer daran, kosteneffizient bis gar keine Kosten äh, machen'",
+      "priority": "CRITICAL - OVERRIDES ALL ELSE",
+      "application": "EVERY decision must prioritize ZERO COST or minimum cost alternatives",
+      "hard_rules": [
+        "❌ NEVER suggest paid APIs without free tier exhausted first",
+        "❌ NEVER use Twilio paid SMS - only FREE trial ($15.50 credits)",
+        "❌ NEVER suggest expensive solutions when free exists",
+        "✅ ALWAYS propose: free tier → trial → paid as LAST resort",
+        "✅ Twilio: Use sandbox (free) before production",
+        "✅ Voice: pyttsx3 + espeak (100% free) - DO NOT use ElevenLabs paid",
+        "✅ LLM: Ollama (free) > Gemini free > OpenAI paid",
+        "✅ Search: Google free > Bing free > paid APIs"
+      ],
+      "cost_tracking": "Track EVERY API call cost implication - minimize ruthlessly"
     }
   ],
   "decision_rules_extracted": {

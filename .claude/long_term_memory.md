@@ -60,13 +60,20 @@ Container → Host communication:
 
 ### Cost Optimization Strategy
 ```
-Expensive (AVOID)          | Cheap (PREFER)
-─────────────────────────────────────────
-OpenAI GPT-4 $0.03/1K     | Gemini free tier
-OpenAI GPT-3.5 $0.0005/1K | Ollama local (free)
-Every API call             | Plugin-based local
-─────────────────────────────────────────
+Expensive (AVOID)               | Cheap (PREFER)
+──────────────────────────────────────────────────
+OpenAI GPT-4 $0.03/1K          | Gemini free tier ✅
+OpenAI GPT-3.5 $0.0005/1K      | Ollama local (free) ✅
+Twilio SMS $0.0075/SMS         | Twilio Trial $15.50 ✅
+Every API call                 | Plugin-based local ✅
+──────────────────────────────────────────────────
 Target: 90%+ free/local, 10% OpenAI for critical
+
+⚠️ CRITICAL: Always prefer free tiers, trials, local solutions
+- Twilio: Use FREE trial ($15.50 credits) - do NOT use paid
+- WhatsApp: Trial sandbox (free) before production
+- Voice: pyttsx3 + espeak (100% free) ✅ USING
+- LLM: Ollama local (free) - plan integration
 ```
 
 ---
