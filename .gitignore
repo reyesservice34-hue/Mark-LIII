@@ -48,3 +48,10 @@ desktop.ini
 logs/
 downloads/
 screenshots/
+
+# ── JARVIS Runtime State (generated at runtime, not source code) ────────────────
+jarvis_instruction_log.json
+jarvis_voice_history.json
+whatsapp_message_history.json
+jarvis_voice_cache/
+optimized_prompts_history.json
