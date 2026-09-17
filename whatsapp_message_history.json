@@ -17,6 +17,24 @@
       "from": "+49123456789",
       "message": "Erstelle einen Preisplan f\u00fcr KMU mit Staffelungen",
       "type": "incoming"
+    },
+    {
+      "timestamp": "2026-09-17T13:52:40.124494",
+      "from": "+49176644906121",
+      "message": "Hallo JARVIS, antworte mir",
+      "type": "incoming"
+    },
+    {
+      "timestamp": "2026-09-17T13:52:42.473703",
+      "from": "+49176644906121",
+      "message": "Hallo JARVIS, antworte mir",
+      "type": "incoming"
+    },
+    {
+      "timestamp": "2026-09-17T13:52:44.658625",
+      "from": "+49176644906121",
+      "message": "Hallo JARVIS, antworte mir",
+      "type": "incoming"
     }
   ],
   "conversations": {
@@ -37,6 +55,26 @@
         "timestamp": "2026-09-17T13:37:27.940502",
         "from": "+49123456789",
         "message": "Erstelle einen Preisplan f\u00fcr KMU mit Staffelungen",
+        "type": "incoming"
+      }
+    ],
+    "+49176644906121": [
+      {
+        "timestamp": "2026-09-17T13:52:40.124494",
+        "from": "+49176644906121",
+        "message": "Hallo JARVIS, antworte mir",
+        "type": "incoming"
+      },
+      {
+        "timestamp": "2026-09-17T13:52:42.473703",
+        "from": "+49176644906121",
+        "message": "Hallo JARVIS, antworte mir",
+        "type": "incoming"
+      },
+      {
+        "timestamp": "2026-09-17T13:52:44.658625",
+        "from": "+49176644906121",
+        "message": "Hallo JARVIS, antworte mir",
         "type": "incoming"
       }
     ]
