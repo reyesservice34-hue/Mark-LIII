@@ -1,0 +1,60 @@
+/* JARVIS design tokens — dark, graphite, restrained cyan. */
+:root {
+  color-scheme: dark;
+
+  --bg-0: #06080c;
+  --bg-1: #0a0e14;
+  --bg-2: #0f141c;
+  --bg-3: #141b25;
+  --bg-4: #1a2230;
+  --glass: rgba(15, 20, 28, 0.72);
+  --glass-strong: rgba(10, 14, 20, 0.88);
+
+  --line: rgba(146, 172, 204, 0.10);
+  --line-2: rgba(146, 172, 204, 0.18);
+  --line-3: rgba(146, 172, 204, 0.30);
+
+  --text: #e8eef6;
+  --text-2: #a4b3c6;
+  --text-3: #6b7b91;
+  --text-4: #48566a;
+
+  --accent: #5ac8ff;
+  --accent-2: #2d8fe6;
+  --accent-soft: rgba(90, 200, 255, 0.12);
+  --accent-glow: 0 0 0 1px rgba(90, 200, 255, 0.35), 0 0 24px rgba(90, 200, 255, 0.18);
+
+  --ok: #3ddc97;
+  --ok-soft: rgba(61, 220, 151, 0.12);
+  --warn: #ffb454;
+  --warn-soft: rgba(255, 180, 84, 0.12);
+  --err: #ff5d6c;
+  --err-soft: rgba(255, 93, 108, 0.12);
+  --info: #5ac8ff;
+  --muted: #6b7b91;
+
+  --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px -12px rgba(0, 0, 0, 0.7);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.5), 0 24px 48px -24px rgba(0, 0, 0, 0.85);
+
+  --sidebar-w: 236px;
+  --sidebar-w-collapsed: 68px;
+  --topbar-h: 52px;
+  --mobile-nav-h: 60px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --t-fast: 120ms;
+  --t-med: 220ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --t-fast: 0ms; --t-med: 0ms; }
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}

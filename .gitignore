@@ -51,3 +51,12 @@ desktop.ini
 logs/
 downloads/
 screenshots/
+
+# ── JARVIS Command Center ─────────────────────────────────────────────────
+command_center/.env
+command_center/frontend/node_modules/
+command_center/frontend/dist/
+# built by `npm run build` / the Docker image
+command_center/backend/static/
+# sqlite db, workspace, secret.key
+data/

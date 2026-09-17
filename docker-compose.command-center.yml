@@ -1,0 +1,39 @@
+# JARVIS Command Center — standalone compose file so it can be added next to an
+# existing stack without touching it:
+#   docker compose -f docker-compose.command-center.yml up -d --build
+#
+# Configure through command_center/.env (copy command_center/.env.example).
+# Put a reverse proxy (Caddy / Traefik / nginx) with TLS in front of port 8080
+# and set JARVIS_CC_SECURE_COOKIES=true (or leave "auto" with X-Forwarded-Proto).
+services:
+  jarvis-command-center:
+    build:
+      context: .
+      dockerfile: command_center/Dockerfile
+    image: jarvis-command-center:latest
+    container_name: jarvis-command-center
+    restart: unless-stopped
+    env_file:
+      - command_center/.env
+    environment:
+      JARVIS_CC_DATA_DIR: /data
+      JARVIS_CC_WORKSPACE_DIR: /data/workspace
+    ports:
+      - "${JARVIS_CC_BIND:-127.0.0.1}:${JARVIS_CC_PORT:-8080}:8080"
+    volumes:
+      - jarvis-cc-data:/data
+      # Optional: let the Server page see and (with JARVIS_CC_ALLOW_DOCKER_ACTIONS=true) restart containers.
+      # Read-only mount still allows list/stats/logs; restarts need :rw. Remove the line to disable docker entirely.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  jarvis-cc-data:

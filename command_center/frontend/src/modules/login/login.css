@@ -1,0 +1,8 @@
+.login-wrap { position: relative; z-index: 1; min-height: 100%; display: grid; place-items: center; padding: 24px 16px; overflow: auto; }
+.login-card { width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 32px 28px 24px; background: var(--glass-strong); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow-2), 0 0 80px -20px rgba(90,200,255,0.25); backdrop-filter: blur(20px); animation: rise 400ms var(--ease); }
+.login-card h1 { text-align: center; letter-spacing: 0.3em; font-size: 22px; font-weight: 600; }
+.login-core { position: relative; width: 72px; height: 72px; margin: 0 auto 4px; display: grid; place-items: center; }
+.login-core .ring { position: absolute; border-radius: 50%; border: 1px solid var(--accent); }
+.login-core .r1 { inset: 0; opacity: 0.7; animation: spin 14s linear infinite; border-style: dashed; }
+.login-core .r2 { inset: 12px; opacity: 0.9; animation: breathe 3s ease-in-out infinite; }
+.login-core .nucleus { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 24px var(--accent); }

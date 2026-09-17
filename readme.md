@@ -7,6 +7,19 @@ A real-time voice AI that can hear, see, understand, and control your computer �
 
 ---
 
+## 🖥️ JARVIS Command Center (server dashboard)
+
+MARK LIII can be paired with a server-side **Command Center** — a web dashboard
+that hosts the Master Agent, the agent/tool/integration registries, tasks,
+approvals, logs, files and server monitoring. The desktop then becomes a client
+of it through the existing control-plane contract (`core/control_plane.py`).
+
+See [`command_center/README.md`](command_center/README.md) for deployment
+(`docker compose -f docker-compose.command-center.yml up -d`), configuration
+and desktop pairing.
+
+---
+
 ## ✨ Overview
 
 **MARK LIII is the hands-free & scalable release.** Say **"Hey Jarvis"** and it wakes; stay quiet and it slips back to sleep on its own — while asleep, your microphone never leaves the machine, so an off-hand *"I'll be right there"* to someone in the room no longer sets it off. Under the hood it now runs on the faster **Gemini 3.1 Flash Live** engine, and the moment you ask for something that takes a beat — analysing a file, searching the web — it answers instantly *("On it — going through that now…")* so you never wonder whether it heard you.

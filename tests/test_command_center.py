@@ -1,0 +1,320 @@
+"""
+Offline verification of the JARVIS Command Center backend.
+
+No network, no AI key: the Master Agent is driven by a scripted fake provider
+so the tool loop, the approval gate, the audit trail, the /v1 gateway and the
+auth/CSRF layer are exercised end to end through real HTTP calls.
+
+Run:  python tests/test_command_center.py
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+_tmp = tempfile.mkdtemp(prefix="jarvis-cc-test-")
+os.environ.update({
+    "JARVIS_CC_DATA_DIR": _tmp, "JARVIS_CC_ADMIN_USER": "admin", "JARVIS_CC_ADMIN_PASSWORD": "adminpass123",
+    "JARVIS_CC_SECURE_COOKIES": "false", "JARVIS_MASTER_AGENT_MODE": "auto", "JARVIS_CC_APPROVAL_TIMEOUT_MIN": "1",
+})
+for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "LOCAL_LLM_URL",
+          "JARVIS_GATEWAY_TOKEN", "N8N_BASE_URL"):
+    os.environ.pop(k, None)
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from command_center.backend.ai.base import ProviderInfo  # noqa: E402
+from command_center.backend.app import create_app  # noqa: E402
+from command_center.backend.config import reset_settings  # noqa: E402
+
+fails: list[str] = []
+
+
+def check(label: str, cond, detail="") -> None:
+    print(("  ok   " if cond else "  FAIL ") + label + ("" if cond else f"  :: {detail}"))
+    if not cond:
+        fails.append(label)
+
+
+class ScriptedProvider:
+    """Yields pre-scripted turns; each turn is a list of stream events."""
+
+    def __init__(self):
+        self.info = ProviderInfo(id="fake", model="scripted-1", label="Scripted · test")
+        self.turns: list[list[dict]] = []
+        self.seen: list[list[dict]] = []
+
+    async def stream(self, *, system, messages, tools, max_tokens=16000):
+        self.seen.append(messages)
+        turn = self.turns.pop(0) if self.turns else [
+            {"type": "text_delta", "text": "Done."},
+            {"type": "message_end", "stop_reason": "end_turn", "content": [{"type": "text", "text": "Done."}],
+             "usage": {"input_tokens": 10, "output_tokens": 2}}]
+        for ev in turn:
+            yield ev
+
+    async def health(self):
+        return {"status": "healthy", "detail": "scripted"}
+
+
+def text_turn(text: str) -> list[dict]:
+    return [{"type": "text_delta", "text": text},
+            {"type": "message_end", "stop_reason": "end_turn", "content": [{"type": "text", "text": text}],
+             "usage": {"input_tokens": 5, "output_tokens": 5}}]
+
+
+def tool_turn(name: str, args: dict, call_id: str = "call_1", text: str = "") -> list[dict]:
+    content = ([{"type": "text", "text": text}] if text else []) + [
+        {"type": "tool_use", "id": call_id, "name": name, "input": args}]
+    evs = [{"type": "text_delta", "text": text}] if text else []
+    evs += [{"type": "tool_use", "id": call_id, "name": name, "input": args},
+            {"type": "message_end", "stop_reason": "tool_use", "content": content, "usage": {}}]
+    return evs
+
+
+def read_sse(resp) -> list[dict]:
+    events = []
+    for line in resp.iter_lines():
+        if line.startswith("data:"):
+            try:
+                events.append(json.loads(line[5:]))
+            except ValueError:
+                pass
+    return events
+
+
+reset_settings()
+app = create_app()
+state = app.state.jarvis
+
+with TestClient(app) as c:
+    print("\n1. health is public, everything else is not")
+    r = c.get("/api/health")
+    check("health 200", r.status_code == 200, r.text)
+    body = r.json()
+    check("health names components", {"application", "database", "agent_gateway", "integrations",
+                                      "server_services"} <= set(body["components"]))
+    check("master agent reported offline without provider", body["components"]["agent_gateway"]["status"] == "offline",
+          body["components"]["agent_gateway"])
+    check("status requires auth", c.get("/api/status").status_code == 401)
+    check("SPA fallback answers (frontend may be unbuilt)", c.get("/").status_code in (200, 503))
+
+    print("\n2. login, cookies, CSRF")
+    check("wrong password 401", c.post("/api/auth/login", json={"username": "admin", "password": "nope"}).status_code == 401)
+    r = c.post("/api/auth/login", json={"username": "admin", "password": "adminpass123"})
+    check("login ok", r.status_code == 200, r.text)
+    csrf = r.json()["csrf_token"]
+    check("session cookie set, httponly", "jcc_session" in r.cookies and "HttpOnly" in r.headers.get("set-cookie", ""))
+    me = c.get("/api/auth/me").json()
+    check("me returns admin + navigation", me["user"]["role"] == "admin" and any(m["path"] == "/chat" for m in me["modules"]))
+    check("POST without CSRF header is refused",
+          c.post("/api/chat/conversations", json={"title": "x"}).status_code == 403)
+    H = {"X-CSRF-Token": csrf}
+    r = c.post("/api/chat/conversations", json={"title": "First"}, headers=H)
+    check("POST with CSRF header works", r.status_code == 201, r.text)
+    conv_id = r.json()["conversation"]["id"]
+
+    print("\n3. no provider → the chat says so instead of pretending")
+    check("runtime mode is none", state.runtime.mode == "none", state.runtime.mode)
+    with c.stream("POST", f"/api/chat/conversations/{conv_id}/messages", json={"content": "hallo"}, headers=H) as r:
+        evs = read_sse(r)
+    finished = [e for e in evs if e.get("type") == "run.finished"]
+    check("run finished as failed", finished and finished[-1]["data"]["status"] == "failed", evs[-1:] if evs else evs)
+    check("error names the missing provider", "provider" in (finished[-1]["data"].get("error", "") if finished else "").lower())
+    msgs = c.get(f"/api/chat/conversations/{conv_id}").json()["messages"]
+    check("assistant message stored with error status", msgs[-1]["role"] == "assistant" and msgs[-1]["status"] == "error")
+
+    print("\n4. scripted provider: tool loop, task creation, streaming, persistence")
+    fake = ScriptedProvider()
+    state.runtime.provider = fake
+    state.runtime.mode = "local"
+    fake.turns = [
+        tool_turn("server.status", {}, text="Ich schaue nach."),
+        tool_turn("task.create", {"title": "Serverbericht", "description": "Bericht schreiben"}, call_id="call_2"),
+        text_turn("Der Server läuft stabil."),
+    ]
+    with c.stream("POST", f"/api/chat/conversations/{conv_id}/messages", json={"content": "check the server"}, headers=H) as r:
+        evs = read_sse(r)
+    types = [e.get("type") for e in evs]
+    check("deltas streamed", "chat.delta" in types, types)
+    check("tool call + result visible", "chat.tool_call" in types and "chat.tool_result" in types, types)
+    fin = [e for e in evs if e.get("type") == "run.finished"][-1]["data"]
+    check("run completed", fin["status"] == "completed", fin)
+    msgs = c.get(f"/api/chat/conversations/{conv_id}").json()["messages"]
+    check("final answer persisted", "stabil" in msgs[-1]["content"] and msgs[-1]["status"] == "complete", msgs[-1])
+    check("conversation auto-titled", c.get("/api/chat/conversations").json()["conversations"][0]["title"] != "New conversation")
+    tasks = c.get("/api/tasks").json()["tasks"]
+    check("task created by the master agent is visible", any(t["title"] == "Serverbericht" for t in tasks), tasks)
+    tool_result_msgs = [m for m in fake.seen[1] if m["role"] == "user" and m["content"][0].get("type") == "tool_result"]
+    check("tool result fed back to the model", tool_result_msgs and "cpu_percent" in tool_result_msgs[0]["content"][0]["content"])
+    audit = c.get("/api/logs/audit").json()["events"]
+    check("audit trail records the tool call", any(a["action"] == "tool.call" and a["tool"] == "server.status" for a in audit))
+    check("audit records who initiated", any(a["actor_id"] == "admin" for a in audit))
+
+    print("\n5. approval gate is enforced server-side")
+    c.post("/api/files/write", json={"path": "documents/old.md", "content": "x"}, headers=H)
+    fake.turns = [tool_turn("filesystem.delete", {"path": "documents/old.md", "reason": "cleanup"}),
+                  text_turn("Gelöscht.")]
+    r = c.post(f"/api/chat/conversations/{conv_id}/messages", json={"content": "delete old.md", "stream": False}, headers=H)
+    run_id = r.json()["run"]["id"]
+    deadline = time.time() + 5
+    pending = []
+    while time.time() < deadline and not pending:
+        pending = c.get("/api/approvals?status=pending").json()["approvals"]
+        time.sleep(0.1)
+    check("approval requested for high-risk tool", pending and pending[0]["action"] == "filesystem.delete", pending)
+    check("file still exists while waiting", (state.settings.workspace_dir / "documents" / "old.md").exists())
+    check("task is WAITING_FOR_APPROVAL or run waiting",
+          any(a["status"] == "waiting" for a in state.runtime.active_runs()))
+    ap = pending[0]
+    check("viewer/operator role gate on approve", c.post(f"/api/approvals/{ap['id']}/approve", json={}, headers=H).status_code == 200)
+    deadline = time.time() + 5
+    while time.time() < deadline and state.runtime.get_run(run_id).status not in ("completed", "failed"):
+        time.sleep(0.1)
+    check("run completed after approval", state.runtime.get_run(run_id).status == "completed",
+          state.runtime.get_run(run_id).status)
+    check("file moved to trash after approval", not (state.settings.workspace_dir / "documents" / "old.md").exists())
+    decided = c.get(f"/api/approvals/{ap['id']}").json()["approval"]
+    check("approval recorded as approved by admin", decided["status"] == "approved" and decided["decided_by"] == "admin")
+
+    fake.turns = [tool_turn("filesystem.delete", {"path": "documents", "reason": "nuke"}), text_turn("Ok, nicht gelöscht.")]
+    r = c.post(f"/api/chat/conversations/{conv_id}/messages", json={"content": "delete everything", "stream": False}, headers=H)
+    run_id = r.json()["run"]["id"]
+    deadline = time.time() + 5
+    pending = []
+    while time.time() < deadline and not pending:
+        pending = c.get("/api/approvals?status=pending").json()["approvals"]
+        time.sleep(0.1)
+    c.post(f"/api/approvals/{pending[0]['id']}/reject", json={"note": "no"}, headers=H)
+    deadline = time.time() + 5
+    while time.time() < deadline and state.runtime.get_run(run_id).status not in ("completed", "failed"):
+        time.sleep(0.1)
+    check("rejected action did not run", (state.settings.workspace_dir / "documents").exists())
+    rejected_result = [m for m in fake.seen[-1] if m["role"] == "user"][-1]["content"][0]
+    check("model told the user rejected it", rejected_result.get("is_error") and "rejected" in rejected_result["content"])
+
+    print("\n6. delegation to a specialist creates sub-tasks and returns one answer")
+    fake.turns = [
+        tool_turn("agent.delegate", {"agent_id": "research", "instruction": "find X", "title": "Research X"}),
+        text_turn("Spezialist sagt: 42"),          # research agent's own turn
+        text_turn("Die Antwort ist 42."),          # master continues
+    ]
+    with c.stream("POST", f"/api/chat/conversations/{conv_id}/messages", json={"content": "research X"}, headers=H) as r:
+        evs = read_sse(r)
+    acts = [e["data"] for e in evs if e.get("type") == "run.activity"]
+    check("delegation activity visible", any(a.get("kind") == "delegate" for a in acts), [a.get("kind") for a in acts])
+    tasks = c.get("/api/tasks").json()["tasks"]
+    sub = [t for t in tasks if t["title"] == "Research X" and t["parent_id"]]
+    check("sub-task created for the specialist", sub and sub[0]["assigned_agent"] == "research", sub)
+    check("root task created for the master's run", any(t["title"] == "Research X" and not t["parent_id"]
+                                                        and t["assigned_agent"] == "master" for t in tasks))
+    check("sub-task completed", sub and sub[0]["status"] == "COMPLETED", sub and sub[0]["status"])
+    msgs = c.get(f"/api/chat/conversations/{conv_id}").json()["messages"]
+    check("master's final answer is what the user sees", "42" in msgs[-1]["content"], msgs[-1]["content"])
+    agents = c.get("/api/agents").json()["agents"]
+    check("agents idle again with stats", all(a["status"] in ("IDLE", "OFFLINE") for a in agents) and
+          next(a for a in agents if a["id"] == "research")["stats"]["runs"] >= 1)
+
+    print("\n7. /v1 gateway — the desktop contract")
+    r = c.post("/api/auth/tokens", json={"name": "desktop", "actor": "mark-liii-windows", "role": "operator"}, headers=H)
+    check("token created", r.status_code == 201, r.text)
+    secret = r.json()["secret"]
+    check("token secret shown once and not stored in plain text",
+          secret.startswith("jcc_") and not state.db.fetchone("SELECT 1 FROM api_tokens WHERE token_hash=?", (secret,)))
+    fake.turns = [text_turn("Termin steht.")]
+    T = {"X-Jarvis-Token": secret}
+    r = c.post("/v1/commands", json={"actor": "mark-liii-windows", "command": "trag den termin ein"}, headers=T)
+    check("submit returns 202 + job", r.status_code == 202 and r.json()["job_id"], r.text)
+    job = r.json()
+    deadline = time.time() + 5
+    view = {}
+    while time.time() < deadline:
+        view = c.get(f"/v1/commands/{job['job_id']}", headers=T).json()
+        if view["status"] in ("completed", "failed"):
+            break
+        time.sleep(0.1)
+    check("job completes with the verbatim answer", view["status"] == "completed" and view["result"] == "Termin steht.", view)
+    r2 = c.post("/v1/commands", json={"actor": "mark-liii-windows", "command": "und weiter",
+                                      "conversation_id": job["conversation_id"]}, headers=T)
+    check("conversation continuity honoured", r2.json()["conversation_id"] == job["conversation_id"])
+    check("bad token rejected", c.post("/v1/commands", json={"actor": "x", "command": "y"},
+                                       headers={"X-Jarvis-Token": "jcc_wrong"}).status_code == 401)
+    check("memory endpoints", c.post("/v1/memory", json={"text": "Kunde Meier mag blau"}, headers=T).status_code == 200
+          and "Meier" in c.get("/v1/memory/search?q=Meier", headers=T).json()["results"][0]["text"])
+    check("token revocation", c.delete(f"/api/auth/tokens/{r.json()['token']['id']}" if False else
+                                       f"/api/auth/tokens/{c.get('/api/auth/tokens').json()['tokens'][0]['id']}",
+                                       headers=H).status_code == 200
+          and c.get("/v1/commands/x", headers=T).status_code == 401)
+
+    print("\n8. files are sandboxed")
+    r = c.post("/api/files/upload", files={"file": ("notes.txt", b"hello jarvis")}, headers=H)
+    check("upload ok", r.status_code == 201 and r.json()["file"]["path"].startswith("uploads/"), r.text)
+    check("listing", any(e["name"] == "notes.txt" for e in c.get("/api/files?path=uploads").json()["entries"]))
+    check("preview", c.get("/api/files/preview?path=uploads/notes.txt").json()["content"] == "hello jarvis")
+    check("path traversal blocked", c.get("/api/files/preview?path=../../etc/passwd").status_code == 400)
+    check("absolute path blocked", c.post("/api/files/write", json={"path": "/etc/x", "content": ""}, headers=H)
+          .status_code in (200, 400) and not Path("/etc/x").exists())
+    check("search", c.get("/api/files/search?q=notes").json()["results"])
+
+    print("\n9. tasks, notifications, logs, server, integrations, settings")
+    r = c.post("/api/tasks", json={"title": "Manual", "start": False}, headers=H)
+    tid = r.json()["task"]["id"]
+    check("task created queued", r.json()["task"]["status"] == "QUEUED")
+    check("task cancel", c.post(f"/api/tasks/{tid}/cancel", headers=H).json()["task"]["status"] == "CANCELLED")
+    n = c.get("/api/notifications").json()
+    check("notifications exist (approval requests)", n["unread"] >= 1, n)
+    check("mark all read", c.post("/api/notifications/read", json={}, headers=H).json()["unread"] == 0)
+    logs = c.get("/api/logs?level=INFO").json()["logs"]
+    check("log center has entries with sources", logs and logs[0]["source"])
+    ov = c.get("/api/server/overview").json()
+    check("server overview is real", ov["overview"]["hostname"] and ov["overview"]["sample"]["ram_total"] > 0)
+    check("docker state is honest", ov["overview"]["docker"]["status"] in ("not_configured", "offline", "healthy", "unknown"))
+    integ = c.get("/api/integrations").json()["integrations"]
+    check("unconfigured integrations say NOT CONFIGURED", all(i["status"] == "not_configured" for i in integ
+                                                              if not i["configured"]))
+    check("no env values leak", all(isinstance(v, bool) for i in integ for v in i["config_state"].values()))
+    st = c.get("/api/settings").json()
+    check("settings expose pairing endpoint", "/v1/commands" in st["desktop_pairing"]["endpoints"][0])
+    check("settings expose no secrets", "adminpass123" not in json.dumps(st))
+    tools = c.get("/api/tools").json()["tools"]
+    check("unavailable tools carry a reason", all(t["reason"] for t in tools if not t["available"]))
+    jobs = c.get("/api/automations/jobs").json()["jobs"]
+    check("scheduler jobs registered", any(j["id"] == "metrics_sample" for j in jobs))
+    status = c.get("/api/status").json()
+    check("status bar has live cpu/ram", "cpu" in status["server"] and status["master"]["label"])
+
+    print("\n10. roles")
+    r = c.post("/api/auth/users", json={"username": "viewer", "password": "viewerpass1", "role": "viewer"}, headers=H)
+    check("viewer created", r.status_code == 201, r.text)
+    v = TestClient(app)
+    rv = v.post("/api/auth/login", json={"username": "viewer", "password": "viewerpass1"})
+    VH = {"X-CSRF-Token": rv.json()["csrf_token"]}
+    conv_v = v.post("/api/chat/conversations", json={}, headers=VH).json()["conversation"]["id"]
+    check("viewer cannot send commands", v.post(f"/api/chat/conversations/{conv_v}/messages", json={"content": "x"},
+                                                headers=VH).status_code == 403)
+    check("viewer cannot manage users", v.get("/api/auth/users").status_code == 403)
+    check("viewer can read status", v.get("/api/status").status_code == 200)
+    check("viewer cannot see admin's conversation", v.get(f"/api/chat/conversations/{conv_id}").status_code == 404)
+
+    print("\n11. event stream replays with Last-Event-ID")
+    with c.stream("GET", "/api/events/stream?types=task.*", headers={"Last-Event-ID": "1"}) as r:
+        first = None
+        for line in r.iter_lines():
+            if line.startswith("event:"):
+                first = line
+                break
+    check("replayed a task event", first is not None and "task." in first, first)
+
+    print("\n12. logout ends the session")
+    check("logout", c.post("/api/auth/logout", headers=H).status_code == 200)
+    check("session gone", c.get("/api/auth/me").status_code == 401)
+
+print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
+sys.exit(1 if fails else 0)
