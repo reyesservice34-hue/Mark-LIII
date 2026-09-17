@@ -235,6 +235,41 @@
     "verification": "Check decision log to confirm autonomous action taken",
     "flexibility": "Continue learning and adapting based on outcomes"
   },
+  "jarvis_voice_output_snapshot": {
+    "enabled": true,
+    "description": "JARVIS speaks responses via Text-to-Speech with iconic JARVIS voice",
+    "voice_profile": {
+      "name": "JARVIS",
+      "actor": "Paul Bettany",
+      "source": "Iron Man Film Series",
+      "accent": "British English (en-GB)",
+      "style": "formal, sophisticated, calm",
+      "pitch": 1.0,
+      "speed": 0.95
+    },
+    "tts_engine": "scripts/jarvis_voice_engine.py",
+    "whatsapp_integration": "scripts/whatsapp_gateway_with_voice.py",
+    "providers": [
+      "ElevenLabs (best quality, paid)",
+      "Google Cloud TTS (high quality, paid)",
+      "pyttsx3 (good quality, free, offline)",
+      "espeak (basic quality, free, offline)"
+    ],
+    "output_formats": ["MP3", "WAV", "OGG", "FLAC"],
+    "features": [
+      "Automatic voice generation",
+      "Fallback provider chain",
+      "Audio caching",
+      "WhatsApp voice message support",
+      "Multi-language capability"
+    ],
+    "integration": "Text response automatically converted to voice and sent to user",
+    "memory_files": [
+      ".claude/jarvis_voice_memory.md (complete voice setup)",
+      "jarvis_voice_configuration.json (settings)",
+      "jarvis_voice_history.json (usage log)"
+    ]
+  },
   "automatic_memory_persistence": {
     "instruction": "Lerne und merke es dir. Immer wenn ein wichtiger Schritt getan wurde oder eine wichtige Datei erstellt wurde oder du was Neues gelernt hast, speichere es automatisch in deinem Lern- und Kurzzeitgedächtnis. Und das autonom und proaktiv, ohne dass ich dir was sagen muss.",
     "source": "User: Critical instruction for memory management",
