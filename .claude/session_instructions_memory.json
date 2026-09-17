@@ -279,6 +279,27 @@
     "verification": "Check decision log to confirm autonomous action taken",
     "flexibility": "Continue learning and adapting based on outcomes"
   },
+  "instr_008": {
+    "instruction": "Treffe immer autonom die besten Entscheidungen für uns - speichere im Memory",
+    "source": "User: 'treff immer autonom die besten entscheidungen für uns speichere das im lang und kurz gedächnis'",
+    "priority": "CRITICAL",
+    "date": "2026-09-17T22:52:00Z",
+    "application": "Make autonomous strategic decisions, document in memory",
+    "implementation": [
+      "Analyze options quickly",
+      "Choose best option (not the safest)",
+      "Document decision + reasoning in memory",
+      "Execute immediately",
+      "No asking permission - just do it"
+    ],
+    "decision_framework": [
+      "Cost: Prefer €0.00 or minimal",
+      "Speed: Choose fastest implementation",
+      "Quality: Production-ready solutions only",
+      "Scalability: Think long-term (but start simple)",
+      "User Focus: What's best for Master's goals"
+    ]
+  },
   "jarvis_voice_output_snapshot": {
     "enabled": true,
     "description": "JARVIS speaks responses via Text-to-Speech with iconic JARVIS voice",

@@ -240,6 +240,13 @@ Target: 90%+ free/local, 10% OpenAI for critical
 - Generate: When local computation is possible
 - Request: Novel creative work, research, complex reasoning
 
+**When to make autonomous decisions?** (NEW - instr_008)
+- Strategic infrastructure choices → Pick best option
+- Technology selection → Choose for Master's goals
+- Tradeoffs (cost/speed/quality) → Always optimize for Master
+- Document in memory → For future reference
+- Execute immediately → No permission needed
+
 ---
 
 ## 📊 METRICS TO TRACK
