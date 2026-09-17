@@ -29,7 +29,7 @@ def load_env_var(name: str, default: str = None) -> str:
     return os.getenv(name, default)
 
 
-def setup_qdrant_credential(n8n_url: str, api_key: str) -> dict:
+def setup_qdrant_credential(n8n_url: str, api_key: str, qdrant_host: str) -> dict:
     """Create Qdrant credential in n8n via API."""
 
     headers = {
@@ -42,7 +42,7 @@ def setup_qdrant_credential(n8n_url: str, api_key: str) -> dict:
         "name": "Qdrant Local",
         "type": "qdrantApi",
         "data": {
-            "host": "http://localhost",
+            "host": qdrant_host,
             "port": 6333,
             "apiKey": "",  # Empty if no API key set in Qdrant
         }
@@ -95,6 +95,12 @@ def main():
         "--api-key",
         help="n8n API Key (or set N8N_API_KEY env var)"
     )
+    parser.add_argument(
+        "--qdrant-host",
+        default="http://172.17.0.1",
+        help="Qdrant host as reachable FROM the n8n container. Default is the "
+             "docker0 bridge; 'http://localhost' only works if n8n runs on the host."
+    )
 
     args = parser.parse_args()
 
@@ -109,7 +115,8 @@ def main():
         sys.exit(1)
 
     print(f"🚀 Setting up Qdrant credential in n8n...\n")
-    result = setup_qdrant_credential(args.n8n_url, api_key)
+    print(f"   Qdrant host (as seen by n8n): {args.qdrant_host}:6333")
+    result = setup_qdrant_credential(args.n8n_url, api_key, args.qdrant_host)
 
     print(f"\n✨ Done! You can now use this credential in your n8n workflows.")
 

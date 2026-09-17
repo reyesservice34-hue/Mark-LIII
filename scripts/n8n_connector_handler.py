@@ -148,11 +148,13 @@ class N8nConnectorHandler:
                     return cred
 
             # Create new Qdrant credential
+            # Host must be reachable from inside the n8n container, so the
+            # docker0 bridge rather than the container's own localhost.
             credential_data = {
                 "name": "Qdrant Local",
                 "type": "qdrantApi",
                 "data": {
-                    "host": "http://localhost",
+                    "host": "http://172.17.0.1",
                     "port": 6333,
                     "apiKey": "",
                 }
