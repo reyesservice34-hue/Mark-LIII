@@ -45,15 +45,15 @@ class WhatsAppGatewayWithVoice:
     def _load_message_history(self):
         """Load message history."""
         if self.message_history_file.exists():
-            with open(self.message_history_file) as f:
+            with open(self.message_history_file, encoding='utf-8') as f:
                 self.history = json.load(f)
         else:
             self.history = {"messages": [], "conversations": {}}
 
     def _save_message_history(self):
         """Save message history."""
-        with open(self.message_history_file, "w") as f:
-            json.dump(self.history, f, indent=2)
+        with open(self.message_history_file, "w", encoding='utf-8') as f:
+            json.dump(self.history, f, indent=2, ensure_ascii=False)
 
     def send_text_message(self, to_number: str, message: str) -> bool:
         """Send text message via Twilio."""

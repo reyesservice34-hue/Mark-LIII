@@ -28,7 +28,7 @@ def load_master_prompt():
     """Load JARVIS Master Prompt from .claude/jarvis_master_system.md"""
     master_prompt_path = Path(".claude/jarvis_master_system.md")
     if master_prompt_path.exists():
-        with open(master_prompt_path, 'r') as f:
+        with open(master_prompt_path, 'r', encoding='utf-8') as f:
             return f.read()
     return None
 
