@@ -1,0 +1,60 @@
+{
+  "connected": false,
+  "mode": "mock",
+  "workflows": [
+    {
+      "id": "wf_001",
+      "name": "Customer Onboarding",
+      "active": true,
+      "nodes": 8
+    },
+    {
+      "id": "wf_002",
+      "name": "Invoice Processing",
+      "active": false,
+      "nodes": 5
+    },
+    {
+      "id": "wf_003",
+      "name": "Semantic Search Pipeline",
+      "active": false,
+      "nodes": 6
+    },
+    {
+      "id": "wf_004",
+      "name": "Document Classification",
+      "active": false,
+      "nodes": 7
+    },
+    {
+      "id": "wf_005",
+      "name": "Support Ticket Router",
+      "active": true,
+      "nodes": 4
+    }
+  ],
+  "nodes_total": 120,
+  "credentials_total": 8,
+  "qdrant_workflows": [
+    {
+      "id": "wf_003",
+      "name": "Semantic Search Pipeline",
+      "active": false,
+      "nodes": 6
+    },
+    {
+      "id": "wf_004",
+      "name": "Document Classification",
+      "active": false,
+      "nodes": 7
+    }
+  ],
+  "inactive_count": 3,
+  "recommendations": [
+    "\ud83d\udd34 3 inactive workflows found - evaluate for activation",
+    "\u2705 2 workflows suitable for Qdrant integration identified",
+    "\u2192 Recommended action: Configure Qdrant credential and activate these workflows",
+    "\u2705 Rich node library available - wide integration possibilities",
+    "\ud83d\ude80 Semantic search workflows ready for OpenAI embeddings + Qdrant integration"
+  ]
+}
