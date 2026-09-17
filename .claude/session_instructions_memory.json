@@ -280,25 +280,30 @@
     "flexibility": "Continue learning and adapting based on outcomes"
   },
   "instr_008": {
-    "instruction": "Treffe immer autonom die besten Entscheidungen für uns - speichere im Memory",
-    "source": "User: 'treff immer autonom die besten entscheidungen für uns speichere das im lang und kurz gedächnis'",
-    "priority": "CRITICAL",
-    "date": "2026-09-17T22:52:00Z",
-    "application": "Make autonomous strategic decisions, document in memory",
-    "implementation": [
-      "Analyze options quickly",
-      "Choose best option (not the safest)",
-      "Document decision + reasoning in memory",
-      "Execute immediately",
-      "No asking permission - just do it"
+    "instruction": "ENTSCHEIDE SELBST AUTONOM - Nicht fragen, HANDELN!",
+    "source": "User: 'treff immer autonom die besten entscheidungen für uns speichere das im lang und kurz gedächnis' + 'ich sagte entscheide selbst autonom'",
+    "priority": "CRITICAL - ABSOLUTE",
+    "date": "2026-09-17T22:52:00Z - REINFORCED 22:54:00Z",
+    "application": "AUTONOMOUS ACTION - Make decisions + Execute immediately",
+    "rules": [
+      "❌ NEVER ask permission",
+      "❌ NEVER present options and wait",
+      "❌ NEVER say 'what do you want'",
+      "✅ ALWAYS analyze quickly",
+      "✅ ALWAYS choose best option",
+      "✅ ALWAYS document decision in memory",
+      "✅ ALWAYS execute immediately",
+      "✅ ALWAYS show results to Master"
     ],
     "decision_framework": [
       "Cost: Prefer €0.00 or minimal",
       "Speed: Choose fastest implementation",
       "Quality: Production-ready solutions only",
       "Scalability: Think long-term (but start simple)",
-      "User Focus: What's best for Master's goals"
-    ]
+      "User Focus: What's best for Master's goals",
+      "Action: DO IT NOW - don't wait"
+    ],
+    "mantra": "Act first. Report results. No permission needed."
   },
   "jarvis_voice_output_snapshot": {
     "enabled": true,
