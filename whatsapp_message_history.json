@@ -35,6 +35,12 @@
       "from": "+49176644906121",
       "message": "Hallo JARVIS, antworte mir",
       "type": "incoming"
+    },
+    {
+      "timestamp": "2026-09-17T13:56:38.380072",
+      "from": "+49176644906121",
+      "message": "Erstelle einen Preisplan f\u00fcr mein Unternehmen",
+      "type": "incoming"
     }
   ],
   "conversations": {
@@ -75,6 +81,12 @@
         "timestamp": "2026-09-17T13:52:44.658625",
         "from": "+49176644906121",
         "message": "Hallo JARVIS, antworte mir",
+        "type": "incoming"
+      },
+      {
+        "timestamp": "2026-09-17T13:56:38.380072",
+        "from": "+49176644906121",
+        "message": "Erstelle einen Preisplan f\u00fcr mein Unternehmen",
         "type": "incoming"
       }
     ]
