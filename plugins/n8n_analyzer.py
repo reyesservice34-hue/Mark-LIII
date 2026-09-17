@@ -5,6 +5,7 @@ Analyzes n8n workflows, identifies Qdrant-related integrations,
 and generates configuration recommendations without external API calls.
 """
 
+import os
 import requests
 import json
 from pathlib import Path
@@ -34,49 +35,75 @@ PLUGIN = {
 }
 
 
+def _load_api_key() -> str:
+    """Read N8N_API_KEY from the environment or a local .env file."""
+    key = os.getenv("N8N_API_KEY")
+    if key:
+        return key
+
+    for candidate in (Path.cwd() / ".env", Path(__file__).resolve().parent.parent / ".env"):
+        try:
+            for line in candidate.read_text().splitlines():
+                name, sep, value = line.partition("=")
+                if sep and name.strip() == "N8N_API_KEY":
+                    return value.strip().strip("'\"")
+        except OSError:
+            continue
+    return ""
+
+
 class N8nAnalyzer:
-    def __init__(self, base_url: str = "http://localhost:3000"):
+    TIMEOUT = 10
+
+    def __init__(self, base_url: str = "http://localhost:3000", api_key: str = ""):
         self.base_url = base_url.rstrip("/")
+        self.api_key = api_key or _load_api_key()
+        self.last_error = ""
         self.session = requests.Session()
-        self.session.timeout = 10
+        if self.api_key:
+            self.session.headers["X-N8N-API-KEY"] = self.api_key
+
+    def _get(self, path: str):
+        return self.session.get(f"{self.base_url}{path}", timeout=self.TIMEOUT)
 
     def test_connection(self) -> bool:
-        """Test connection to n8n"""
-        try:
-            response = self.session.get(f"{self.base_url}/api/v1/health")
-            return response.status_code == 200
-        except Exception:
-            return False
+        """Test connection to n8n. /healthz needs no auth, /rest/settings is the fallback."""
+        for path in ("/healthz", "/rest/settings"):
+            try:
+                if self._get(path).status_code == 200:
+                    return True
+            except requests.RequestException as e:
+                self.last_error = str(e)
+        return False
 
     def get_workflows(self) -> List[Dict]:
         """Get all workflows"""
         try:
-            response = self.session.get(f"{self.base_url}/api/v1/workflows")
+            response = self._get("/api/v1/workflows")
             if response.status_code == 200:
-                data = response.json()
-                return data.get("data", [])
-        except Exception:
-            pass
+                return response.json().get("data", [])
+            self.last_error = f"workflows: HTTP {response.status_code}"
+        except requests.RequestException as e:
+            self.last_error = str(e)
         return []
 
     def get_nodes(self) -> List[Dict]:
         """Get available node types"""
         try:
-            response = self.session.get(f"{self.base_url}/api/v1/node-types")
+            response = self._get("/types/nodes.json")
             if response.status_code == 200:
                 return response.json()
-        except Exception:
+        except (requests.RequestException, ValueError):
             pass
         return []
 
     def get_credentials(self) -> List[Dict]:
         """Get all credentials"""
         try:
-            response = self.session.get(f"{self.base_url}/api/v1/credentials")
+            response = self._get("/api/v1/credentials")
             if response.status_code == 200:
-                data = response.json()
-                return data.get("data", [])
-        except Exception:
+                return response.json().get("data", [])
+        except requests.RequestException:
             pass
         return []
 
@@ -94,6 +121,8 @@ class N8nAnalyzer:
 
         if not result["connected"]:
             result["error"] = f"Cannot connect to {self.base_url}"
+            if self.last_error:
+                result["error"] += f" ({self.last_error})"
             return result
 
         # Get data
@@ -207,7 +236,6 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
             return output
 
         elif action == "status":
-            analyzer.test_connection()
             if analyzer.test_connection():
                 workflows = len(analyzer.get_workflows())
                 nodes = len(analyzer.get_nodes())
@@ -226,3 +254,14 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
             except Exception:
                 pass
         return error_msg
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Autonomous n8n infrastructure analyzer")
+    parser.add_argument("--action", default="analyze", choices=["analyze", "status"])
+    parser.add_argument("--n8n-url", default="http://localhost:3000")
+    args = parser.parse_args()
+
+    print(run({"action": args.action, "n8n_url": args.n8n_url}))
