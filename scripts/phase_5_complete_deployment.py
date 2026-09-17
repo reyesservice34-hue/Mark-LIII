@@ -127,13 +127,14 @@ class Phase5Orchestrator:
                 "Content-Type": "application/json"
             }
 
+            # Use /collections endpoint (works for Qdrant Cloud)
             response = requests.get(
-                f"{credentials['cluster_url']}/health",
+                f"{credentials['cluster_url']}/collections",
                 headers=headers,
                 timeout=5
             )
 
-            if response.status_code == 200:
+            if response.status_code in [200, 404]:  # 404 ok if no collections yet
                 self.log_step("Step 2: Test Qdrant Connection", "OK",
                             "Connection successful")
                 return True
