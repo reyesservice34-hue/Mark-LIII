@@ -36,5 +36,6 @@ registerModule({ id: "notifications", component: lazy(() => import("@/modules/no
 registerModule({ id: "approvals", component: lazy(() => import("@/modules/approvals/ApprovalsPage")), routes: [":approvalId"] });
 registerModule({ id: "analytics", component: lazy(() => import("@/modules/analytics/AnalyticsPage")) });
 registerModule({ id: "extensions", component: lazy(() => import("@/modules/extensions/ExtensionsPage")) });
+registerModule({ id: "calendar", component: lazy(() => import("@/modules/calendar/CalendarPage")) });
 registerModule({ id: "memory", component: lazy(() => import("@/modules/memory/MemoryPage")) });
 registerModule({ id: "settings", component: lazy(() => import("@/modules/settings/SettingsPage")) });

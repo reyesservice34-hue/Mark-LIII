@@ -11,6 +11,7 @@ import { TaskTimeline } from "@/modules/tasks/TaskTimeline";
 import { ActivityFeed } from "./ActivityFeed";
 import { VoiceConsole } from "./VoiceConsole";
 import { ArchitectureView } from "./ArchitectureView";
+import { CoreDeck } from "./CoreDeck";
 
 export default function HomePage() {
   const nav = useNavigate();
@@ -41,6 +42,10 @@ export default function HomePage() {
       <VoiceConsole />
 
       <ArchitectureView />
+
+      <div className="grid cols-2" style={{ marginTop: 14 }}>
+        <CoreDeck />
+      </div>
 
       <div className="grid cols-4">
         <Panel title="JARVIS-Kern" icon={<Sparkles size={15} />}>

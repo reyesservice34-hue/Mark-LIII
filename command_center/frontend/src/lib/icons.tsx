@@ -27,7 +27,7 @@ export function Icon({ name, size = 16, ...rest }: { name?: string; size?: numbe
 
 export {
   Activity, AlertTriangle, BarChart3, Bell, Bot, Box, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Code, Command, Cpu, FileText, Folder, HardDrive, Home, ListChecks, Mic, Plug, RefreshCw, ScrollText, Search, Send,
+  Calendar, Code, Command, Cpu, FileText, Folder, HardDrive, Home, ListChecks, Mic, Plug, RefreshCw, ScrollText, Search, Send,
   Server, Settings, ShieldCheck, Sparkles, Square, Timer, Trash2, Upload, Workflow, X, Zap, Play, Pause, Download,
   Copy, RotateCcw, Paperclip, Filter, LogOut, Terminal, Network, Layers, Eye, CircleAlert, Wifi, WifiOff, Plus,
   FolderPlus, Pencil, MoveRight, KeyRound, UserRound, Circle, MessageSquare, Radio, Monitor,

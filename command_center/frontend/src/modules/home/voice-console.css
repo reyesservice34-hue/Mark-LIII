@@ -1,5 +1,11 @@
 /*
- * Die Sprachkonsole. Der Kern reagiert auf den Zustand, statt immer gleich zu
+ * Die Sprachkonsole.
+ *
+ * Der Kern ist orange — das ist die Farbe des Denkens in diesem Haus. Blau
+ * bleibt dem Gerät und seinen Zuständen, Grün der Bestätigung, Rot dem
+ * Fehler. Ein Kern in derselben Farbe wie alles andere verschwindet zwischen
+ * den Kacheln; dieser soll das Erste sein, was man sieht.
+ * Der Kern reagiert auf den Zustand, statt immer gleich zu
  * leuchten: ruhig im Leerlauf, atmend beim Zuhören, schnell beim Denken,
  * pulsierend beim Sprechen. Ohne diese Rückmeldung weiß niemand, ob er
  * gerade reden soll oder warten muss.
@@ -9,6 +15,9 @@
  */
 
 .voice-console {
+  --core: #ff9d2e;
+  --core-hot: #ffd9a0;
+  --core-deep: #d9631a;
   position: relative;
   display: grid;
   grid-template-columns: auto 1fr;
@@ -19,7 +28,7 @@
   border: 1px solid var(--line-2);
   border-radius: 18px;
   background:
-    radial-gradient(760px 340px at 14% 50%, rgba(90, 200, 255, 0.10), transparent 62%),
+    radial-gradient(760px 340px at 14% 50%, rgba(255, 157, 46, 0.11), transparent 62%),
     linear-gradient(180deg, var(--bg-2), var(--bg-0));
   overflow: hidden;
 }
@@ -44,7 +53,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(100deg, transparent 30%, rgba(90, 200, 255, 0.05) 50%, transparent 70%);
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 157, 46, 0.055) 50%, transparent 70%);
   transform: translateX(-100%);
   animation: vc-sweep 9s ease-in-out infinite;
   pointer-events: none;
@@ -65,9 +74,13 @@
 .vc-ring {
   position: absolute;
   border-radius: 50%;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--core);
   opacity: 0.35;
 }
+
+/* Eine einzelne kalte Linie gegen das Orange: Ohne sie wirkt der Kern wie
+   eine Warnung, mit ihr wie ein Instrument. */
+.vc-ring.r2 { border-color: rgba(90, 200, 255, 0.55); }
 
 .vc-ring.r1 { inset: 0; border-style: dashed; animation: vc-spin 22s linear infinite; }
 .vc-ring.r2 { inset: 30px; opacity: 0.5; animation: vc-spin 14s linear infinite reverse; }
@@ -77,16 +90,16 @@
   width: 54px;
   height: 54px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #d6f2ff, var(--accent) 45%, var(--accent-2));
-  box-shadow: 0 0 60px rgba(90, 200, 255, 0.55), 0 0 140px rgba(90, 200, 255, 0.22);
+  background: radial-gradient(circle at 35% 35%, var(--core-hot), var(--core) 45%, var(--core-deep));
+  box-shadow: 0 0 60px rgba(255, 157, 46, 0.55), 0 0 140px rgba(255, 157, 46, 0.22);
   transition: box-shadow 0.4s ease, background 0.4s ease;
 }
 
 @keyframes vc-spin { to { transform: rotate(360deg); } }
 @keyframes vc-breathe { 0%, 100% { transform: scale(1); opacity: 0.7; } 50% { transform: scale(1.06); opacity: 0.35; } }
 @keyframes vc-pulse {
-  0%, 100% { box-shadow: 0 0 50px rgba(90, 200, 255, 0.45), 0 0 120px rgba(90, 200, 255, 0.18); }
-  50% { box-shadow: 0 0 95px rgba(90, 200, 255, 0.95), 0 0 220px rgba(90, 200, 255, 0.42); }
+  0%, 100% { box-shadow: 0 0 50px rgba(255, 157, 46, 0.45), 0 0 120px rgba(255, 157, 46, 0.18); }
+  50% { box-shadow: 0 0 95px rgba(255, 157, 46, 0.95), 0 0 220px rgba(255, 157, 46, 0.42); }
 }
 
 /* Zuhören: der Kern öffnet sich, die Ringe werden schneller. */
@@ -100,8 +113,8 @@
 .voice-console.phase-connecting, .voice-console.phase-thinking .vc-ring.r2 { animation-duration: 2.2s; opacity: 0.8; }
 .voice-console.phase-connecting, .voice-console.phase-thinking .vc-ring.r3 { animation-duration: 0.9s; opacity: 0.9; }
 .voice-console.phase-connecting, .voice-console.phase-thinking .vc-nucleus {
-  background: radial-gradient(circle at 35% 35%, #fff0d6, var(--warn) 50%, #d98b23);
-  box-shadow: 0 0 60px rgba(255, 180, 84, 0.5), 0 0 140px rgba(255, 180, 84, 0.2);
+  background: radial-gradient(circle at 35% 35%, #ffffff, #ffd9a0 40%, var(--core) 75%);
+  box-shadow: 0 0 80px rgba(255, 217, 160, 0.75), 0 0 180px rgba(255, 157, 46, 0.35);
 }
 
 /* Sprechen: ruhiger, aber hell — die Stimme trägt jetzt. */
@@ -109,7 +122,8 @@
 .voice-console.phase-speaking .vc-ring.r3 { animation-duration: 2.2s; }
 .voice-console.phase-speaking .vc-nucleus {
   animation: vc-pulse 2.2s ease-in-out infinite;
-  background: radial-gradient(circle at 35% 35%, #e6fff4, var(--ok) 50%, #1f9c6a);
+  background: radial-gradient(circle at 35% 35%, var(--core-hot), var(--core) 40%, var(--core-deep));
+  box-shadow: 0 0 90px rgba(255, 157, 46, 0.8), 0 0 200px rgba(90, 200, 255, 0.28);
 }
 
 /* ── Text ──────────────────────────────────────────────────────────────── */

@@ -333,5 +333,46 @@ with TestClient(app) as c:
     check("und wirklich weg", c.get(f"/api/tasks/{tid}").status_code == 404)
     check("noch einmal löschen gibt 404", c.delete(f"/api/tasks/{tid}", headers=H).status_code == 404)
 
+    print("\n11. Kalender: anlegen, sehen, verschieben, absagen")
+    r = c.get("/api/calendar?days=30")
+    check("Kalender antwortet", r.status_code == 200, r.text)
+    cal = r.json()
+    check("ohne Google läuft er lokal weiter", cal["available"] and cal["backend"] == "local", cal)
+    vorher = len(cal["events"])
+
+    # Ein Datum in Reichweite: Die Liste reicht höchstens 90 Tage weit, und ein
+    # Test, der an dieser Grenze scheitert, prüft den Kalender nicht mehr.
+    from datetime import date, timedelta
+    tag = (date.today() + timedelta(days=10)).isoformat()
+    spaeter = (date.today() + timedelta(days=13)).isoformat()
+
+    r = c.post("/api/calendar", headers=H, json={
+        "title": "Abnahme Bhimber", "when": tag, "at": "10:00", "duration": 90,
+        "location": "Baustelle 3"})
+    check("Termin angelegt", r.status_code == 201, r.text)
+    check("und ehrlich gesagt, wo er liegt", "lokal" in r.json()["note"].lower()
+          or r.json()["backend"] == "local", r.json())
+
+    events = c.get("/api/calendar?days=90").json()["events"]
+    mine = [e for e in events if e["title"] == "Abnahme Bhimber"]
+    check("er steht im Kalender", len(mine) == 1, len(mine))
+    check("mit Uhrzeit und Ort", mine and mine[0]["start"].endswith("T10:00:00")
+          and mine[0]["location"] == "Baustelle 3", mine[:1])
+
+    r = c.post("/api/calendar/move", headers=H,
+               json={"query": "Abnahme Bhimber", "when": spaeter, "at": "08:30"})
+    check("verschieben geht", r.status_code == 200, r.text)
+    moved = [e for e in c.get("/api/calendar?days=90").json()["events"] if e["title"] == "Abnahme Bhimber"]
+    check("und der Termin liegt wirklich neu",
+          moved and moved[0]["start"].startswith(f"{spaeter}T08:30"), moved[:1])
+
+    r = c.delete("/api/calendar?query=Abnahme%20Bhimber", headers=H)
+    check("absagen geht", r.status_code == 200, r.text)
+    check("und er ist weg",
+          len(c.get("/api/calendar?days=90").json()["events"]) == vorher)
+
+    r = c.post("/api/calendar", headers=H, json={"title": "Ohne Uhrzeit", "when": tag})
+    check("ohne Uhrzeit wird nicht geraten, sondern nachgefragt", r.status_code == 400, r.text)
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

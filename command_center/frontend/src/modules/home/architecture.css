@@ -74,3 +74,34 @@
   .core-chip-detail { display: none; }
   .core-strip-more { margin-left: 0; }
 }
+
+/* ── Denkapparat und Schnellbefehle ──────────────────────────────────────
+   Zwei Raster, die sich gleich verhalten: kleine Zellen, klare Zustände,
+   keine Überschriften, die nichts sagen. */
+.deck-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px; padding: 14px; }
+.deck-cell { display: grid; grid-template-columns: 8px 1fr; grid-template-rows: auto auto;
+  column-gap: 9px; row-gap: 2px; align-items: center; padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--line-2); background: var(--bg-3); }
+.deck-cell .dot { grid-row: 1 / 3; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-4); }
+.deck-cell.ok .dot { background: var(--ok, #46c88c); }
+.deck-cell.live .dot { background: #ff9d2e; box-shadow: 0 0 10px rgba(255,157,46,.8);
+  animation: deck-beat 2s ease-in-out infinite; }
+.deck-cell.off { opacity: .55; }
+.deck-cell.live { border-color: rgba(255,157,46,.45); background: rgba(255,157,46,.06); }
+.deck-name { font-size: 12.5px; font-weight: 500; }
+.deck-state { font-size: 11px; color: var(--text-3); }
+@keyframes deck-beat { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+.quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px; padding: 14px; }
+.quick { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-radius: 10px;
+  border: 1px solid var(--line-2); background: var(--bg-3); color: var(--text-2);
+  font: inherit; font-size: 13px; cursor: pointer; text-align: left;
+  transition: border-color .15s ease, color .15s ease, transform .1s ease; }
+.quick:hover { border-color: #ff9d2e; color: var(--text); }
+.quick:active { transform: translateY(1px); }
+.quick svg { color: #ff9d2e; flex: none; }
+
+@media (prefers-reduced-motion: reduce) { .deck-cell.live .dot { animation: none; } }
