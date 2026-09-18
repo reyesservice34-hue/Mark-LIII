@@ -156,6 +156,28 @@ case "${CHOICE// /}" in
   *) warn "Nicht verstanden — bleibt, wie es war." ;;
 esac
 
+# ── Browser auf dem Server ───────────────────────────────────────────────
+# Chromium kostet mehrere hundert MB im Image und muss beim Einschalten mit
+# gebaut werden — ein bloßer Neustart holt ihn nicht. Deshalb wird hier
+# gefragt und unten gemerkt, ob neu gebaut werden muss.
+BROWSER_NOW="$(current JARVIS_CC_BROWSER)"
+bold "  Soll er selbst einen Browser fahren können?"
+info "Für Seiten, die sich erst per JavaScript aufbauen, und für Formulare."
+info "Kostet etwa 400 MB im Image und einige Minuten beim Bauen."
+info "j = ja   n = nein   Enter = so lassen (aktuell: ${BROWSER_NOW:-false})"
+printf '     > '
+IFS= read -r BCHOICE || BCHOICE=""
+case "$(printf '%s' "${BCHOICE// /}" | tr '[:upper:]' '[:lower:]')" in
+  j|ja|y|yes) set_value JARVIS_CC_BROWSER true;  BROWSER_WANT=true ;;
+  n|nein|no)  set_value JARVIS_CC_BROWSER false; BROWSER_WANT=false ;;
+  "")         BROWSER_WANT="${BROWSER_NOW:-false}" ;;
+  *) warn "Nicht verstanden — bleibt, wie es war."; BROWSER_WANT="${BROWSER_NOW:-false}" ;;
+esac
+if [ "$BROWSER_WANT" != "${BROWSER_NOW:-false}" ]; then
+  REBUILD=1
+  info "Das Image wird deshalb neu gebaut."
+fi
+
 # ── Nachbar-Container erreichbar machen ──────────────────────────────────
 # Zeigt N8N_BASE_URL auf einen Containernamen, müssen beide Container im
 # selben Docker-Netz sein, sonst löst der Name nicht auf. Das gehört in die
@@ -209,7 +231,12 @@ elif command -v docker-compose >/dev/null 2>&1; then
 else
   fail "docker compose fehlt — die .env ist geschrieben, starte selbst neu."
 fi
-if ! $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d --force-recreate; then
+# Ein neuer Schlüssel braucht nur einen Neustart. Ein neuer Browser im Image
+# braucht einen Neubau — sonst ist die Variable gesetzt und Chromium fehlt.
+BUILD_FLAG=""
+[ "${REBUILD:-0}" = "1" ] && BUILD_FLAG="--build"
+export JARVIS_CC_BROWSER="${BROWSER_WANT:-false}"
+if ! $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d --force-recreate $BUILD_FLAG; then
   warn "Der Neustart ist fehlgeschlagen — die Schlüssel stehen aber schon in $ENV_FILE."
   warn "Von Hand:  $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d --force-recreate"
   exit 1

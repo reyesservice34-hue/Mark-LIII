@@ -81,6 +81,12 @@ info "Baue das Image (beim ersten Mal dauert das ein paar Minuten) …"
 # Damit ist von außen zu sehen, welcher Stand wirklich läuft — und nicht nur,
 # welcher im Ordner liegt.
 export JARVIS_CC_BUILD="$(git rev-parse --short=10 HEAD 2>/dev/null || echo unbekannt)"
+# Ob der Browser im Image sein soll, steht in der .env — beim Bauen wird das
+# aber aus der Shell gelesen, nicht aus der Datei. Ohne diese Zeile würde ein
+# späteres install.sh Chromium stillschweigend wieder entfernen.
+JARVIS_CC_BROWSER="$(sed -n 's/^JARVIS_CC_BROWSER=\([^#]*\).*/\1/p' "$ENV_FILE" | tr -d '[:space:]' | head -1)"
+export JARVIS_CC_BROWSER="${JARVIS_CC_BROWSER:-false}"
+[ "$JARVIS_CC_BROWSER" = "true" ] && info "Mit Browser im Image — das dauert länger."
 $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d --build
 
 # ── 5. Warten, bis er antwortet ──────────────────────────────────────────
