@@ -5,21 +5,35 @@
 # never be.
 
 # ── Secrets. Committing any of these publishes them. ──────────────────────────
-config/api_keys.json          # your Gemini API key, plus per-plugin credentials
-config/certs/                 # the dashboard's TLS private key and certificate
-config/whatsapp_web/          # a LINKED WhatsApp session — committing it hands
-                              # somebody your WhatsApp account, not just a key
-**/token*.json                # Google OAuth tokens (Gmail / Calendar plugins)
-**/client_secret*.json        # Google OAuth client secrets
+# Every comment here is on its own line, and that is not a matter of taste:
+# in .gitignore a '#' only starts a comment at the start of a line. A trailing
+# comment becomes part of the pattern, so the rule then matches a filename
+# nobody has and ignores nothing at all. Nine rules in this file were broken
+# that way — including the one for the API keys, the TLS private key and a
+# linked WhatsApp session.
+# your Gemini API key, plus per-plugin credentials
+config/api_keys.json
+# the dashboard's TLS private key and certificate
+config/certs/
+# a LINKED WhatsApp session — committing it hands somebody your WhatsApp
+# account, not just a key
+config/whatsapp_web/
+# Google OAuth tokens (Gmail / Calendar plugins)
+**/token*.json
+# Google OAuth client secrets
+**/client_secret*.json
 *credentials*.json
 .env
 .env.*
 
 # ── Personal data the assistant accumulates about you ─────────────────────────
 memory/long_term.json
-memory/calendar/             # your appointments, and the .ics files written for them
-memory/voice_notes/          # audio JARVIS generated to send you
-memory/conversation_state.json  # which server-side conversation this desktop is continuing
+# your appointments, and the .ics files written for them
+memory/calendar/
+# audio JARVIS generated to send you
+memory/voice_notes/
+# which server-side conversation this desktop is continuing
+memory/conversation_state.json
 memory/*.db
 
 # ── Python build noise ────────────────────────────────────────────────────────

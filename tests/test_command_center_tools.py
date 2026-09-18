@@ -738,5 +738,40 @@ check("an earlier tool call in the history is renamed too",
       converted[0]["content"][0]["name"] == "calendar_read", converted)
 name_state.db.close()
 
+print("\n16. every .gitignore rule must actually ignore something")
+# In .gitignore a '#' only starts a comment at the START of a line. A trailing
+# comment becomes part of the pattern, so the rule matches a filename nobody
+# has. Nine rules in this repository were broken that way, among them the ones
+# for the API keys, the TLS private key and a linked WhatsApp session. The rule
+# looked right in the file and protected nothing.
+gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+trailing = [ln for ln in gitignore.splitlines()
+            if ln.strip() and not ln.lstrip().startswith("#") and "#" in ln]
+check("no rule carries a trailing comment", not trailing, trailing[:3])
+
+# And check the ones that matter by asking git itself, not by reading the file.
+must_be_ignored = [
+    "config/api_keys.json", "config/certs/key.pem", "config/whatsapp_web/session.json",
+    "memory/calendar/termin.ics", "memory/voice_notes/a.mp3", "memory/conversation_state.json",
+    "memory/long_term.json", "token_gmail.json", "client_secret_abc.json",
+    "command_center/.env",
+]
+res = subprocess.run(["git", "check-ignore", "--stdin"], cwd=ROOT,
+                     input="\n".join(must_be_ignored), capture_output=True, text=True)
+ignored = set(res.stdout.split())
+leaking = [f for f in must_be_ignored if f not in ignored]
+check("every secret path is really ignored by git", not leaking, leaking)
+
+# The documented example must stay visible, or nobody knows what to configure.
+res = subprocess.run(["git", "check-ignore", "-q", "command_center/.env.example"], cwd=ROOT)
+check("but the documented .env.example is not", res.returncode != 0)
+
+# And nothing of the sort is already committed.
+tracked_secrets = [f for f in subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True,
+                                             text=True).stdout.splitlines()
+                   if any(x in f for x in ("api_keys.json", "config/certs/", "whatsapp_web/",
+                                           "client_secret", "conversation_state"))]
+check("and no secret is already in the repository", not tracked_secrets, tracked_secrets[:3])
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)
