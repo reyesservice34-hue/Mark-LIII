@@ -455,6 +455,25 @@ with TestClient(app) as c:
     for name in may_pass:
         check(f"{name} liest nur und fragt nicht", gate.get(name) is False, gate.get(name))
 
+    # Eine geschriebene Änderung ist noch keine wirksame. Die zwei Werkzeuge,
+    # die das ändern, müssen fragen — und ehrlich sagen, wenn dieses Image sie
+    # gar nicht ausführen kann.
+    for name in ("self.rebuild", "self.restart"):
+        check(f"{name} fragt", gate.get(name) is True, gate.get(name))
+    check("self.can_rebuild liest nur und fragt nicht", gate.get("self.can_rebuild") is False)
+    can, why = sx.can_rebuild()
+    check("und sagt beim Namen, was fehlt, wenn es nicht geht", can or bool(why), (can, why))
+
+    # Sich außerhalb eines Containers selbst zu beenden wäre ein Weg ohne
+    # Rückweg — dort muss es sich weigern.
+    if not Path("/.dockerenv").exists():
+        try:
+            sx.restart_server(actor="test")
+            check("außerhalb eines Containers kein Selbstmord", False, "hat sich beendet")
+        except SelfExtError as e:
+            check("außerhalb eines Containers kein Selbstmord",
+                  "Container" in str(e), str(e)[:60])
+
     fe = sx.source_tree("command_center/frontend/src")
     check("das Dashboard gehört zu seinem Quelltext", len(fe) > 40, len(fe))
     check("und er weiß, dass es einen Build braucht", all(f["needs_build"] for f in fe))

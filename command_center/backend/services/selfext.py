@@ -456,6 +456,104 @@ class SelfExtension:
         return {"proposal_id": proposal_id, "file": rel,
                 "note": "Zurückgedreht. Wirksam beim nächsten Neustart."}
 
+    # ── wirksam machen ───────────────────────────────────────────────────
+    # Eine geschriebene Änderung ist noch keine wirksame. Backend: Neustart.
+    # Dashboard: neuer Build. Ohne diese beiden bliebe „er baut sich selbst um"
+    # eine Behauptung, die an der ersten Probe zerbricht.
+    FRONTEND_DIR = REPO_ROOT / "command_center" / "frontend"
+
+    def can_rebuild(self) -> tuple[bool, str]:
+        if not shutil.which("node"):
+            return False, ("In diesem Image ist keine Node-Werkzeugkette. Das Dashboard lässt sich "
+                           "hier nicht neu bauen — gebaut wurde mit JARVIS_CC_SELF_BUILD=false.")
+        if not (self.FRONTEND_DIR / "package.json").exists():
+            return False, "Die Frontend-Quellen fehlen in diesem Image."
+        if not (self.FRONTEND_DIR / "node_modules").is_dir():
+            return False, "node_modules fehlt — ohne die Abhängigkeiten baut vite nicht."
+        return True, ""
+
+    async def rebuild_frontend(self, *, actor: str) -> dict:
+        """Das Dashboard aus den aktuellen Quellen neu bauen.
+
+        Erst Typprüfung, dann Build. Schlägt die Typprüfung fehl, wird gar
+        nicht gebaut: ein kaputtes Dashboard auszuliefern wäre schlimmer als
+        eine abgelehnte Änderung.
+        """
+        ok, why = self.can_rebuild()
+        if not ok:
+            raise SelfExtError(why)
+        static = REPO_ROOT / "command_center" / "backend" / "static"
+
+        async def npx(*args: str, timeout: float) -> tuple[int, str]:
+            proc = await asyncio.create_subprocess_exec(
+                "node", str(self.FRONTEND_DIR / "node_modules" / ".bin" / args[0]), *args[1:],
+                cwd=str(self.FRONTEND_DIR),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+            try:
+                out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return 124, "Zeitüberschreitung"
+            return proc.returncode or 0, (out or b"").decode("utf-8", "replace")[-4000:]
+
+        code, out = await npx("tsc", "--noEmit", "-p", "tsconfig.json", timeout=240)
+        if code != 0:
+            self.log.warning("selfext", f"{actor}: Typprüfung des Dashboards fehlgeschlagen")
+            raise SelfExtError(f"Die Typprüfung schlägt fehl, es wurde nichts gebaut:\n{out[-1500:]}")
+
+        # In ein Nebenverzeichnis bauen und erst danach umschalten: ein
+        # abgebrochener Build darf nicht ein halbes Dashboard hinterlassen.
+        tmp_out = static.parent / "static.new"
+        code, out = await npx("vite", "build", "--outDir", str(tmp_out), "--emptyOutDir", timeout=600)
+        if code != 0:
+            shutil.rmtree(tmp_out, ignore_errors=True)
+            raise SelfExtError(f"Der Build schlug fehl, das laufende Dashboard blieb unberührt:\n{out[-1500:]}")
+
+        backup = static.parent / "static.old"
+        shutil.rmtree(backup, ignore_errors=True)
+        if static.exists():
+            static.rename(backup)
+        tmp_out.rename(static)
+        shutil.rmtree(backup, ignore_errors=True)
+        self.log.audit(actor_type="user", actor_id=actor, agent_id="jarvis", tool="self.rebuild",
+                       action="self.modify", target="command_center/frontend", status="ok",
+                       result="Dashboard neu gebaut")
+        self.bus.publish("selftool.changed", {"name": "frontend", "status": "rebuilt"})
+        return {"built": True,
+                "note": ("Das Dashboard ist neu gebaut und sofort ausgeliefert. Im Browser einmal "
+                         "hart neu laden (Strg+Umschalt+R), sonst zeigt er die alte Fassung aus "
+                         "dem Zwischenspeicher.")}
+
+    def restart_server(self, *, actor: str) -> dict:
+        """Den eigenen Prozess beenden, damit Docker ihn neu startet.
+
+        Das ist der einzige Weg, mit dem Änderungen am Backend wirksam werden,
+        ohne dass jemand an der Konsole sitzt. Voraussetzung ist eine
+        Neustart-Regel im Container — ohne die bliebe er unten, und genau das
+        wird hier geprüft, statt es zu hoffen.
+        """
+        import os
+        import signal
+        import threading
+
+        in_container = Path("/.dockerenv").exists()
+        if not in_container:
+            raise SelfExtError("Außerhalb eines Containers beende ich mich nicht selbst — dann käme "
+                               "niemand zurück. Starte den Server von Hand neu.")
+        self.log.audit(actor_type="user", actor_id=actor, agent_id="jarvis", tool="self.restart",
+                       action="self.modify", target="server", status="ok", result="Neustart angefordert")
+
+        def bye() -> None:
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        # Erst antworten, dann gehen: sonst bekommt niemand mit, dass es klappte.
+        threading.Timer(1.5, bye).start()
+        return {"restarting": True,
+                "note": ("Der Server beendet sich in einer Sekunde und wird vom Container neu "
+                         "gestartet (restart: unless-stopped). Nach etwa zehn Sekunden ist er "
+                         "wieder da; die Seite verbindet sich von selbst neu.")}
+
     def proposals(self) -> list[dict]:
         rows = self.db.fetchall("SELECT * FROM self_tools WHERE name LIKE 'proposal:%' "
                                 "ORDER BY updated_at DESC LIMIT 50") or []

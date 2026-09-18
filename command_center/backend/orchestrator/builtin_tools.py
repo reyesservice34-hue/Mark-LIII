@@ -648,6 +648,38 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           category="self", risk="high", requires_approval=True, min_role="admin",
                           handler=self_revert))
 
+    async def self_rebuild(ctx: ToolContext, args: dict):
+        res = await selfext.rebuild_frontend(actor=ctx.principal.actor)
+        ctx.emit("selfext", {"text": "Dashboard neu gebaut"})
+        return res
+
+    async def self_restart(ctx: ToolContext, args: dict):
+        return selfext.restart_server(actor=ctx.principal.actor)
+
+    async def self_can_rebuild(ctx: ToolContext, args: dict):
+        ok, why = selfext.can_rebuild()
+        return {"can_rebuild_dashboard": ok, "reason": why,
+                "note": ("Änderungen am Backend brauchen self.restart, Änderungen am Dashboard "
+                         "self.rebuild. self.tree sagt bei jeder Datei, welches von beiden.")}
+
+    reg.register(ToolSpec("self.can_rebuild",
+                          "Whether this server can rebuild its own dashboard, and if not, why not.",
+                          _obj({}), category="self", risk="low", min_role="viewer",
+                          handler=self_can_rebuild))
+    reg.register(ToolSpec("self.rebuild",
+                          "Rebuild the dashboard from the current sources so a change you made to it "
+                          "actually takes effect. Type-checks first and refuses to build if that fails; "
+                          "the running dashboard is only swapped once the new one is complete.",
+                          _obj({"reason": _s("what was changed and why it should go live")}, ["reason"]),
+                          category="self", risk="critical", requires_approval=True, min_role="admin",
+                          handler=self_rebuild, timeout_seconds=900))
+    reg.register(ToolSpec("self.restart",
+                          "Restart the server so a change you made to your own backend code takes "
+                          "effect. The container brings it back within about ten seconds.",
+                          _obj({"reason": _s("what was changed and why it should go live")}, ["reason"]),
+                          category="self", risk="critical", requires_approval=True, min_role="admin",
+                          handler=self_restart))
+
     # ── besser werden ────────────────────────────────────────────────────
     # Er konnte sich schon Werkzeuge schreiben; was fehlte, war der Anlass.
     # Diese beiden schauen in die Prüfspur statt in die Fantasie.
