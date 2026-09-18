@@ -294,9 +294,11 @@ def serve_dashboard():
             }
 
             .sidebar {
-                background: rgba(10, 14, 39, 0.8);
-                backdrop-filter: blur(10px);
-                border: 1px solid rgba(0, 217, 255, 0.2);
+                background: rgba(15, 23, 42, 0.85);
+                backdrop-filter: blur(20px);
+                border: 1px solid rgba(0, 217, 255, 0.3);
+                border-radius: 15px;
+                box-shadow: 0 8px 32px rgba(0, 217, 255, 0.1);
                 border-radius: 15px;
                 padding: 20px;
                 height: fit-content;
