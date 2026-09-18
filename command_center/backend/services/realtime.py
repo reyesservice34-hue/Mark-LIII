@@ -29,6 +29,7 @@ import os
 from typing import Any, Awaitable, Callable
 
 from ..ai.base import ToolNameMap
+from ..orchestrator.tool_registry import sanitize_schema
 
 REALTIME_URL = "wss://api.openai.com/v1/realtime"
 DEFAULT_MODEL = "gpt-realtime-2.1"
@@ -94,7 +95,9 @@ def _tool_declarations(state) -> tuple[list[dict], ToolNameMap]:
         "type": "function",
         "name": names.wire(t.name),
         "description": t.description,
-        "parameters": t.input_schema,
+        # Dieselbe Reinigung wie im Chat: Ein Schema von einem fremden
+        # MCP-Server darf nicht die ganze Leitung scheitern lassen.
+        "parameters": sanitize_schema(t.input_schema),
     } for t in tools]
     return decls, names
 

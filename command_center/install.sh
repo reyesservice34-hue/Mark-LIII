@@ -87,7 +87,13 @@ export JARVIS_CC_BUILD="$(git rev-parse --short=10 HEAD 2>/dev/null || echo unbe
 JARVIS_CC_BROWSER="$(sed -n 's/^JARVIS_CC_BROWSER=\([^#]*\).*/\1/p' "$ENV_FILE" | tr -d '[:space:]' | head -1)"
 export JARVIS_CC_BROWSER="${JARVIS_CC_BROWSER:-false}"
 [ "$JARVIS_CC_BROWSER" = "true" ] && info "Mit Browser im Image — das dauert länger."
-$COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d --build
+# --force-recreate, weil ein Container seine Umgebung beim ERZEUGEN bekommt.
+# Ohne das bleibt ein neu eingetragener Schlüssel unsichtbar, solange sich der
+# Code nicht auch geändert hat: Das Dashboard zeigt weiter NOT CONNECTED, die
+# .env sieht aber richtig aus — eine Stunde Suchen an der falschen Stelle.
+# (Aus demselben Grund hilft `docker compose restart` nach einer .env-Änderung
+# nicht: es startet den Prozess neu, nicht den Container.)
+$COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d --build --force-recreate
 
 # ── 5. Warten, bis er antwortet ──────────────────────────────────────────
 info "Warte auf den Start …"

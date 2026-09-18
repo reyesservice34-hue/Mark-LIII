@@ -509,5 +509,51 @@ with TestClient(app) as c:
           isinstance(out, tuple) and out[1] is False and "Netz dieses Servers" in out[0], out)
     del sess
 
+print("\n16. Ein fremdes Schema legt nicht die ganze Anfrage lahm")
+# Der Fehler von der laufenden Instanz, wörtlich:
+#   tools.33.custom.input_schema: input_schema does not support oneOf,
+#   allOf, or anyOf at the top level
+# Ein einziges Werkzeug eines fremden MCP-Servers reichte, und JEDE Antwort
+# scheiterte — auch die, für die das Werkzeug gar nicht gebraucht wurde.
+from command_center.backend.orchestrator.tool_registry import ToolSpec, sanitize_schema
+
+roh = {
+    "type": "object",
+    "properties": {"gemeinsam": {"type": "string"}},
+    "required": ["gemeinsam"],
+    "oneOf": [
+        {"properties": {"per_id": {"type": "string"}}, "required": ["per_id", "gemeinsam"]},
+        {"properties": {"per_name": {"type": "string"}}, "required": ["per_name", "gemeinsam"]},
+    ],
+}
+sauber = sanitize_schema(roh)
+check("oneOf ist oben weg", "oneOf" not in sauber, sauber)
+check("allOf/anyOf ebenso", not any(k in sauber for k in ("allOf", "anyOf")), sauber)
+check("der Typ bleibt object", sauber.get("type") == "object", sauber)
+check("kein Feld geht verloren",
+      set(sauber["properties"]) == {"gemeinsam", "per_id", "per_name"}, sauber)
+check("Pflicht bleibt nur, was jede Variante verlangt",
+      sauber.get("required") == ["gemeinsam"], sauber)
+
+verschachtelt = sanitize_schema(
+    {"type": "object", "properties": {"wahl": {"oneOf": [{"type": "string"}, {"type": "number"}]}}})
+check("verschachtelt wird nicht angefasst",
+      "oneOf" in verschachtelt["properties"]["wahl"], verschachtelt)
+
+check("Unsinn statt Schema ergibt ein leeres Objekt",
+      sanitize_schema(None) == {"type": "object", "properties": {}}
+      and sanitize_schema("nein") == {"type": "object", "properties": {}})
+
+# Und der Weg, den es im Betrieb wirklich nimmt: Registry → Anbieter.
+state.tools.register(ToolSpec(
+    name="mcp.fremd.kaputt", description="ein Werkzeug von einem fremden Server",
+    input_schema=roh, handler=lambda _c, _a: None), replace=True)
+d = state.tools.get("mcp.fremd.kaputt").to_def()
+check("to_def() gibt nichts Verbotenes an den Anbieter weiter",
+      not any(k in d.input_schema for k in ("oneOf", "allOf", "anyOf")), d.input_schema)
+check("und die Liste für den Anbieter ist als Ganze sauber",
+      all(not any(k in t.to_def().input_schema for k in ("oneOf", "allOf", "anyOf"))
+          for t in state.tools.all()))
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

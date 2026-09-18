@@ -30,6 +30,11 @@ COPY command_center/backend /app/command_center/backend
 COPY command_center/__init__.py /app/command_center/__init__.py
 COPY core/__init__.py core/control_plane.py core/prompt.txt /app/core/
 COPY config/__init__.py /app/config/
+# Der Kalenderkern des Desktops: reine Standardbibliothek, und die einzige
+# Stelle, an der die Regeln fürs Datumslesen und der lokale Speicher stehen.
+# Ohne ihn meldete der lokale Kalender im Dashboard "core not importable" und
+# war offline — ein Termin ohne Google-Konto ging damit gar nicht.
+COPY plugins/__init__.py plugins/_calendar_core.py /app/plugins/
 COPY --from=frontend /build/dist /app/command_center/backend/static
 
 # ── sich selbst umbauen können ───────────────────────────────────────────

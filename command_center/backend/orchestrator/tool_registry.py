@@ -20,6 +20,59 @@ if TYPE_CHECKING:  # pragma: no cover
 
 RISK_LEVELS = ("low", "medium", "high", "critical")
 
+# Schlüssel, die ein Schema zu einer Auswahl zwischen Varianten machen.
+_BRANCHES = ("oneOf", "allOf", "anyOf")
+
+
+def sanitize_schema(schema: Any) -> dict[str, Any]:
+    """Ein fremdes JSON-Schema so zurechtlegen, dass ein Anbieter es annimmt.
+
+    Anthropic lehnt `oneOf`, `allOf` und `anyOf` auf der obersten Ebene ab
+    (HTTP 400, `input_schema does not support oneOf, allOf, or anyOf at the
+    top level`) — und ein einziges solches Werkzeug lässt die ganze Anfrage
+    scheitern, auch die 50 anderen Werkzeuge in derselben Liste. MCP-Server
+    und Composio liefern aber genau das, und wir schreiben deren Schemata
+    nicht: Sie kommen von fremden Rechnern.
+
+    Also werden die Zweige hier zusammengelegt, statt das Werkzeug fallen zu
+    lassen — ein Werkzeug weniger wäre eine Fähigkeit weniger. Verschachtelt
+    bleiben die Schlüssel erlaubt und werden nicht angefasst.
+
+    `required` wird bei einer echten Auswahl (`oneOf`/`anyOf`) auf das
+    eingeschränkt, was in JEDEM Zweig verlangt wird: Was nur ein Zweig
+    braucht, darf das Modell nicht als Pflicht angezeigt bekommen.
+    """
+    if not isinstance(schema, dict):
+        return {"type": "object", "properties": {}}
+
+    out = {k: v for k, v in schema.items() if k not in _BRANCHES}
+    props: dict[str, Any] = dict(out.get("properties") or {})
+    required: set[str] | None = set(out.get("required") or []) or None
+
+    for key in _BRANCHES:
+        branches = schema.get(key)
+        if not isinstance(branches, list):
+            continue
+        for branch in branches:
+            if not isinstance(branch, dict):
+                continue
+            for name, spec in (branch.get("properties") or {}).items():
+                props.setdefault(name, spec)
+            names = set(branch.get("required") or [])
+            if key == "allOf":
+                required = names if required is None else (required | names)
+            else:
+                # Pflicht bleibt nur, was jede Variante ohnehin verlangt.
+                required = names if required is None else (required & names)
+
+    out["type"] = "object"
+    out["properties"] = props
+    if required:
+        out["required"] = sorted(required)
+    else:
+        out.pop("required", None)
+    return out
+
 
 @dataclass
 class ToolContext:
@@ -66,7 +119,10 @@ class ToolSpec:
         return RISK_LEVELS.index(self.risk) >= RISK_LEVELS.index(threshold)
 
     def to_def(self) -> ToolDef:
-        return ToolDef(name=self.name, description=self.description, input_schema=self.input_schema)
+        # Hier und nur hier geht ein Schema zum Anbieter — also wird hier
+        # geputzt, damit es gleich gilt, woher das Werkzeug auch stammt.
+        return ToolDef(name=self.name, description=self.description,
+                       input_schema=sanitize_schema(self.input_schema))
 
     def public(self) -> dict:
         return {

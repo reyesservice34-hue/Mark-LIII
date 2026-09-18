@@ -835,5 +835,44 @@ src = (ROOT / "actions" / "speak_audio.py").read_text(encoding="utf-8")
 check("der PC holt sich das Audio nicht selbst — kein Schlüssel, keine Verbindung",
       "ELEVENLABS_API_KEY" not in src and "api.elevenlabs.io" not in src and "xi-api-key" not in src)
 
+print("\n18. was der Server aus dem Repo importiert, muss auch ins Image")
+# Gefunden auf der laufenden Instanz: Der lokale Kalender stand auf OFFLINE
+# mit "calendar core not importable: No module named 'plugins'". Die Tests
+# liefen alle grün — sie laufen ja im Repo, wo die Datei da ist. Im Image
+# fehlte sie, weil das Dockerfile nur core/ und config/ kopiert.
+# Ein Termin ohne Google-Konto war damit unmöglich.
+import re as _re
+
+dockerfile = (ROOT / "command_center" / "Dockerfile").read_text(encoding="utf-8")
+kopiert: set[str] = set()
+for zeile in dockerfile.splitlines():
+    z = zeile.strip()
+    if not z.startswith("COPY ") or "--from=" in z:
+        continue
+    for stueck in z[5:].split()[:-1]:          # das letzte Stück ist das Ziel
+        kopiert.add(stueck.split("/")[0])
+
+# Welche Pakete des Repos zieht der Servercode heran?
+gebraucht: set[str] = set()
+pakete = {p.name for p in ROOT.iterdir() if (p / "__init__.py").exists()}
+for py in (ROOT / "command_center" / "backend").rglob("*.py"):
+    text = py.read_text(encoding="utf-8", errors="replace")
+    for m in _re.finditer(r"^\s*(?:from|import)\s+([A-Za-z_][\w]*)", text, _re.M):
+        if m.group(1) in pakete and m.group(1) != "command_center":
+            gebraucht.add(m.group(1))
+
+fehlt = sorted(gebraucht - kopiert)
+check("jedes Paket, das der Server importiert, wird ins Image kopiert",
+      not fehlt, f"nicht im Dockerfile: {fehlt}")
+
+# Und die eine Datei, an der es hing, namentlich.
+check("der Kalenderkern liegt im Image",
+      "plugins/_calendar_core.py" in dockerfile)
+check("mitsamt dem __init__, sonst ist plugins kein Paket",
+      "plugins/__init__.py" in dockerfile)
+
+from command_center.backend.services.calendar_service import CORE_AVAILABLE
+check("und er lässt sich wirklich importieren", CORE_AVAILABLE)
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)
