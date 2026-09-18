@@ -55,34 +55,65 @@ current() {
   sed -n "s|^$1=\(.*\)$|\1|p" "$ENV_FILE" | head -1
 }
 
+# Eingabe bleibt verdeckt. Ein sichtbarer Schlüssel landet sonst im
+# Terminal-Rückblick, im Screenshot und in jedem Chat, in den das kopiert wird
+# — und gilt damit als verbrannt. Die Rückmeldung zeigt nur Anfang, Ende und
+# Länge; das reicht zum Erkennen und verrät nichts.
+mask() {
+  local v="$1"
+  if [ "${#v}" -le 12 ]; then
+    printf '%s… (%s Zeichen)' "${v:0:3}" "${#v}"
+  else
+    printf '%s…%s (%s Zeichen)' "${v:0:7}" "${v: -4}" "${#v}"
+  fi
+}
+
+# Jedes Feld kennt seine Form. Der n8n-Schlüssel im Adressfeld ist genau der
+# Fehler, der sonst erst beim Gesundheitscheck auffällt — und dann als
+# „n8n antwortet nicht", was in die Irre führt.
 ask() {
-  local key="$1" label="$2" hint="$3" now
+  local key="$1" label="$2" hint="$3" pattern="${4:-*}" shape="${5:-}" now value
   now="$(current "$key")"
   if [ -n "$now" ]; then
-    printf '  \033[1m%s\033[0m  [bereits gesetzt: %s…%s]\n' "$label" "${now:0:6}" "${now: -4}"
+    printf '  \033[1m%s\033[0m  [gesetzt: %s]\n' "$label" "$(mask "$now")"
   else
     printf '  \033[1m%s\033[0m  [noch leer]\n' "$label"
   fi
   [ -n "$hint" ] && printf '     %s\n' "$hint"
-  printf '     > '
-  local value
-  IFS= read -r value || value=""
-  value="$(printf '%s' "$value" | tr -d '[:space:]')"
-  if [ -z "$value" ]; then
-    printf '     unverändert\n\n'
-    return
-  fi
+  while :; do
+    printf '     > '
+    IFS= read -rs value || value=""
+    printf '\n'
+    value="$(printf '%s' "$value" | tr -d '[:space:]')"
+    if [ -z "$value" ]; then
+      printf '     unverändert\n\n'
+      return
+    fi
+    # shellcheck disable=SC2254  # das Muster soll als Glob wirken
+    case "$value" in
+      $pattern) break ;;
+      *) warn "Das sieht nicht aus wie $shape."
+         warn "Nochmal einfügen, oder nur Enter zum Überspringen." ;;
+    esac
+  done
   set_value "$key" "$value"
-  printf '     \033[32meingetragen\033[0m\n\n'
+  printf '     \033[32meingetragen: %s\033[0m\n\n' "$(mask "$value")"
 }
 
-ask ANTHROPIC_API_KEY "Anthropic (Claude)" "console.anthropic.com/settings/keys — beginnt mit sk-ant-"
-ask OPENAI_API_KEY    "OpenAI"             "platform.openai.com/api-keys — beginnt mit sk-"
-ask GEMINI_API_KEY    "Google Gemini"      "aistudio.google.com/apikey — beginnt mit AIza"
-ask COMPOSIO_API_KEY  "Composio"           "platform.composio.dev — Gmail, Slack, Notion über eine Anmeldung"
-ask COMPOSIO_USER_ID  "Composio-Benutzer"  "frei wählbar, z. B. reyes — leer lassen heißt 'default'"
-ask N8N_BASE_URL      "n8n-Adresse"        "z. B. http://127.0.0.1:5678 — deine Workflows im Dashboard"
-ask N8N_API_KEY       "n8n-Schlüssel"      "in n8n unter Settings → API"
+ask ANTHROPIC_API_KEY "Anthropic (Claude)" "console.anthropic.com/settings/keys" \
+    'sk-ant-*' "ein Anthropic-Schlüssel (sk-ant-…)"
+ask OPENAI_API_KEY    "OpenAI"             "platform.openai.com/api-keys" \
+    'sk-*' "ein OpenAI-Schlüssel (sk-…)"
+ask GEMINI_API_KEY    "Google Gemini"      "aistudio.google.com/apikey" \
+    'AIza*' "ein Gemini-Schlüssel (AIza…). Ein AQ.… ist ein OAuth-Token und geht hier nicht"
+ask COMPOSIO_API_KEY  "Composio"           "platform.composio.dev — Gmail, Slack, Notion über eine Anmeldung" \
+    '*' ""
+ask COMPOSIO_USER_ID  "Composio-Benutzer"  "frei wählbar, z. B. reyes — leer lassen heißt 'default'" \
+    '*' ""
+ask N8N_BASE_URL      "n8n-ADRESSE (keine Schlüssel!)" "die URL, unter der n8n läuft, z. B. http://127.0.0.1:5678" \
+    'http*' "eine Adresse. Sie muss mit http:// oder https:// anfangen"
+ask N8N_API_KEY       "n8n-Schlüssel"      "in n8n unter Einstellungen → API" \
+    '*' ""
 
 # ── welcher Anbieter denkt ───────────────────────────────────────────────
 # Ohne Festlegung nimmt der Server Anthropic zuerst, dann OpenAI, dann Gemini.
