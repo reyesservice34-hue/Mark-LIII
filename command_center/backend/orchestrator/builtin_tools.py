@@ -925,6 +925,54 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           category="desktop", risk="high" if gate_desktop else "medium",
                           requires_approval=gate_desktop, handler=desktop_screen, timeout_seconds=120))
 
+    # ── sprechen: eine Stimme, auf dem Rechner des Nutzers ───────────────
+    # Der Text wird HIER zu Ton (ElevenLabs, falls eingerichtet) und geht
+    # fertig an den PC. Der Rechner bekommt keinen Schlüssel: Eine Stimme, ein
+    # Ort, an dem sie entsteht — sonst klingt JARVIS auf jedem Gerät anders.
+    async def desktop_speak(ctx: ToolContext, args: dict):
+        from ..services.voice_service import VoiceError
+        text = str(args["text"]).strip()
+        if not text:
+            return "Es gibt nichts zu sagen.", False
+        voice = st.services["voice"]
+        try:
+            audio, mime = await voice.speak(text)
+        except VoiceError as e:
+            return str(e), False
+
+        device = desktop.resolve(str(args.get("device", "")))
+        if not any(a.get("name") == "speak_audio" for a in device["actions"]):
+            return (f"'{device['name']}' kann noch keinen Ton abspielen. Auf dem PC einmal "
+                    f"git pull und JARVIS neu starten.", False)
+        import base64 as _b64
+        cmd = await desktop.dispatch(
+            device_id=device["id"], action="speak_audio",
+            params={"audio_base64": _b64.b64encode(audio).decode("ascii"), "mime": mime},
+            requested_by=ctx.principal.actor, agent_id=ctx.agent_id,
+            task_id=ctx.task_id, run_id=ctx.run_id, timeout=90)
+        if cmd["status"] != "done":
+            return cmd["error"] or "Der PC hat den Ton nicht abgespielt.", False
+        try:
+            payload = json.loads(cmd["result"] or "{}")
+        except ValueError:
+            payload = {}
+        if payload.get("error"):
+            return str(payload["error"]), False
+        # Der Text gehört ins Protokoll, nicht das Audio — 200 KB Base64 in
+        # jedem Schritt würde die Zeitleiste unlesbar machen.
+        ctx.emit("speak", {"text": f"{device['name']}: „{text[:60]}…" if len(text) > 60
+                                   else f"{device['name']}: „{text}“"})
+        return {"spoken_on": device["name"], "voice": voice.tts_provider(),
+                "bytes": payload.get("bytes", len(audio)), "mime": mime}
+
+    reg.register(ToolSpec("desktop.speak",
+                          "Say something out loud on the user's PC. The server turns the text into a "
+                          "voice (ElevenLabs when configured) and sends the finished audio — use it "
+                          "when the user asked you to say or read something aloud there.",
+                          _obj({"text": _s("what to say, in the language the user speaks"),
+                                "device": _s("which desktop")}, ["text"]),
+                          category="desktop", risk="low", handler=desktop_speak, timeout_seconds=150))
+
     async def desktop_whatsapp(ctx: ToolContext, args: dict):
         """Reach the user on their phone through the WhatsApp the desktop already has linked."""
         device = desktop.resolve(str(args.get("device", "")))

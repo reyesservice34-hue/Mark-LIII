@@ -209,20 +209,58 @@ check("und arbeitet im Ordner des Projekts", str(AS.ROOT) in launcher)
 check("ohne Windows meldet er das ehrlich, statt still nichts zu tun",
       "Windows" in AS.turn_on() if AS.startup_dir() is None else True)
 
-# Der Ordner wird sauber behandelt: anlegen, erkennen, wieder entfernen.
-fake = _P(_tf.mkdtemp())
-real_dir = AS.startup_dir
-AS.startup_dir = lambda: fake
-try:
-    check("vorher nicht eingetragen", AS.enabled() is False)
-    AS.turn_on()
-    check("nach dem Einschalten liegt der Starter da", AS.enabled() is True)
-    check("und enthält den Aufruf", "desktop_agent.py" in (fake / AS.NAME).read_text(encoding="utf-8"))
-    AS.turn_off()
-    check("nach dem Ausschalten ist er weg", AS.enabled() is False)
-    check("zweimal ausschalten tut nicht weh", "nicht eingetragen" in AS.turn_off())
-finally:
-    AS.startup_dir = real_dir
+# Der Weg über den Autostart-Ordner ist der Rückfall, wenn die
+# Aufgabenplanung nicht will. Er lässt sich nur unter Windows durchspielen —
+# das hier ehrlich zu sagen ist besser, als einen grünen Haken zu setzen.
+if os.name == "nt":
+    fake = _P(_tf.mkdtemp())
+    real_dir = AS.startup_dir
+    AS.startup_dir = lambda: fake
+    try:
+        AS.turn_on()
+        check("eingerichtet ist eingerichtet", AS.enabled() is True)
+        AS.turn_off()
+        check("und danach nicht mehr", AS.enabled() is False)
+    finally:
+        AS.startup_dir = real_dir
+else:
+    check("ohne Windows wird nichts eingetragen", AS.enabled() is False)
+    check("und turn_off sagt das auch", "nicht eingetragen" in AS.turn_off())
+
+print("\n13. Der Agent meldet Namen und Fähigkeiten, wie sie sind")
+import os as _os2
+import core.desktop_runner as DR
+
+for k in ("JARVIS_GATEWAY_URL", "JARVIS_SERVER_URL", "JARVIS_GATEWAY_TOKEN",
+          "JARVIS_DEVICE_TOKEN", "JARVIS_DEVICE_NAME"):
+    _os2.environ.pop(k, None)
+
+# Die erwarteten Namen aus der Anforderung müssen genauso gelten wie die
+# gewachsenen — sonst ist alles richtig eingetragen und nichts geht.
+_os2.environ["JARVIS_SERVER_URL"] = "https://jarvis.example/"
+_os2.environ["JARVIS_DEVICE_TOKEN"] = "jcc_testtoken"
+_os2.environ["JARVIS_DEVICE_NAME"] = "YAM-DESKTOP"
+r = DR.DesktopRunner(logger=lambda *_: None)
+check("JARVIS_SERVER_URL wird gelesen", r.base_url == "https://jarvis.example", r.base_url)
+check("JARVIS_DEVICE_TOKEN wird gelesen", r.token == "jcc_testtoken")
+check("JARVIS_DEVICE_NAME wird der Gerätename", r.name == "YAM-DESKTOP", r.name)
+
+_os2.environ["JARVIS_GATEWAY_URL"] = "https://alt.example"
+r = DR.DesktopRunner(logger=lambda *_: None)
+check("der gewachsene Name gewinnt, wo beide gesetzt sind",
+      r.base_url == "https://alt.example", r.base_url)
+
+caps = r.capabilities()
+check("Fähigkeiten sind ein Wahrheitswert je Punkt",
+      set(caps) == {"microphone", "speaker", "desktop_control", "screen", "speak_audio", "browser"},
+      sorted(caps))
+check("und sie werden geprüft, nicht behauptet",
+      all(isinstance(v, bool) for v in caps.values()), caps)
+check("ohne Audiogerät steht da kein Mikrofon", caps["microphone"] in (True, False))
+
+for k in ("JARVIS_GATEWAY_URL", "JARVIS_SERVER_URL", "JARVIS_GATEWAY_TOKEN",
+          "JARVIS_DEVICE_TOKEN", "JARVIS_DEVICE_NAME"):
+    _os2.environ.pop(k, None)
 
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

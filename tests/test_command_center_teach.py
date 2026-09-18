@@ -261,6 +261,80 @@ with TestClient(app) as c:
     check("ein PC ohne die neue Aktion bekommt gesagt, was zu tun ist",
           out[1] is False and "git pull" in out[0], out)
 
+    print("\n1d. Fähigkeiten, Composio-first und die Stimme auf dem PC")
+    # Fähigkeiten: der Rechner meldet, was er körperlich kann — und die Liste
+    # gibt es nach oben weiter, statt es in meta zu vergraben.
+    mit_caps = bridge.register(name="YAM-DESKTOP", actor="mark-liii-windows", platform="Windows 11",
+                               actions=[{"name": "speak_audio", "description": "spielt Ton"}],
+                               meta={"capabilities": {"microphone": True, "speaker": True,
+                                                      "desktop_control": False}})
+    check("die Fähigkeiten stehen im Gerät, nicht nur in meta",
+          mit_caps["capabilities"] == {"microphone": True, "speaker": True, "desktop_control": False},
+          mit_caps.get("capabilities"))
+    check("und ein Gerät ohne Angabe bekommt einfach keine",
+          bridge.get(device["id"])["capabilities"] == {})
+
+    from command_center.backend.services.voice_service import VoiceService
+    sprechen = state.tools.get("desktop.speak")
+    check("desktop.speak gibt es", sprechen is not None)
+    check("und fragt NICHT nach — Reden ist nichts Gefährliches",
+          sprechen is not None and sprechen.needs_approval() is False)
+
+    # Ohne eingerichtete Stimme: absagen mit Grund, nicht schweigen.
+    out = asyncio.run(sprechen.handler(_tc, {"text": "Hallo", "device": mit_caps["id"]}))
+    check("ohne Stimme wird das gesagt, statt still zu bleiben",
+          isinstance(out, tuple) and out[1] is False, out)
+    check("und es steht dabei, was fehlt",
+          isinstance(out, tuple) and ("ELEVENLABS_API_KEY" in out[0] or "TTS_URL" in out[0]), out)
+
+    # Mit Stimme: der Server erzeugt den Ton und schickt ihn fertig hinüber.
+    async def fake_speak(text, voice=""):
+        return b"RIFF....WAVEfake", "audio/wav"
+    echt = state.services["voice"].speak
+    state.services["voice"].speak = fake_speak
+    state.services["voice"].tts_provider = lambda: "elevenlabs"
+    try:
+        async def speak_roundtrip():
+            async def fake_pc():
+                for _ in range(60):
+                    cmd = bridge.next_for(mit_caps["id"])
+                    if cmd:
+                        bridge.complete(cmd["id"], ok=True,
+                                        result=json.dumps({"played": True, "bytes": 16}))
+                        return cmd
+                    await asyncio.sleep(0.02)
+                return None
+            return await asyncio.gather(
+                sprechen.handler(_tc, {"text": "Desktop-Verbindung erfolgreich",
+                                       "device": mit_caps["id"]}),
+                fake_pc())
+        res, cmd = asyncio.run(speak_roundtrip())
+        check("der PC bekommt fertigen Ton als speak_audio",
+              cmd["action"] == "speak_audio" and cmd["params"].get("mime") == "audio/wav", cmd["action"])
+        check("und zwar als Base64, nicht als Text",
+              len(cmd["params"].get("audio_base64", "")) > 10)
+        check("die Antwort nennt Gerät und Stimme",
+              isinstance(res, dict) and res["spoken_on"] == "YAM-DESKTOP"
+              and res["voice"] == "elevenlabs", res)
+    finally:
+        state.services["voice"].speak = echt
+
+    # Composio-first steht nur im Systemtext, wenn Composio wirklich verbunden ist.
+    master_agent = state.agents.get(state.agents.master_id())
+    prompt = state.runtime._system_prompt(master_agent, state.tools.available())
+    check("ohne Composio steht die Regel NICHT im Systemtext",
+          "COMPOSIO FIRST" not in prompt)
+    composio = state.services["composio"]
+    echt_conf = composio.configured
+    composio.configured = lambda: True
+    try:
+        prompt = state.runtime._system_prompt(master_agent, state.tools.available())
+        check("mit Composio steht sie da", "COMPOSIO FIRST" in prompt)
+        check("und sie blockiert ihn nicht, wenn Composio ausfällt",
+              "never a reason to stop" in prompt, prompt[prompt.find("COMPOSIO FIRST"):][:400])
+    finally:
+        composio.configured = echt_conf
+
     print("\n2. an offline desktop is said to be offline, not pretended away")
     bridge._last_poll.clear()
     offline = bridge.register(name="Schlafender-PC", actor="mark-liii-windows",

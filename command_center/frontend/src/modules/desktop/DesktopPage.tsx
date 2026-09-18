@@ -22,8 +22,15 @@ import { toast } from "@/lib/toast";
 interface Device {
   id: string; name: string; platform: string; version: string; online: boolean; queued: number;
   last_seen_at: string; registered_at: string; actor: string;
+  capabilities?: Record<string, boolean>;
   actions: { name: string; description?: string; parameters?: any }[];
 }
+
+/** Was ein Gerät körperlich kann, in Worten statt in Schlüsselnamen. */
+const KANN: Record<string, string> = {
+  microphone: "Mikrofon", speaker: "Lautsprecher", desktop_control: "Tastatur & Maus",
+  screen: "Bildschirm", speak_audio: "Sprachausgabe", browser: "Browser",
+};
 
 /** Die Handgriffe, die man ohne Handbuch braucht. Alles Übrige steht weiter
  *  unter „Aktion ausführen" — dort mit der echten Liste des Geräts. */
@@ -161,6 +168,17 @@ export default function DesktopPage() {
                 ["Kennung", <code>{d.actor}</code>],
                 ["Wartende Aufträge", String(d.queued)],
               ]} />
+
+              {d.capabilities && Object.keys(d.capabilities).length > 0 && (
+                <div className="row wrap" style={{ gap: 6 }}>
+                  {Object.entries(KANN).map(([key, label]) => (
+                    <span key={key} className={`core-chip ${d.capabilities![key] ? "ok" : "err"}`}>
+                      <span className="dot" />
+                      <span className="core-chip-title">{label}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {can("operator") && (
                 <div className="row wrap" style={{ gap: 8 }}>

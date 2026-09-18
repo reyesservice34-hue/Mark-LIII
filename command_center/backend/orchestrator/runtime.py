@@ -701,6 +701,19 @@ class MasterRuntime:
         if standing:
             parts.append("STEHENDE ANWEISUNGEN DES NUTZERS (gelten immer, sie gehen deinen eigenen "
                          "Gewohnheiten vor):\n" + str(standing).strip())
+        # Composio zuerst — aber nur, wenn es wirklich verbunden ist. Eine
+        # Regel, die auf einen nicht eingerichteten Dienst zeigt, schickt ihn
+        # in eine Sackgasse und kostet zwei Werkzeugaufrufe, bevor er merkt,
+        # dass da nichts ist.
+        composio = st.services.get("composio")
+        if composio is not None and composio.configured():
+            parts.append(
+                "COMPOSIO FIRST: for anything that happens in an outside service — mail, calendar, "
+                "chat, tickets, documents, CRM — check Composio before improvising: composio.apps "
+                "shows what is actually connected, composio.tools finds the right tool, composio.run "
+                "does it. Only when nothing there fits, fall back to your own tools. Composio being "
+                "unreachable or having no match is never a reason to stop: say what you tried and "
+                "carry on with what you have.")
         parts.append(
             "WHAT YOU ARE MADE OF: call system.inventory when you need to know what you can actually do "
             "right now — which tools work, which integrations are connected, which MCP servers and skills "

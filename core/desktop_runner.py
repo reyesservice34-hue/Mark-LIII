@@ -62,11 +62,19 @@ class DesktopRunner:
                  logger: Callable[[str], None] = print, registry=None,
                  blocked: Optional[set[str]] = None):
         cfg = _load_config()
+        # Zwei Namen für dieselbe Sache: JARVIS_GATEWAY_* ist der gewachsene,
+        # JARVIS_SERVER_URL / JARVIS_DEVICE_TOKEN / JARVIS_DEVICE_NAME der,
+        # den man erwartet. Beide zu lesen kostet drei Zeilen und erspart die
+        # Sorte Fehlersuche, bei der alles richtig eingetragen ist und trotzdem
+        # nichts geht.
         self.base_url = (base_url or os.environ.get("JARVIS_GATEWAY_URL")
+                         or os.environ.get("JARVIS_SERVER_URL")
                          or cfg.get("jarvis_gateway_url") or "").rstrip("/")
         self.token = (token or os.environ.get("JARVIS_GATEWAY_TOKEN")
+                      or os.environ.get("JARVIS_DEVICE_TOKEN")
                       or cfg.get("jarvis_gateway_token") or "").strip()
-        self.name = (name or cfg.get("desktop_device_name") or socket.gethostname() or "desktop")[:80]
+        self.name = (name or os.environ.get("JARVIS_DEVICE_NAME")
+                     or cfg.get("desktop_device_name") or socket.gethostname() or "desktop")[:80]
         self.blocked = set(blocked if blocked is not None else
                            (cfg.get("desktop_blocked_actions") or DEFAULT_BLOCKED))
         self._log = logger
@@ -161,12 +169,41 @@ class DesktopRunner:
                 "actions": len(self.declarations()) if self.configured() else 0}
 
     # ── the loop ─────────────────────────────────────────────────────────
+    def capabilities(self) -> dict:
+        """Was dieser Rechner körperlich kann — geprüft, nicht behauptet.
+
+        Der Server zeigt das im Geräteverzeichnis an. Ein Gerät, das sich als
+        „hat Mikrofon" meldet und keines hat, führt zu einer Sprachleitung, die
+        aus unerfindlichen Gründen still bleibt.
+        """
+        mic = speaker = False
+        try:
+            import sounddevice as sd
+            mic = bool(sd.query_devices(kind="input"))
+            speaker = bool(sd.query_devices(kind="output"))
+        except Exception:  # noqa: BLE001 — kein Gerät, keine Bibliothek: beides "nein"
+            pass
+        names = set()
+        try:
+            names = {d.get("name") for d in self.declarations()}
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "microphone": mic,
+            "speaker": speaker,
+            "desktop_control": "computer_control" in names,
+            "screen": "screen_capture" in names,
+            "speak_audio": "speak_audio" in names,
+            "browser": "browser_control" in names,
+        }
+
     def register(self) -> bool:
         try:
             r = requests.post(f"{self.base_url}/v1/desktop/register", headers=self._headers(), timeout=20,
                               json={"name": self.name, "platform": f"{platform.system()} {platform.release()}",
                                     "version": platform.python_version(), "device_id": self._device_id,
-                                    "actions": self.declarations()})
+                                    "actions": self.declarations(),
+                                    "capabilities": self.capabilities()})
         except requests.RequestException as e:
             self.last_error = f"cannot reach {self.base_url}: {e.__class__.__name__}"
             return False

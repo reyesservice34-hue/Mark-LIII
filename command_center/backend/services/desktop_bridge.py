@@ -103,6 +103,9 @@ class DesktopBridge:
         out["actions"] = loads(row.get("actions"), [])
         out["meta"] = loads(row.get("meta"), {})
         out["online"] = self.is_online(row["id"])
+        # Fähigkeiten liegen in meta, gehören aber nach oben: Die Liste soll
+        # zeigen können, welches Gerät Ohren und welches nur Augen hat.
+        out["capabilities"] = (out["meta"] or {}).get("capabilities") or {}
         out["queued"] = int(self.db.scalar(
             "SELECT COUNT(*) FROM desktop_commands WHERE device_id=? AND status='queued'", (row["id"],)) or 0)
         return out

@@ -23,6 +23,11 @@ class RegisterBody(BaseModel):
     version: str = ""
     device_id: str = ""
     actions: list[dict] = Field(default_factory=list)
+    # Was der Rechner körperlich kann: Mikrofon, Lautsprecher, Tastatur- und
+    # Mausteuerung, Bildschirm. Der Agent entscheidet danach, ob er etwas
+    # vorschlagen kann — „ich sage es dir laut" auf einem Rechner ohne
+    # Lautsprecher ist eine Zusage, die niemand hört.
+    capabilities: dict = Field(default_factory=dict)
     meta: dict = Field(default_factory=dict)
 
 
@@ -46,9 +51,10 @@ async def register(body: RegisterBody, state: AppState = Depends(get_state),
                    principal: Principal = Depends(current_principal)):
     if principal.role == "viewer":
         raise HTTPException(status_code=403, detail="token lacks operator role")
+    meta = {**body.meta, "capabilities": body.capabilities} if body.capabilities else body.meta
     device = state.services["desktop"].register(
         name=body.name, actor=principal.actor, platform=body.platform, version=body.version,
-        actions=body.actions, device_id=body.device_id, meta=body.meta)
+        actions=body.actions, device_id=body.device_id, meta=meta)
     state.log.audit(actor_type=principal.kind, actor_id=principal.actor, action="desktop.register",
                     target=device["name"], status="ok", meta={"device_id": device["id"],
                                                               "actions": len(body.actions)})

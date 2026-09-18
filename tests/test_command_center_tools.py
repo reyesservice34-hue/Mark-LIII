@@ -355,7 +355,11 @@ for coro, label in ((voice.transcribe(b"x", "audio/webm"), "transcribe"), (voice
         run(coro)
         check(f"{label} refuses without a backend", False)
     except VS.VoiceError as e:
-        check(f"{label} refuses without a backend", "configured" in str(e).lower(), str(e))
+        # Die Absage muss die Variable nennen, die fehlt — welche Sprache der
+        # Satz hat, ist dabei egal, die Kennung ist der Hinweis.
+        check(f"{label} refuses without a backend",
+              any(v in str(e) for v in ("JARVIS_CC_STT_URL", "JARVIS_CC_TTS_URL", "ELEVENLABS_API_KEY")),
+              str(e))
 
 check("endpoint from a bare host", VS._endpoint("http://w:8000", "/audio/speech") == "http://w:8000/v1/audio/speech")
 check("endpoint from a /v1 root", VS._endpoint("http://w:8000/v1/", "/audio/speech") == "http://w:8000/v1/audio/speech")
@@ -772,6 +776,64 @@ tracked_secrets = [f for f in subprocess.run(["git", "ls-files"], cwd=ROOT, capt
                    if any(x in f for x in ("api_keys.json", "config/certs/", "whatsapp_web/",
                                            "client_secret", "conversation_state"))]
 check("and no secret is already in the repository", not tracked_secrets, tracked_secrets[:3])
+
+print("\n13. ElevenLabs: eine Stimme, auf dem Server erzeugt")
+import os as _os
+from command_center.backend.services.voice_service import VoiceError, VoiceService
+
+for k in ("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "JARVIS_CC_TTS_URL"):
+    _os.environ.pop(k, None)
+v = VoiceService()
+caps = v.capabilities()["text_to_speech"]
+check("ohne alles ist keine Stimme da", caps["available"] is False and caps["provider"] == "")
+check("und es steht dabei, welche Variablen fehlen",
+      "ELEVENLABS_API_KEY" in caps["detail"] and "ELEVENLABS_VOICE_ID" in caps["detail"], caps["detail"])
+
+_os.environ["ELEVENLABS_API_KEY"] = "sk-test"
+v = VoiceService()
+caps = v.capabilities()["text_to_speech"]
+check("ein Schlüssel ohne Stimmen-Kennung reicht nicht", v.eleven_available() is False)
+check("und das wird auch so gesagt", "ELEVENLABS_VOICE_ID" in caps["detail"], caps["detail"])
+
+_os.environ["ELEVENLABS_VOICE_ID"] = "voice-xyz"
+v = VoiceService()
+check("mit beidem ist ElevenLabs da", v.eleven_available() and v.tts_provider() == "elevenlabs")
+check("Voreinstellung ist ein mehrsprachiges Modell",
+      v.eleven_model == "eleven_multilingual_v2", v.eleven_model)
+
+_os.environ["JARVIS_CC_TTS_URL"] = "http://kokoro:8880"
+v = VoiceService()
+check("ElevenLabs geht vor, wenn beides eingerichtet ist", v.tts_provider() == "elevenlabs")
+
+# Rohes PCM in WAV fassen: Der Windows-PC spielt WAV mit der
+# Standardbibliothek, MP3 nur mit Zusatzpaket.
+wav = VoiceService._wav(b"\x00\x01" * 1200)
+check("aus PCM wird eine gültige WAV-Datei", wav[:4] == b"RIFF" and wav[8:12] == b"WAVE", wav[:12])
+import wave as _wave, io as _io
+with _wave.open(_io.BytesIO(wav)) as w:
+    check("mono, 16 bit, 24 kHz", (w.getnchannels(), w.getsampwidth(), w.getframerate()) == (1, 2, 24000),
+          (w.getnchannels(), w.getsampwidth(), w.getframerate()))
+
+for k in ("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "JARVIS_CC_TTS_URL"):
+    _os.environ.pop(k, None)
+
+print("\n14. Der PC bekommt Ton, keinen Schlüssel")
+import json as _json
+from actions.speak_audio import speak_audio
+import base64 as _b64
+
+out = _json.loads(speak_audio({}))
+check("ohne Audio wird das gesagt", "audio_base64" in out.get("error", ""), out)
+out = _json.loads(speak_audio({"audio_base64": "kein base64!!"}))
+check("kaputtes Audio wird erkannt", "kodiert" in out.get("error", ""), out)
+out = _json.loads(speak_audio({"audio_base64": _b64.b64encode(b"x" * 100).decode()}))
+check("ohne Lautsprecher wird nicht behauptet, es lief",
+      out.get("played") is not True, out)
+check("und der Grund steht dabei", bool(out.get("error")), out)
+
+src = (ROOT / "actions" / "speak_audio.py").read_text(encoding="utf-8")
+check("der PC holt sich das Audio nicht selbst — kein Schlüssel, keine Verbindung",
+      "ELEVENLABS_API_KEY" not in src and "api.elevenlabs.io" not in src and "xi-api-key" not in src)
 
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)
