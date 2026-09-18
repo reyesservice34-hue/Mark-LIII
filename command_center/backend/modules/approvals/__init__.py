@@ -48,5 +48,5 @@ async def reject(approval_id: str, body: DecisionBody, state: AppState = Depends
     return {"approval": a}
 
 
-MODULE = ModuleSpec(id="approvals", title="Approvals", router=router, icon="shield-check", path="/approvals",
-                    order=115, nav=False, mobile_priority=70, description="Pending approvals")
+MODULE = ModuleSpec(id="approvals", title="Freigaben", router=router, icon="shield-check", path="/approvals",
+                    order=115, nav=False, mobile_priority=70, description="Wartende Freigaben")

@@ -172,6 +172,24 @@ elif [ -n "$N8N_HOST" ] && docker inspect "$N8N_HOST" >/dev/null 2>&1; then
   fi
 fi
 
+# ── Docker-Socket lesbar machen ──────────────────────────────────────────
+# Der Container läuft als normaler Benutzer, der Socket gehört root:docker.
+# Ohne die Gruppen-ID des Hosts meldet die Server-Seite „docker offline",
+# obwohl der Socket eingehängt ist. Nur lesen, nichts am Host ändern.
+DOCKER_SOCK="$(sed -n 's|^JARVIS_CC_DOCKER_SOCKET=\([^#]*\).*|\1|p' "$ENV_FILE" \
+               | tr -d '[:space:]' | head -1)"
+DOCKER_SOCK="${DOCKER_SOCK:-/var/run/docker.sock}"
+if [ -S "$DOCKER_SOCK" ]; then
+  GID="$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || true)"
+  if [ -n "$GID" ] && [ "$GID" != "0" ]; then
+    set_value JARVIS_CC_DOCKER_GID "$GID"
+    info "Docker-Socket gehört Gruppe $GID — eingetragen, damit der Container ihn lesen darf."
+  elif [ "$GID" = "0" ]; then
+    warn "Der Docker-Socket gehört der Gruppe root. Der Container läuft bewusst nicht"
+    warn "als root, deshalb bleibt die Docker-Ansicht leer. Das ist kein Fehler."
+  fi
+fi
+
 chmod 600 "$ENV_FILE"
 
 # ── neu starten ──────────────────────────────────────────────────────────

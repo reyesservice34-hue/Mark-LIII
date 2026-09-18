@@ -76,4 +76,4 @@ async def status(state: AppState = Depends(get_state), principal: Principal = De
     }
 
 
-MODULE = ModuleSpec(id="health", title="Health", router=router, nav=False, order=1)
+MODULE = ModuleSpec(id="health", title="Zustand", router=router, nav=False, order=1)

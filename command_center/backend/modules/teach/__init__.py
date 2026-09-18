@@ -243,8 +243,8 @@ def _startup(state: AppState) -> None:
 
 
 MODULE = ModuleSpec(
-    id="teach", title="Teach", router=router, icon="graduation-cap", path="/teach", order=45,
-    description="Show JARVIS once, keep the lesson", on_startup=_startup,
+    id="teach", title="Lernen", router=router, icon="graduation-cap", path="/teach", order=45,
+    description="Einmal vormachen, dann kann er es", on_startup=_startup,
     commands=[{"id": "teach.record", "title": "Record a demonstration", "path": "/teach?record=1"},
               {"id": "teach.open", "title": "Open Teach", "path": "/teach"}],
 )

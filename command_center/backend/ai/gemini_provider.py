@@ -6,7 +6,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from .base import ProviderInfo, ToolDef
+from .base import ProviderInfo, ToolDef, ToolNameMap
 
 _BASE = "https://generativelanguage.googleapis.com/v1beta"
 _DROP_KEYS = {"additionalProperties", "$schema", "default", "examples", "title"}
@@ -37,7 +37,7 @@ class GeminiProvider:
         self.info = ProviderInfo(id="gemini", model=model, label=f"Gemini · {model}")
 
     @staticmethod
-    def _convert(messages: list[dict]) -> list[dict]:
+    def _convert(messages: list[dict], wire=lambda n: n) -> list[dict]:
         out = []
         tool_names: dict[str, str] = {}
         for m in messages:
@@ -49,8 +49,8 @@ class GeminiProvider:
                 elif t == "image":
                     parts.append({"inline_data": {"mime_type": b["media_type"], "data": b["data"]}})
                 elif t == "tool_use":
-                    tool_names[b["id"]] = b["name"]
-                    parts.append({"functionCall": {"name": b["name"], "args": b.get("input") or {}}})
+                    tool_names[b["id"]] = wire(b["name"])
+                    parts.append({"functionCall": {"name": wire(b["name"]), "args": b.get("input") or {}}})
                 elif t == "tool_result":
                     parts.append({"functionResponse": {
                         "name": tool_names.get(b["tool_use_id"], "tool"),
@@ -61,13 +61,16 @@ class GeminiProvider:
 
     async def stream(self, *, system: str, messages: list[dict], tools: list[ToolDef],
                      max_tokens: int = 16000) -> AsyncIterator[dict]:
-        body: dict = {"contents": self._convert(messages),
+        # Gemini rejects a dot in a function name just as the others do.
+        names = ToolNameMap((t.name for t in tools), limit=64)
+        body: dict = {"contents": self._convert(messages, names.wire),
                       "generationConfig": {"maxOutputTokens": max_tokens}}
         if system:
             body["systemInstruction"] = {"parts": [{"text": system}]}
         if tools:
             body["tools"] = [{"functionDeclarations": [
-                {"name": t.name, "description": t.description, "parameters": _gemini_schema(t.input_schema)}
+                {"name": names.wire(t.name), "description": t.description,
+                 "parameters": _gemini_schema(t.input_schema)}
                 for t in tools]}]
         url = f"{_BASE}/models/{self.info.model}:streamGenerateContent?alt=sse"
         text_parts: list[str] = []
@@ -103,7 +106,8 @@ class GeminiProvider:
                                     yield {"type": "text_delta", "text": part["text"]}
                                 if part.get("functionCall"):
                                     fc = part["functionCall"]
-                                    calls.append({"id": f"call_{len(calls) + 1}", "name": fc.get("name", ""),
+                                    calls.append({"id": f"call_{len(calls) + 1}",
+                                                  "name": names.real(fc.get("name", "")),
                                                   "input": fc.get("args") or {}})
         except httpx.HTTPError as e:
             yield {"type": "error", "message": f"Cannot reach Gemini: {e}", "retryable": True}

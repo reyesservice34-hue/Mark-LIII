@@ -114,4 +114,4 @@ async def search_memory(q: str = "", state: AppState = Depends(get_state), _: Pr
     return {"results": rows}
 
 
-MODULE = ModuleSpec(id="gateway", title="Gateway", router=router, nav=False, order=200)
+MODULE = ModuleSpec(id="gateway", title="Schnittstelle", router=router, nav=False, order=200)

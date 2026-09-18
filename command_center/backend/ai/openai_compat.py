@@ -12,7 +12,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from .base import ProviderInfo, ToolDef
+from .base import ProviderInfo, ToolDef, ToolNameMap
 
 
 class OpenAICompatProvider:
@@ -31,7 +31,8 @@ class OpenAICompatProvider:
         return h
 
     @staticmethod
-    def _convert_messages(system: str, messages: list[dict]) -> list[dict]:
+    def _convert_messages(system: str, messages: list[dict],
+                          wire=lambda n: n) -> list[dict]:
         out: list[dict] = []
         if system:
             out.append({"role": "system", "content": system})
@@ -39,7 +40,8 @@ class OpenAICompatProvider:
             if m["role"] == "assistant":
                 text = "".join(b.get("text", "") for b in m["content"] if b.get("type") == "text")
                 calls = [{"id": b["id"], "type": "function",
-                          "function": {"name": b["name"], "arguments": json.dumps(b.get("input") or {})}}
+                          "function": {"name": wire(b["name"]),
+                                       "arguments": json.dumps(b.get("input") or {})}}
                          for b in m["content"] if b.get("type") == "tool_use"]
                 msg: dict = {"role": "assistant", "content": text or None}
                 if calls:
@@ -66,13 +68,17 @@ class OpenAICompatProvider:
 
     async def stream(self, *, system: str, messages: list[dict], tools: list[ToolDef],
                      max_tokens: int = 16000) -> AsyncIterator[dict]:
+        # OpenAI-compatible endpoints validate function names against
+        # ^[a-zA-Z0-9_-]{1,64}$, and this registry's names are dotted.
+        names = ToolNameMap((t.name for t in tools), limit=64)
         body: dict = {
             "model": self.info.model, "stream": True, "max_tokens": max_tokens,
-            "messages": self._convert_messages(system, messages),
+            "messages": self._convert_messages(system, messages, names.wire),
         }
         if tools:
             body["tools"] = [{"type": "function", "function": {
-                "name": t.name, "description": t.description, "parameters": t.input_schema}} for t in tools]
+                "name": names.wire(t.name), "description": t.description,
+                "parameters": t.input_schema}} for t in tools]
         text_parts: list[str] = []
         calls: dict[int, dict] = {}
         finish = "stop"
@@ -131,9 +137,10 @@ class OpenAICompatProvider:
             except ValueError:
                 args = {"_raw": slot["args"]}
             call_id = slot["id"] or f"call_{idx}"
-            block = {"type": "tool_use", "id": call_id, "name": slot["name"], "input": args}
+            real = names.real(slot["name"])
+            block = {"type": "tool_use", "id": call_id, "name": real, "input": args}
             content.append(block)
-            yield {"type": "tool_use", "id": call_id, "name": slot["name"], "input": args}
+            yield {"type": "tool_use", "id": call_id, "name": real, "input": args}
         stop = "tool_use" if calls else ("max_tokens" if finish == "length" else "end_turn")
         yield {"type": "message_end", "stop_reason": stop, "content": content, "usage": usage}
 

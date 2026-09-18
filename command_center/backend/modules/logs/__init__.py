@@ -32,7 +32,7 @@ async def audit(q: str = "", actor_id: str = "", agent_id: str = "", task_id: st
 
 
 MODULE = ModuleSpec(
-    id="logs", title="Logs", router=router, icon="scroll-text", path="/logs", order=100,
-    description="Log center and audit trail",
+    id="logs", title="Protokoll", router=router, icon="scroll-text", path="/logs", order=100,
+    description="Protokoll und Prüfspur",
     commands=[{"id": "logs.open", "title": "View Logs", "path": "/logs", "shortcut": "g l"}],
 )

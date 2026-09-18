@@ -163,4 +163,4 @@ async def revoke_token(token_id: str, state: AppState = Depends(get_state),
     return {"ok": True}
 
 
-MODULE = ModuleSpec(id="auth", title="Authentication", router=router, nav=False, order=0)
+MODULE = ModuleSpec(id="auth", title="Anmeldung", router=router, nav=False, order=0)

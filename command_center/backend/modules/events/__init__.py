@@ -89,4 +89,4 @@ async def websocket(ws: WebSocket):
         await sub.aclose()
 
 
-MODULE = ModuleSpec(id="events", title="Events", router=router, nav=False, order=2)
+MODULE = ModuleSpec(id="events", title="Ereignisse", router=router, nav=False, order=2)

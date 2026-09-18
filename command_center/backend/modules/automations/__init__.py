@@ -56,24 +56,24 @@ def _startup(state: AppState) -> None:
         state.bus.publish("server.metrics", point)
 
     sched.add("metrics_sample", "Server metrics sampler", 5, sample, silent=True,
-              description="Sample CPU, RAM, disk, load and network every 5 s")
+              description="CPU, RAM, Platte, Last und Netz alle 5 s messen")
     sched.add("metrics_persist", "Metrics history", 60, metrics.persist_point, silent=True,
-              description="Persist one metrics point per minute for analytics (14 days)")
+              description="Einen Messwert je Minute für die Auswertung sichern (14 Tage)")
     sched.add("integration_health", "Integration health checks", 180, state.integrations.check_all, silent=True,
-              description="Verify every configured integration against its live API")
+              description="Jede eingerichtete Integration gegen ihre echte API prüfen")
     sched.add("docker_probe", "Docker engine probe", 60, lambda: metrics.docker_containers(with_stats=False),
-              silent=True, description="Keep the docker engine state current for the status bar")
+              silent=True, description="Docker-Zustand für die Statusleiste aktuell halten")
     sched.add("master_health", "Master agent provider check", 300, state.runtime.check_provider, silent=True,
-              description="Ping the configured AI provider")
+              description="Beim eingestellten AI-Anbieter nachfragen")
     sched.add("approval_expiry", "Expire stale approvals", 60, approvals.expire_overdue, silent=True,
-              description="Approvals nobody decided within the timeout are expired")
+              description="Freigaben, über die niemand entschieden hat, verfallen lassen")
     sched.add("session_purge", "Purge expired sessions", 3600, state.auth.purge_expired_sessions, silent=True,
-              description="Remove expired login sessions", run_immediately=False)
+              description="Abgelaufene Anmeldungen entfernen", run_immediately=False)
     sched.add("log_trim", "Log retention", 600, state.log.trim, silent=True,
               description=f"Keep the newest {state.settings.log_retention_rows} log rows", run_immediately=False)
 
 
 MODULE = ModuleSpec(
-    id="automations", title="Automations", router=router, icon="timer", path="/automations", order=60,
-    description="Background jobs and schedules", on_startup=_startup,
+    id="automations", title="Automatisierung", router=router, icon="timer", path="/automations", order=60,
+    description="Hintergrundaufträge und Zeitpläne", on_startup=_startup,
 )

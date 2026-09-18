@@ -694,5 +694,49 @@ finally:
     for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID"):
         os.environ.pop(k, None)
 
+print("\n15. dotted tool names must survive every provider's name rule")
+# Every provider validates function names against roughly [a-zA-Z0-9_-] and
+# rejects the dot. Every name in this registry is dotted, so a single missed
+# translation means the model is offered nothing at all — which is exactly what
+# happened on the first real chat: HTTP 400, tools.0.custom.name.
+import re as _re  # noqa: E402
+
+from command_center.backend.ai.base import ToolDef, ToolNameMap  # noqa: E402
+
+os.environ["JARVIS_CC_DATA_DIR"] = tmp + "/state-names"
+reset_settings()
+name_state = build_state()
+registry_names = [t.name for t in name_state.tools.all()]
+check("the registry really does use dotted names",
+      sum("." in n for n in registry_names) > 30, sum("." in n for n in registry_names))
+
+for limit, who in ((128, "Anthropic"), (64, "OpenAI / Gemini")):
+    m = ToolNameMap(registry_names, limit=limit)
+    bad = [w for w in m.to_wire.values() if not _re.fullmatch(rf"[a-zA-Z0-9_-]{{1,{limit}}}", w)]
+    check(f"{who}: every name passes the pattern", not bad, bad[:3])
+    lost = [n for n in registry_names if m.real(m.wire(n)) != n]
+    check(f"{who}: every name maps back to itself", not lost, lost[:3])
+    check(f"{who}: no two tools share a wire name",
+          len(set(m.to_wire.values())) == len(registry_names),
+          len(set(m.to_wire.values())))
+
+clash = ToolNameMap(["a.b", "a_b"])
+check("a collision is given a suffix, not silently merged",
+      clash.wire("a.b") != clash.wire("a_b")
+      and clash.real(clash.wire("a.b")) == "a.b"
+      and clash.real(clash.wire("a_b")) == "a_b",
+      (clash.wire("a.b"), clash.wire("a_b")))
+
+# The Anthropic provider also rewrites tool_use blocks in the history, because
+# the API validates those against the same rule.
+from command_center.backend.ai.anthropic_provider import AnthropicProvider  # noqa: E402
+
+hist = [{"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "calendar.read",
+                                           "input": {"q": "x"}}]}]
+converted = AnthropicProvider._convert_messages(hist, ToolNameMap(["calendar.read"]).wire)
+check("an earlier tool call in the history is renamed too",
+      converted[0]["content"][0]["name"] == "calendar_read", converted)
+name_state.db.close()
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

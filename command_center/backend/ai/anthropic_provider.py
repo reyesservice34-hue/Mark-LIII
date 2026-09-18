@@ -1,9 +1,9 @@
 """Anthropic provider — official SDK, streaming, tool use."""
 from __future__ import annotations
 
-from typing import AsyncIterator
+from typing import AsyncIterator, Callable
 
-from .base import ProviderInfo, ToolDef
+from .base import ProviderInfo, ToolDef, ToolNameMap
 
 
 def _explain(status: int, message: str) -> str:
@@ -43,7 +43,7 @@ class AnthropicProvider:
         self.info = ProviderInfo(id="anthropic", model=model, label=f"Anthropic · {model}")
 
     @staticmethod
-    def _convert_messages(messages: list[dict]) -> list[dict]:
+    def _convert_messages(messages: list[dict], wire: "Callable[[str], str]" = lambda n: n) -> list[dict]:
         out = []
         for m in messages:
             blocks = []
@@ -56,7 +56,9 @@ class AnthropicProvider:
                     blocks.append({"type": "image", "source": {
                         "type": "base64", "media_type": b["media_type"], "data": b["data"]}})
                 elif t == "tool_use":
-                    blocks.append({"type": "tool_use", "id": b["id"], "name": b["name"],
+                    # The history is validated against the same name rule as the
+                    # declarations, so an earlier call has to be renamed too.
+                    blocks.append({"type": "tool_use", "id": b["id"], "name": wire(b["name"]),
                                    "input": b.get("input") or {}})
                 elif t == "tool_result":
                     blocks.append({"type": "tool_result", "tool_use_id": b["tool_use_id"],
@@ -68,15 +70,18 @@ class AnthropicProvider:
     async def stream(self, *, system: str, messages: list[dict], tools: list[ToolDef],
                      max_tokens: int = 16000) -> AsyncIterator[dict]:
         anthropic = self._anthropic
+        # Anthropic accepts only [a-zA-Z0-9_-]{1,128} as a tool name, and every
+        # name in this registry is dotted. Translated here and back again below.
+        names = ToolNameMap((t.name for t in tools), limit=128)
         kwargs: dict = {
             "model": self.info.model,
             "max_tokens": max_tokens,
-            "messages": self._convert_messages(messages),
+            "messages": self._convert_messages(messages, names.wire),
         }
         if system:
             kwargs["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
         if tools:
-            kwargs["tools"] = [{"name": t.name, "description": t.description,
+            kwargs["tools"] = [{"name": names.wire(t.name), "description": t.description,
                                 "input_schema": t.input_schema} for t in tools]
         try:
             async with self._client.messages.stream(**kwargs) as stream:
@@ -103,7 +108,8 @@ class AnthropicProvider:
             if block.type == "text":
                 content.append({"type": "text", "text": block.text})
             elif block.type == "tool_use":
-                content.append({"type": "tool_use", "id": block.id, "name": block.name,
+                content.append({"type": "tool_use", "id": block.id,
+                                "name": names.real(block.name),
                                 "input": dict(block.input or {})})
         stop = final.stop_reason or "end_turn"
         if stop == "refusal":

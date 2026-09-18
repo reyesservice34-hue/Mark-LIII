@@ -85,12 +85,12 @@ async def retry(run_id: str, state: AppState = Depends(get_state), principal: Pr
 def _startup(state: AppState) -> None:
     hub = state.workflows
     state.scheduler.add("workflow_sync", "Workflow sync", 60, hub.sync, silent=True,
-                        description="Refresh workflows and executions from configured engines",
+                        description="Workflows und Läufe aus den verbundenen Systemen holen",
                         enabled=hub.configured(), run_immediately=True)
 
 
 MODULE = ModuleSpec(
     id="workflows", title="Workflows", router=router, icon="workflow", path="/workflows", order=50,
-    description="Automation workflows", on_startup=_startup,
+    description="Abläufe in n8n", on_startup=_startup,
     commands=[{"id": "workflows.open", "title": "Run Workflow", "path": "/workflows", "shortcut": "g w"}],
 )

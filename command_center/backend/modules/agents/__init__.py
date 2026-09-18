@@ -113,7 +113,7 @@ async def check_master(state: AppState = Depends(get_state), _: Principal = Depe
 
 
 MODULE = ModuleSpec(
-    id="agents", title="Agents", router=router, icon="bot", path="/agents", order=30, mobile_priority=60,
-    description="Agent control center",
+    id="agents", title="Agenten", router=router, icon="bot", path="/agents", order=30, mobile_priority=60,
+    description="Leitstand der Agenten",
     commands=[{"id": "agents.open", "title": "Open Agents", "path": "/agents", "shortcut": "g a"}],
 )

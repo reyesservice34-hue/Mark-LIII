@@ -126,7 +126,7 @@ async def delete(body: PathBody, state: AppState = Depends(get_state), principal
 
 
 MODULE = ModuleSpec(
-    id="files", title="Files", router=router, icon="folder", path="/files", order=80,
-    description="Workspace files",
+    id="files", title="Dateien", router=router, icon="folder", path="/files", order=80,
+    description="Dateien im Arbeitsbereich",
     commands=[{"id": "files.search", "title": "Search Files", "path": "/files?focus=search", "shortcut": "g f"}],
 )

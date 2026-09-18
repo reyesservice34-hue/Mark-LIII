@@ -20,6 +20,13 @@ services:
       JARVIS_CC_WORKSPACE_DIR: /data/workspace
     ports:
       - "${JARVIS_CC_BIND:-127.0.0.1}:${JARVIS_CC_PORT:-8080}:8080"
+    # The container runs as a non-root user, but the docker socket is
+    # root:docker 660 — without that group it cannot read it, and the Server
+    # page honestly but uselessly says "offline". The host's docker group id
+    # differs per machine, so setup-keys.sh detects it and writes it to .env.
+    # The default is nogroup, which grants nothing.
+    group_add:
+      - "${JARVIS_CC_DOCKER_GID:-65534}"
     networks:
       - default
       # Reaches a neighbouring stack (n8n, a database) by container name.

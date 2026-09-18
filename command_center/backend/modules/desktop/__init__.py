@@ -117,6 +117,6 @@ async def history(device_id: str = "", limit: int = 50, state: AppState = Depend
 
 MODULE = ModuleSpec(
     id="desktop", title="Desktop", router=router, icon="monitor", path="/desktop", order=75,
-    description="The paired PC and what it was told to do",
+    description="Der gekoppelte PC und was er tun sollte",
     commands=[{"id": "desktop.open", "title": "Open Desktop control", "path": "/desktop"}],
 )

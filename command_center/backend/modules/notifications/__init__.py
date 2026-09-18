@@ -39,6 +39,6 @@ async def delete(notification_id: str, state: AppState = Depends(get_state), pri
 
 
 MODULE = ModuleSpec(
-    id="notifications", title="Notifications", router=router, icon="bell", path="/notifications", order=110,
-    mobile_priority=80, description="Notification center",
+    id="notifications", title="Meldungen", router=router, icon="bell", path="/notifications", order=110,
+    mobile_priority=80, description="Alles, was gemeldet wurde",
 )

@@ -17,8 +17,9 @@ Stream events yielded by `LLMProvider.stream()`:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Protocol
+from typing import Any, AsyncIterator, Iterable, Protocol
 
 
 @dataclass
@@ -60,3 +61,45 @@ def text_of(blocks: list[dict]) -> str:
 def trim(s: str, n: int) -> str:
     s = s or ""
     return s if len(s) <= n else s[: n - 20] + "\n…[truncated]…"
+
+
+# ── tool names on the wire ───────────────────────────────────────────────────
+# This registry names tools by area: "calendar.read", "composio.run". Every
+# major provider validates function names against roughly [a-zA-Z0-9_-] and
+# rejects the dot, so each declaration would be refused. Renaming the registry
+# would be the wrong fix: the dotted name is what the audit trail, the approval
+# gate, the agent whitelists and the UI all show. So it is translated at the
+# boundary and translated back, and nothing else in the system has to know.
+_ILLEGAL_IN_TOOL_NAME = re.compile(r"[^a-zA-Z0-9_-]")
+
+
+def wire_name(name: str, limit: int = 128) -> str:
+    return _ILLEGAL_IN_TOOL_NAME.sub("_", name)[:limit] or "tool"
+
+
+class ToolNameMap:
+    """Translates between the registry's names and what a provider accepts.
+
+    A collision (two tools whose names differ only in the separator) would
+    silently route a call to the wrong tool, so the second one is given a
+    suffix rather than being allowed to overwrite the first.
+    """
+
+    def __init__(self, names: "Iterable[str]", limit: int = 128) -> None:
+        self.to_wire: dict[str, str] = {}
+        self.to_real: dict[str, str] = {}
+        for name in names:
+            w = wire_name(name, limit)
+            if w in self.to_real and self.to_real[w] != name:
+                n = 2
+                while f"{w[:limit - 2]}_{n}" in self.to_real:
+                    n += 1
+                w = f"{w[:limit - 2]}_{n}"
+            self.to_wire[name] = w
+            self.to_real[w] = name
+
+    def wire(self, name: str) -> str:
+        return self.to_wire.get(name) or wire_name(name)
+
+    def real(self, name: str) -> str:
+        return self.to_real.get(name, name)

@@ -17,7 +17,7 @@ export default function LoginPage() {
     e.preventDefault();
     setBusy(true); setError("");
     try { await login(username, password); }
-    catch (err) { setError(err instanceof ApiError ? err.message : "Login failed"); }
+    catch (err) { setError(err instanceof ApiError ? err.message : "Anmeldung fehlgeschlagen"); }
     finally { setBusy(false); }
   };
 
@@ -26,12 +26,12 @@ export default function LoginPage() {
       <form className="login-card" onSubmit={submit} aria-busy={busy || loading}>
         <div className="login-core" aria-hidden><span className="ring r1" /><span className="ring r2" /><span className="nucleus" /></div>
         <h1>JARVIS</h1>
-        <p className="label" style={{ textAlign: "center" }}>Command Center · Authentication required</p>
-        <div className="field"><label htmlFor="u">Username</label><input id="u" className="input" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus /></div>
-        <div className="field"><label htmlFor="p">Password</label><input id="p" className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+        <p className="label" style={{ textAlign: "center" }}>Kommandozentrale · Anmeldung erforderlich</p>
+        <div className="field"><label htmlFor="u">Benutzername</label><input id="u" className="input" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus /></div>
+        <div className="field"><label htmlFor="p">Passwort</label><input id="p" className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
         {error && <div className="error-state" role="alert">{error}</div>}
-        <button className="btn primary" type="submit" disabled={busy || !username || !password} style={{ height: 38 }}>{busy ? "Authenticating…" : "Enter"}</button>
-        <p className="tiny muted" style={{ textAlign: "center" }}>Sessions are cookie-based and expire automatically. No credentials are stored in this browser.</p>
+        <button className="btn primary" type="submit" disabled={busy || !username || !password} style={{ height: 38 }}>{busy ? "Melde an…" : "Anmelden"}</button>
+        <p className="tiny muted" style={{ textAlign: "center" }}>Die Anmeldung läuft über ein Cookie und läuft von selbst ab. In diesem Browser wird kein Zugangsdatum gespeichert.</p>
       </form>
     </div>
   );

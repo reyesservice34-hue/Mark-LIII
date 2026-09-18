@@ -33,6 +33,6 @@ async def check_all(state: AppState = Depends(get_state), _: Principal = Depends
 
 
 MODULE = ModuleSpec(
-    id="integrations", title="Integrations", router=router, icon="plug", path="/integrations", order=90,
-    description="Connected services",
+    id="integrations", title="Integrationen", router=router, icon="plug", path="/integrations", order=90,
+    description="Verbundene Dienste",
 )

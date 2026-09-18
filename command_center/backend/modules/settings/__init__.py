@@ -52,5 +52,5 @@ async def get_settings_view(request: Request, state: AppState = Depends(get_stat
     }
 
 
-MODULE = ModuleSpec(id="settings", title="Settings", router=router, icon="settings", path="/settings", order=130,
-                    description="Configuration, users and pairing")
+MODULE = ModuleSpec(id="settings", title="Einstellungen", router=router, icon="settings", path="/settings", order=130,
+                    description="Einstellungen, Benutzer, Kopplung")

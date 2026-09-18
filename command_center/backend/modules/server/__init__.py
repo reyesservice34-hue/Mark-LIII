@@ -100,6 +100,6 @@ async def restart_service(name: str, body: ReasonBody, state: AppState = Depends
 
 MODULE = ModuleSpec(
     id="server", title="Server", router=router, icon="server", path="/server", order=70, mobile_priority=40,
-    description="Server control center",
+    description="Leitstand des Servers",
     commands=[{"id": "server.open", "title": "Open Server", "path": "/server", "shortcut": "g s"}],
 )

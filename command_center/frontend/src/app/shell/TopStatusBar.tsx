@@ -42,28 +42,28 @@ export function TopStatusBar() {
   return (
     <header className="topbar" role="banner">
       <div className="status-group">
-        <span className="chip hero"><StatusIndicator status={conn.state === "online" ? "ok" : conn.state === "offline" ? "err" : "warn"} live={conn.state !== "online"} />{conn.state === "online" ? "JARVIS ONLINE" : conn.state === "offline" ? "JARVIS OFFLINE" : "RECONNECTING"}</span>
+        <span className="chip hero"><StatusIndicator status={conn.state === "online" ? "ok" : conn.state === "offline" ? "err" : "warn"} live={conn.state !== "online"} />{conn.state === "online" ? "JARVIS ONLINE" : conn.state === "offline" ? "JARVIS OFFLINE" : "VERBINDE NEU"}</span>
         <span className="sep desktop-only" />
-        <span className="chip desktop-only" title={master?.error || master?.provider?.label || ""}><StatusIndicator status={masterTone} live={!!master?.active_runs?.length} />{label || (master ? (master.online ? (master.active_runs?.length ? "MASTER AGENT ACTIVE" : "MASTER AGENT READY") : "MASTER AGENT OFFLINE") : "…")}</span>
+        <span className="chip desktop-only" title={master?.error || master?.provider?.label || ""}><StatusIndicator status={masterTone} live={!!master?.active_runs?.length} />{label || (master ? (master.online ? (master.active_runs?.length ? "MASTER AGENT ARBEITET" : "MASTER AGENT BEREIT") : "MASTER AGENT OFFLINE") : "…")}</span>
         <span className="sep desktop-only" />
-        <span className="chip desktop-only"><StatusIndicator status={data?.server?.connected ? "ok" : "err"} />SERVER {data?.server?.connected ? "CONNECTED" : "—"}</span>
+        <span className="chip desktop-only"><StatusIndicator status={data?.server?.connected ? "ok" : "err"} />SERVER {data?.server?.connected ? "VERBUNDEN" : "—"}</span>
         <span className="sep desktop-only" />
-        <span className="chip"><span className="val">{running}</span> TASK{running === 1 ? "" : "S"} RUNNING</span>
-        <span className="chip desktop-only"><span className="val">{data?.agents?.active ?? 0}</span> AGENT{data?.agents?.active === 1 ? "" : "S"} ACTIVE</span>
+        <span className="chip"><span className="val">{running}</span> AUFGABE{running === 1 ? "" : "N"} LAUFEN</span>
+        <span className="chip desktop-only"><span className="val">{data?.agents?.active ?? 0}</span> AGENT{data?.agents?.active === 1 ? "" : "EN"} AKTIV</span>
       </div>
       <div className="status-group right">
         <span className="chip desktop-only" title="CPU">CPU <span className="val">{pct(data?.server?.cpu)}</span><MiniMeter v={data?.server?.cpu ?? 0} /></span>
-        <span className="chip desktop-only" title="RAM">RAM <span className="val">{pct(data?.server?.ram)}</span><MiniMeter v={data?.server?.ram ?? 0} /></span>
-        <span className="chip desktop-only" title="Disk">DISK <span className="val">{pct(data?.server?.disk)}</span><MiniMeter v={data?.server?.disk ?? 0} /></span>
+        <span className="chip desktop-only" title="Arbeitsspeicher">RAM <span className="val">{pct(data?.server?.ram)}</span><MiniMeter v={data?.server?.ram ?? 0} /></span>
+        <span className="chip desktop-only" title="Festplatte">PLATTE <span className="val">{pct(data?.server?.disk)}</span><MiniMeter v={data?.server?.disk ?? 0} /></span>
         <span className="sep desktop-only" />
-        <span className="chip desktop-only" title={master?.provider?.label || "no provider"}>{master?.provider ? master.provider.model : "NO MODEL"}</span>
+        <span className="chip desktop-only" title={master?.provider?.label || "kein Anbieter eingerichtet"}>{master?.provider ? master.provider.model : "KEIN MODELL"}</span>
         <span className="sep desktop-only" />
-        <button className="btn icon ghost sm desktop-only" onClick={() => paletteOpen.set(true)} aria-label="Search / commands"><Search /></button>
-        <Link to="/approvals" className="btn icon ghost sm icon-btn" aria-label={`${data?.approvals_pending ?? 0} pending approvals`} title="Approvals"><ShieldCheck />{!!data?.approvals_pending && <span className="count warn">{data.approvals_pending}</span>}</Link>
-        <Link to="/notifications" className="btn icon ghost sm icon-btn" aria-label={`${data?.notifications_unread ?? 0} unread notifications`} title="Notifications"><Bell />{!!data?.notifications_unread && <span className="count">{data.notifications_unread}</span>}</Link>
-        {conn.state === "online" ? <span className="chip desktop-only" title="Live connection"><Wifi size={14} style={{ color: "var(--ok)" }} /></span> :
-          <button className="btn icon ghost sm" title="Reconnect" aria-label="Reconnect" onClick={() => events.reconnectNow()}>{conn.state === "offline" ? <WifiOff style={{ color: "var(--err)" }} /> : <RefreshCw style={{ animation: "spin 1s linear infinite" }} />}</button>}
-        <button className="chip desktop-only" style={{ background: "none", border: 0 }} onClick={() => nav("/settings")} title="Account"><strong>{data?.user?.name}</strong><span className="muted">{data?.user?.role}</span></button>
+        <button className="btn icon ghost sm desktop-only" onClick={() => paletteOpen.set(true)} aria-label="Suchen und Befehle"><Search /></button>
+        <Link to="/approvals" className="btn icon ghost sm icon-btn" aria-label={`${data?.approvals_pending ?? 0} wartende Freigaben`} title="Freigaben"><ShieldCheck />{!!data?.approvals_pending && <span className="count warn">{data.approvals_pending}</span>}</Link>
+        <Link to="/notifications" className="btn icon ghost sm icon-btn" aria-label={`${data?.notifications_unread ?? 0} ungelesene Meldungen`} title="Meldungen"><Bell />{!!data?.notifications_unread && <span className="count">{data.notifications_unread}</span>}</Link>
+        {conn.state === "online" ? <span className="chip desktop-only" title="Laufende Verbindung"><Wifi size={14} style={{ color: "var(--ok)" }} /></span> :
+          <button className="btn icon ghost sm" title="Neu verbinden" aria-label="Neu verbinden" onClick={() => events.reconnectNow()}>{conn.state === "offline" ? <WifiOff style={{ color: "var(--err)" }} /> : <RefreshCw style={{ animation: "spin 1s linear infinite" }} />}</button>}
+        <button className="chip desktop-only" style={{ background: "none", border: 0 }} onClick={() => nav("/settings")} title="Konto"><strong>{data?.user?.name}</strong><span className="muted">{data?.user?.role}</span></button>
       </div>
     </header>
   );

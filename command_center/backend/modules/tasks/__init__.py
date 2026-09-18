@@ -131,8 +131,8 @@ async def task_logs(task_id: str, state: AppState = Depends(get_state), _: Princ
 
 
 MODULE = ModuleSpec(
-    id="tasks", title="Tasks", router=router, icon="list-checks", path="/tasks", order=40, mobile_priority=90,
-    description="Task manager",
+    id="tasks", title="Aufgaben", router=router, icon="list-checks", path="/tasks", order=40, mobile_priority=90,
+    description="Was zu tun ist",
     commands=[{"id": "tasks.new", "title": "New Task", "path": "/tasks?new=1", "shortcut": "g t"},
               {"id": "tasks.open", "title": "Open Tasks", "path": "/tasks"}],
 )

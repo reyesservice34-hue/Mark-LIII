@@ -261,6 +261,6 @@ async def upload_attachment(file: UploadFile = File(...), state: AppState = Depe
 
 MODULE = ModuleSpec(
     id="chat", title="Chat", router=router, icon="message-square", path="/chat", order=20, mobile_priority=100,
-    description="Talk to JARVIS",
+    description="Mit JARVIS sprechen",
     commands=[{"id": "chat.new", "title": "Talk to JARVIS", "path": "/chat?new=1", "shortcut": "g c"}],
 )

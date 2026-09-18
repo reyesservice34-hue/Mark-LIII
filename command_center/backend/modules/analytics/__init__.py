@@ -53,5 +53,5 @@ async def overview(days: int = 14, state: AppState = Depends(get_state), _: Prin
     }
 
 
-MODULE = ModuleSpec(id="analytics", title="Analytics", router=router, icon="bar-chart-3", path="/analytics",
-                    order=120, description="Usage and performance")
+MODULE = ModuleSpec(id="analytics", title="Auswertung", router=router, icon="bar-chart-3", path="/analytics",
+                    order=120, description="Nutzung und Leistung")
