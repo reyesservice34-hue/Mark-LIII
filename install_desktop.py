@@ -8,13 +8,9 @@ prüft am Ende, ob der Server wirklich antwortet. Nichts davon muss man von
 Hand tippen, und nichts wird stillschweigend überschrieben: was schon
 dasteht, bleibt, wenn man Enter drückt.
 
-Zwei Betriebsarten, weil nicht jeder beides braucht:
-
-  Fernsteuerung   Der Server bedient diesen PC. Braucht nur das
-                  Maschinen-Token aus dem Dashboard.
-  Volle App       Dazu die Sprachsteuerung am Rechner. Braucht zusätzlich
-                  einen Gemini-Schlüssel, weil die Live-Sprachsitzung der
-                  Desktop-App darauf läuft.
+Gebraucht wird nur das Maschinen-Token aus dem Dashboard. Die Desktop-App
+redet über deinen Server — sie hat kein eigenes Gehirn und braucht deshalb
+auch keinen eigenen Schlüssel.
 """
 from __future__ import annotations
 
@@ -139,10 +135,12 @@ def main() -> int:
     cfg["control_plane_enabled"] = True
 
     # ── 3. Sprache am Rechner ────────────────────────────────────────────
-    bold("3. Sprachsteuerung am Rechner (kann man überspringen)")
-    say("  Die Live-Sprachsitzung der Desktop-App läuft über Gemini.")
-    say("  Schlüssel holen: aistudio.google.com/apikey — er beginnt mit AIza")
-    say("  Leer lassen, wenn dieser PC nur ferngesteuert werden soll.\n")
+    bold("3. Gemini-Schlüssel (optional, wird meistens nicht gebraucht)")
+    say("  Die NEUE Desktop-App (JARVIS.bat) redet über deinen Server und braucht")
+    say("  keinen eigenen Schlüssel. Dieser hier ist nur für die alte main.py mit")
+    say("  ihrer eigenen Gemini-Sitzung.")
+    say("  Falls doch: aistudio.google.com/apikey — er beginnt mit AIza")
+    say("  Sonst einfach Enter drücken.\n")
     gem = ask("Gemini-Schlüssel", "beginnt mit AIza", cfg.get("gemini_api_key", ""), secret=True)
     if gem and not gem.startswith("AIza"):
         say("\n  Das sieht nicht nach einem Gemini-Schlüssel aus (die beginnen mit AIza).")
@@ -158,15 +156,15 @@ def main() -> int:
     bold("4. Prüfen")
     say(f"  {check_server(cfg.get('jarvis_gateway_url', ''), cfg.get('jarvis_gateway_token', ''))}")
 
-    has_voice = bool(cfg.get("gemini_api_key"))
     bold("Fertig")
-    if has_voice:
-        say("  Volle App starten:      START-JARVIS.bat  (oder: python start.py)")
-        say("  Nur Fernsteuerung:      python desktop_agent.py")
-    else:
-        say("  Ohne Gemini-Schlüssel läuft die Fernsteuerung, nicht die Sprache am Rechner:")
-        say("      python desktop_agent.py")
-        say("  Danach steht dieser PC im Dashboard unter Desktop und der Server kann ihn bedienen.")
+    say("  JARVIS starten:      JARVIS.bat          (Fenster, Sprache, Fernsteuerung)")
+    say("                       python jarvis_desktop.py")
+    say()
+    say("  Ohne Fenster:        python desktop_voice.py    (nur sprechen, Konsole)")
+    say("                       python desktop_agent.py    (nur Fernsteuerung)")
+    if cfg.get("gemini_api_key"):
+        say()
+        say("  Die alte App mit eigener Gemini-Sitzung: START-JARVIS.bat")
     say()
     say("  Das Token steht in config/api_keys.json — die Datei ist in .gitignore und")
     say("  gehört nirgendwo anders hin.")
