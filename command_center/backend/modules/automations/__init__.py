@@ -69,6 +69,17 @@ def _startup(state: AppState) -> None:
               description="Freigaben, über die niemand entschieden hat, verfallen lassen")
     sched.add("session_purge", "Purge expired sessions", 3600, state.auth.purge_expired_sessions, silent=True,
               description="Abgelaufene Anmeldungen entfernen", run_immediately=False)
+    # Einmal am Tag über den eigenen Tag nachdenken. Das ist der Unterschied
+    # zwischen „kann sich verbessern" und „verbessert sich": ohne Anlass
+    # passiert nichts, und niemand fordert ihn ständig dazu auf.
+    async def daily_reflection():
+        improve = state.services["improve"]
+        proposal = await improve.reflect(state)
+        improve.record(proposal, actor="jarvis")
+
+    sched.add("self_reflection", "Tägliche Selbstbeobachtung", 24 * 3600, daily_reflection,
+              description="Aus der Prüfspur des letzten Tages einen Verbesserungsvorschlag ableiten",
+              run_immediately=False)
     sched.add("log_trim", "Log retention", 600, state.log.trim, silent=True,
               description=f"Keep the newest {state.settings.log_retention_rows} log rows", run_immediately=False)
 

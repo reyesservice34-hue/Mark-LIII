@@ -410,7 +410,11 @@ with TestClient(app) as c:
     src = sx.source("command_center/backend/auth.py")
     check("er darf auch die heiklen lesen", src["critical"] is True and "class AuthService" in src["source"])
 
-    for outside in ("../../etc/passwd", "/etc/passwd", "command_center/frontend/src/main.tsx"):
+    # Das Frontend gehört seit der Erweiterung dazu — er soll das Dashboard
+    # umbauen können. Draußen bleibt, was nicht sein Quelltext ist:
+    # Betriebssystem, Compose-Datei, Einstiegsskripte im Wurzelverzeichnis.
+    for outside in ("../../etc/passwd", "/etc/passwd", "docker-compose.command-center.yml",
+                    "main.py", ".gitignore"):
         try:
             sx.source(outside)
             check(f"außerhalb des Quelltexts abgelehnt: {outside}", False)
@@ -435,6 +439,27 @@ with TestClient(app) as c:
     check("und es lässt sich zurückdrehen",
           (ROOT / "core" / "prompt.txt").read_text(encoding="utf-8") == before)
 
+
+    print("\n9b. jeder Schritt am eigenen Code fragt um Genehmigung")
+    # Ausdrücklicher Wunsch des Nutzers. Nur Lesen und Prüfen laufen frei —
+    # ein Gatter vor einem Lesevorgang wäre Lärm, der die echten Freigaben
+    # entwertet.
+    gate = {t.name: t.needs_approval(state.tools.approval_threshold)
+            for t in state.tools.all() if t.name.startswith("self.")}
+    must_ask = ["self.write", "self.propose", "self.activate", "self.apply",
+                "self.disable", "self.revert"]
+    may_pass = ["self.tools", "self.read", "self.tree", "self.source",
+                "self.check", "self.review", "self.proposals", "self.improve"]
+    for name in must_ask:
+        check(f"{name} fragt", gate.get(name) is True, gate.get(name))
+    for name in may_pass:
+        check(f"{name} liest nur und fragt nicht", gate.get(name) is False, gate.get(name))
+
+    fe = sx.source_tree("command_center/frontend/src")
+    check("das Dashboard gehört zu seinem Quelltext", len(fe) > 40, len(fe))
+    check("und er weiß, dass es einen Build braucht", all(f["needs_build"] for f in fe))
+    check("der Server dagegen nicht",
+          not any(f["needs_build"] for f in sx.source_tree("core")))
 
 print("\n11. learned specialists come back after a restart")
 state.db.close()

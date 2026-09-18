@@ -537,9 +537,12 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           available=cmp_ok, reason=cmp_reason, timeout_seconds=120))
 
     # ── sich selbst erweitern ────────────────────────────────────────────
-    # Drei Stufen, weil Schreiben harmlos ist und Ausführen nicht: schreiben,
-    # prüfen, freigeben. Nur die letzte Stufe ist gefährlich, und nur die geht
-    # durch das Gatter.
+    # Ausdrückliche Anweisung des Nutzers: er darf sich selbst programmieren,
+    # muss aber JEDES MAL um Genehmigung fragen. Also ist hier alles, was
+    # etwas verändert, auf `high` mit requires_approval — schreiben,
+    # vorschlagen, freigeben, abschalten, zurückdrehen. Nur Lesen und Prüfen
+    # laufen frei durch: sie ändern nichts, und ein Gatter davor wäre bloß
+    # Lärm, der die echten Freigaben entwertet.
     selfext = st.services["selfext"]
 
     async def self_tools(ctx: ToolContext, args: dict):
@@ -597,8 +600,9 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           "TOOL = {name, description, input_schema, risk} and an async run(args). An "
                           "optional selftest() is run during self.check. Writing changes nothing yet.",
                           _obj({"name": _s("area.action, lower case, e.g. wetter.heute"),
-                                "source": _s("the complete Python file")}, ["name", "source"]),
-                          category="self", risk="medium", handler=self_write))
+                                "source": _s("the complete Python file"),
+                                "reason": _s("what this tool is for")}, ["name", "source", "reason"]),
+                          category="self", risk="high", requires_approval=True, handler=self_write))
     reg.register(ToolSpec("self.read", "Read back the source of a tool you wrote.",
                           _obj({"name": _s("tool name")}, ["name"]),
                           category="self", risk="low", min_role="viewer", handler=self_read))
@@ -614,8 +618,8 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                                 "reason": _s("what it is for and why it is safe")}, ["name", "reason"]),
                           category="self", risk="critical", min_role="admin", handler=self_activate))
     reg.register(ToolSpec("self.disable", "Switch off a tool you wrote.",
-                          _obj({"name": _s("tool name")}, ["name"]),
-                          category="self", risk="medium", handler=self_disable))
+                          _obj({"name": _s("tool name"), "reason": _s("why")}, ["name", "reason"]),
+                          category="self", risk="high", requires_approval=True, handler=self_disable))
 
     reg.register(ToolSpec("self.tree", "List the files of your own source code.",
                           _obj({"tree": _s("limit to one tree, e.g. command_center/backend")}),
@@ -629,7 +633,7 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           _obj({"file": _s("path as self.tree prints it"),
                                 "source": _s("the complete new file"),
                                 "reason": _s("what this improves")}, ["file", "source", "reason"]),
-                          category="self", risk="medium", handler=self_propose))
+                          category="self", risk="high", requires_approval=True, handler=self_propose))
     reg.register(ToolSpec("self.proposals", "The change proposals you have made to your own code.",
                           _obj({}), category="self", risk="low", min_role="viewer", handler=self_proposals))
     reg.register(ToolSpec("self.apply",
@@ -639,8 +643,50 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                                 "reason": _s("why this should be applied")}, ["proposal_id", "reason"]),
                           category="self", risk="critical", min_role="admin", handler=self_apply))
     reg.register(ToolSpec("self.revert", "Undo an applied proposal from its backup.",
-                          _obj({"proposal_id": _s("id from self.propose")}, ["proposal_id"]),
-                          category="self", risk="high", min_role="admin", handler=self_revert))
+                          _obj({"proposal_id": _s("id from self.propose"),
+                                "reason": _s("why")}, ["proposal_id", "reason"]),
+                          category="self", risk="high", requires_approval=True, min_role="admin",
+                          handler=self_revert))
+
+    # ── besser werden ────────────────────────────────────────────────────
+    # Er konnte sich schon Werkzeuge schreiben; was fehlte, war der Anlass.
+    # Diese beiden schauen in die Prüfspur statt in die Fantasie.
+    improve = st.services["improve"]
+
+    async def self_review(ctx: ToolContext, args: dict):
+        hours = int(args.get("hours", 24))
+        ev = improve.evidence(hours)
+        if not improve.worth_reflecting(ev):
+            return (f"In den letzten {hours} Stunden ({ev['audit_rows_seen']} Einträge in der "
+                    f"Prüfspur) gibt es kein wiederkehrendes Problem. Nichts zu verbessern.")
+        return ev
+
+    async def self_improve(ctx: ToolContext, args: dict):
+        proposal = await improve.reflect(st, int(args.get("hours", 24)))
+        recorded = improve.record(proposal, actor=ctx.principal.actor)
+        if not recorded.get("recorded"):
+            return recorded.get("reason") or "Nichts, was die Prüfspur hergibt."
+        ctx.emit("improve", {"text": f"Verbesserungsvorschlag: {recorded['title']}"})
+        st.services["notifications"].notify(
+            category="agent", severity="info", title=f"Verbesserung: {recorded['title']}",
+            body=recorded["body"][:600], link="/logs")
+        return {"kind": recorded["kind"], "title": recorded["title"], "detail": recorded["body"],
+                "next": ("Wenn es ein Werkzeug ist: self.write, self.check, dann self.activate. "
+                         "Wenn es eine Quelldatei ist: self.source lesen, self.propose, dann "
+                         "self.apply. Beides braucht deine Freigabe.")}
+
+    reg.register(ToolSpec("self.review",
+                          "Look at your own audit trail: which tool calls failed, which tools were "
+                          "wanted but do not exist, which are only missing credentials. Evidence, not "
+                          "opinion — it returns nothing when nothing recurred.",
+                          _obj({"hours": _i("how far back, default 24")}),
+                          category="self", risk="low", min_role="viewer", handler=self_review))
+    reg.register(ToolSpec("self.improve",
+                          "Review your own last day and propose exactly one concrete improvement, built "
+                          "only on what the audit trail actually shows. Proposing changes nothing — "
+                          "building it is self.write / self.propose, and that still needs approval.",
+                          _obj({"hours": _i("how far back, default 24")}),
+                          category="self", risk="low", handler=self_improve, timeout_seconds=120))
 
     # ── desktop (the paired PC) ──────────────────────────────────────────
     desktop = st.services["desktop"]

@@ -47,8 +47,15 @@ from ..orchestrator.tool_registry import ToolContext, ToolSpec
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # Sein eigener Quelltext. Lesen darf er darin alles — wer sich verbessern
-# soll, muss sich erst verstehen können.
-SELF_TREES = ("command_center/backend", "core", "actions", "plugins")
+# soll, muss sich erst verstehen können. Das Frontend gehört dazu: ohne das
+# kann er das Dashboard nicht umbauen, und genau das ist eine der
+# naheliegendsten Verbesserungen, die er anbringen könnte.
+SELF_TREES = ("command_center/backend", "command_center/frontend/src", "core", "actions", "plugins")
+
+# Dateien, deren Änderung nicht nur einen Neustart braucht, sondern einen
+# neuen Build. Das ist kein Detail: wer den Unterschied nicht kennt, ändert
+# etwas am Dashboard, startet neu und sieht keine Wirkung.
+NEEDS_BUILD_PREFIX = "command_center/frontend/"
 
 # Die Dateien, in denen die Bremsen sitzen. Ändern darf er sie, aber die
 # Freigabe sagt dann ausdrücklich, worum es geht. Der Unterschied ist nicht
@@ -339,13 +346,16 @@ class SelfExtension:
             base = (REPO_ROOT / t).resolve()
             if not any(str(base).startswith(str((REPO_ROOT / s).resolve())) for s in SELF_TREES):
                 raise SelfExtError(f"'{t}' gehört nicht zu seinem Quelltext.")
-            for path in sorted(base.rglob("*.py")) + sorted(base.rglob("*.txt")):
+            for path in (sorted(base.rglob("*.py")) + sorted(base.rglob("*.txt"))
+                         + sorted(base.rglob("*.ts")) + sorted(base.rglob("*.tsx"))
+                         + sorted(base.rglob("*.css"))):
                 if "__pycache__" in path.parts:
                     continue
                 rel = str(path.relative_to(REPO_ROOT))
                 out.append({"file": rel, "lines": path.read_text(encoding="utf-8",
                                                                  errors="replace").count("\n") + 1,
-                            "critical": rel in CRITICAL_FILES})
+                            "critical": rel in CRITICAL_FILES,
+                            "needs_build": rel.startswith(NEEDS_BUILD_PREFIX)})
         return out
 
     def source(self, rel: str) -> dict:
@@ -386,8 +396,12 @@ class SelfExtension:
                 "added": sum(1 for d in diff if d.startswith("+") and not d.startswith("+++")),
                 "removed": sum(1 for d in diff if d.startswith("-") and not d.startswith("---")),
                 "diff": "\n".join(diff[:400]),
+                "needs_build": rel.startswith(NEEDS_BUILD_PREFIX),
                 "note": ("Das ist ein Vorschlag, mehr nicht. self.apply setzt ihn um — das braucht "
-                         "eine Freigabe und wirkt erst nach einem Neustart des Servers.")}
+                         "eine Freigabe und wirkt erst nach einem Neustart des Servers."
+                         + (" Diese Datei gehört zum Dashboard, also erst nach einem neuen Build "
+                            "(docker compose … up -d --build)."
+                            if rel.startswith(NEEDS_BUILD_PREFIX) else ""))}
 
     def apply(self, proposal_id: str, *, actor: str) -> dict:
         """Einen Vorschlag wirklich in den Quellbaum schreiben. Mit Sicherung."""
@@ -416,9 +430,15 @@ class SelfExtension:
                        action="self.modify", target=rel, status="ok",
                        result=f"Sicherung: {backup.name}")
         self.bus.publish("selftool.changed", {"name": f"proposal:{proposal_id}", "status": "active"})
+        needs_build = rel.startswith(NEEDS_BUILD_PREFIX)
         return {"proposal_id": proposal_id, "file": rel, "backup": str(backup),
-                "note": ("Geschrieben. Wirksam wird es beim nächsten Neustart des Servers. "
-                         "Zurückdrehen: self.revert mit derselben Vorschlags-ID.")}
+                "needs_build": needs_build,
+                "note": (("Geschrieben. Das ist eine Datei des Dashboards — wirksam erst nach einem "
+                          "neuen Build: docker compose --env-file command_center/.env "
+                          "-f docker-compose.command-center.yml up -d --build")
+                         if needs_build else
+                         "Geschrieben. Wirksam wird es beim nächsten Neustart des Servers.")
+                        + " Zurückdrehen: self.revert mit derselben Vorschlags-ID."}
 
     def revert(self, proposal_id: str, *, actor: str) -> dict:
         row = self.db.fetchone("SELECT * FROM self_tools WHERE name=?", (f"proposal:{proposal_id}",))
@@ -446,4 +466,5 @@ class SelfExtension:
                  "updated_at": r["updated_at"]} for r in rows]
 
 
-__all__ = ["SelfExtension", "SelfExtError", "EXT_DIRNAME", "CRITICAL_FILES", "SELF_TREES"]
+__all__ = ["SelfExtension", "SelfExtError", "EXT_DIRNAME", "CRITICAL_FILES", "SELF_TREES",
+           "NEEDS_BUILD_PREFIX"]

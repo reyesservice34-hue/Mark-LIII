@@ -42,6 +42,7 @@ from .services.desktop_bridge import DesktopBridge
 from .services.email_service import EmailService
 from .services.external import GitHubService
 from .services.files import FileService
+from .services.improve import ImprovementService
 from .services.metrics import MetricsService
 from .services.notifications import NotificationService
 from .services.selfext import SelfExtension
@@ -83,6 +84,7 @@ def build_state(settings: Settings | None = None) -> AppState:
         "desktop": DesktopBridge(db, bus, log),
         "teaching": TeachingService(db, bus, log),
         "selfext": SelfExtension(db, settings.workspace_dir, log, bus),
+        "improve": ImprovementService(db, bus, log),
     })
     state.integrations = IntegrationRegistry(db, bus)
     state.workflows = WorkflowHub(db, bus)
