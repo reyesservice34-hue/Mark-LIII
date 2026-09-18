@@ -110,7 +110,15 @@ ask COMPOSIO_API_KEY  "Composio"           "platform.composio.dev — Gmail, Sla
     '*' ""
 ask COMPOSIO_USER_ID  "Composio-Benutzer"  "frei wählbar, z. B. reyes — leer lassen heißt 'default'" \
     '*' ""
-ask N8N_BASE_URL      "n8n-ADRESSE (keine Schlüssel!)" "die URL, unter der n8n läuft, z. B. http://127.0.0.1:5678" \
+# NICHT 127.0.0.1: JARVIS läuft im Container, dessen 127.0.0.1 ist er selbst.
+# Ein n8n, das auf dem Host als 127.0.0.1:5678 lauscht, ist von hier gar nicht
+# erreichbar. Der Containername im gemeinsamen Docker-Netz ist der Weg.
+N8N_HINT="der Containername im Docker-Netz, z. B. http://n8n:5678 — NICHT 127.0.0.1"
+if command -v docker >/dev/null 2>&1; then
+  N8N_CONTAINER="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -ix 'n8n' | head -1 || true)"
+  [ -n "$N8N_CONTAINER" ] && N8N_HINT="gefunden: Container '$N8N_CONTAINER' → http://${N8N_CONTAINER}:5678 (NICHT 127.0.0.1)"
+fi
+ask N8N_BASE_URL      "n8n-ADRESSE (keine Schlüssel!)" "$N8N_HINT" \
     'http*' "eine Adresse. Sie muss mit http:// oder https:// anfangen"
 ask N8N_API_KEY       "n8n-Schlüssel"      "in n8n unter Einstellungen → API" \
     '*' ""
@@ -147,6 +155,32 @@ if ! $COMPOSE -f docker-compose.command-center.yml up -d --force-recreate; then
   warn "Der Neustart ist fehlgeschlagen — die Schlüssel stehen aber schon in $ENV_FILE."
   warn "Von Hand:  $COMPOSE -f docker-compose.command-center.yml up -d --force-recreate"
   exit 1
+fi
+
+# ── Container zusammenbringen ────────────────────────────────────────────
+# Zeigt N8N_BASE_URL auf einen Containernamen, müssen beide im selben Netz
+# sein, sonst löst der Name nicht auf. Das hängt nur diesen Container zusätzlich
+# ins Netz — an n8n selbst ändert sich nichts, und es ist mit
+# "docker network disconnect" jederzeit rückgängig zu machen.
+N8N_URL="$(current N8N_BASE_URL)"
+N8N_HOST="$(printf '%s' "$N8N_URL" | sed -n 's|^https\?://\([^:/]*\).*|\1|p')"
+if [ -n "$N8N_HOST" ] && [ "$N8N_HOST" != "127.0.0.1" ] && [ "$N8N_HOST" != "localhost" ] \
+   && docker inspect "$N8N_HOST" >/dev/null 2>&1; then
+  if docker exec jarvis-command-center getent hosts "$N8N_HOST" >/dev/null 2>&1; then
+    info "n8n ist unter '$N8N_HOST' schon erreichbar."
+  else
+    NET="$(docker inspect "$N8N_HOST" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' \
+           2>/dev/null | awk '{print $1}')"
+    if [ -n "$NET" ] && docker network connect "$NET" jarvis-command-center 2>/dev/null; then
+      info "Mit dem Docker-Netz '$NET' verbunden, damit '$N8N_HOST' auflöst."
+    else
+      warn "Konnte nicht ins Netz von '$N8N_HOST' — n8n bleibt vorerst nicht erreichbar."
+      warn "Von Hand:  docker network connect <netz> jarvis-command-center"
+    fi
+  fi
+elif [ "$N8N_HOST" = "127.0.0.1" ] || [ "$N8N_HOST" = "localhost" ]; then
+  warn "N8N_BASE_URL zeigt auf $N8N_HOST — das ist aus dem Container heraus er selbst,"
+  warn "nicht dein Server. Nimm den Containernamen, z. B. http://n8n:5678."
 fi
 
 PORT="$(sed -n 's|^JARVIS_CC_PORT=\([^#]*\).*|\1|p' "$ENV_FILE" | tr -d '[:space:]' | head -1)"
