@@ -781,12 +781,17 @@ class JarvisLive:
             parts.append(mem_str)
         parts.append(sys_prompt)
 
-        # Control plane on → the Live session is ears only. It transcribes what
-        # the user says and answers nothing itself (TEXT mode, no spoken output);
-        # the brain and the voice are the server plus speech_out. This is what
-        # stops the local persona ("Sir", invented tool results) from ever
-        # speaking on the voice path.
-        _modalities = ["TEXT"] if getattr(self, "_cp_enabled", False) else ["AUDIO"]
+        # Control plane on → the Live session is ears only: it transcribes what
+        # the user says and must never answer, because the brain and the voice
+        # are the server plus speech_out. Otherwise the local persona ("Sir",
+        # invented tool results) speaks over the real answer.
+        #
+        # Asking for TEXT was the obvious way to get that and is wrong: Live
+        # models only produce AUDIO, and the session dies on connect with
+        # "The requested combination of response modalities (TEXT) is not
+        # supported by the model". So the modality stays AUDIO and the audio is
+        # dropped on arrival instead — see the `response.data` branch below.
+        _modalities = ["AUDIO"]
         cfg = dict(
             response_modalities=_modalities,
             output_audio_transcription={},
@@ -1091,6 +1096,8 @@ class JarvisLive:
                     if response.data:
                         if self._interrupted:
                             pass  # discard: interrupted
+                        elif getattr(self, "_cp_enabled", False):
+                            pass  # ears only: the server answers, not this session
                         else:
                             if self._turn_done_event and self._turn_done_event.is_set():
                                 self._turn_done_event.clear()

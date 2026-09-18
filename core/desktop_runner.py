@@ -171,8 +171,23 @@ class DesktopRunner:
             self.last_error = f"cannot reach {self.base_url}: {e.__class__.__name__}"
             return False
         if r.status_code in (401, 403):
-            self.last_error = "the server rejected the gateway token"
+            # „abgelehnt" allein hilft niemandem weiter. Die drei Ursachen sehen
+            # gleich aus und werden ganz unterschiedlich behoben, also stehen
+            # sie hier — samt dem, was vom Token wirklich ankam.
+            tok = self.token
+            shape = (f"{len(tok)} Zeichen, beginnt mit {tok[:6]!r}" if tok else "leer")
+            detail = ("401" if r.status_code == 401 else "403 (Token gültig, aber die Rolle reicht nicht)")
+            self.last_error = f"der Server hat das Token abgelehnt ({detail})"
             self._log(f"[DesktopRunner] {self.last_error}")
+            self._log(f"[DesktopRunner]   Server:  {self.base_url}")
+            self._log(f"[DesktopRunner]   Token:   {shape}")
+            if r.status_code == 403:
+                self._log("[DesktopRunner]   Das Token braucht die Rolle 'operator', nicht 'viewer'.")
+            else:
+                self._log("[DesktopRunner]   Häufigste Ursachen: nur ein Teil des Tokens eingefügt,")
+                self._log("[DesktopRunner]   die Token-ID statt des Geheimnisses, oder ein Token,")
+                self._log("[DesktopRunner]   das inzwischen widerrufen wurde.")
+                self._log("[DesktopRunner]   Neu einrichten:  python install_desktop.py")
             return False
         if r.status_code >= 400:
             self.last_error = f"registration refused (HTTP {r.status_code})"
