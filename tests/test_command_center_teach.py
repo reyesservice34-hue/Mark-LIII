@@ -135,6 +135,72 @@ with TestClient(app) as c:
     check("the PC saw the parameters it was given",
           roundtrip and roundtrip[1]["params"] == {"app_name": "Excel"})
 
+    print("\n1b. tippen und klicken: ein Werkzeug, nicht zwei verschachtelte Aktionsnamen")
+    from command_center.backend.auth import Principal as _P
+    from command_center.backend.orchestrator.tool_registry import ToolContext as _TC
+    _pr = _P(kind="user", id="u", name="admin", role="admin", actor="admin")
+    _tc = _TC(state=state, principal=_pr, agent_id="master")
+
+    for name in ("desktop.type", "desktop.press", "desktop.click"):
+        t = state.tools.get(name)
+        check(f"{name} gibt es", t is not None)
+        check(f"{name} fragt vorher nach", t is not None and t.needs_approval())
+
+    async def typing_roundtrip():
+        seen = {}
+
+        async def fake_runner():
+            for _ in range(50):
+                cmd = bridge.next_for(device["id"])
+                if cmd:
+                    seen.update(cmd)
+                    bridge.complete(cmd["id"], ok=True, result="ok")
+                    return cmd
+                await asyncio.sleep(0.02)
+            return None
+
+        out, _ = await asyncio.gather(
+            state.tools.get("desktop.type").handler(
+                _tc, {"text": "Guten Tag Herr Müller", "device": device["id"], "reason": "Test"}),
+            fake_runner())
+        return out, seen
+
+    out, seen = asyncio.run(typing_roundtrip())
+    check("der Auftrag geht als computer_control auf den PC", seen.get("action") == "computer_control", seen)
+    check("mit action=type und dem Text",
+          seen.get("params", {}).get("action") == "type"
+          and seen["params"].get("text") == "Guten Tag Herr Müller", seen.get("params"))
+    check("und die Antwort kommt zurück", out[1] is True, out)
+
+    async def press_roundtrip(keys):
+        async def fake_runner():
+            for _ in range(50):
+                cmd = bridge.next_for(device["id"])
+                if cmd:
+                    bridge.complete(cmd["id"], ok=True, result="ok")
+                    return cmd
+                await asyncio.sleep(0.02)
+            return None
+        _, cmd = await asyncio.gather(
+            state.tools.get("desktop.press").handler(
+                _tc, {"keys": keys, "device": device["id"], "reason": "Test"}),
+            fake_runner())
+        return cmd
+
+    cmd = asyncio.run(press_roundtrip("ctrl+s"))
+    check("eine Kombination wird als hotkey geschickt",
+          cmd["params"]["action"] == "hotkey" and cmd["params"]["keys"] == "ctrl+s", cmd["params"])
+    cmd = asyncio.run(press_roundtrip("Enter"))
+    check("eine einzelne Taste als press",
+          cmd["params"]["action"] == "press" and cmd["params"]["key"] == "Enter", cmd["params"])
+
+    async def click_needs_target():
+        return await state.tools.get("desktop.click").handler(
+            _tc, {"device": device["id"], "reason": "Test"})
+    out = asyncio.run(click_needs_target())
+    check("Klicken ohne Ziel wird abgelehnt statt irgendwo zu klicken",
+          out[1] is False and "description" in out[0], out)
+
     print("\n2. an offline desktop is said to be offline, not pretended away")
     bridge._last_poll.clear()
     offline = bridge.register(name="Schlafender-PC", actor="mark-liii-windows",

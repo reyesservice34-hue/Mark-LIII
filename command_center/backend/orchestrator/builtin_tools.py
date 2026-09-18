@@ -808,6 +808,71 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           category="desktop", risk="high" if gate_desktop else "medium",
                           requires_approval=gate_desktop, handler=desktop_run, timeout_seconds=180))
 
+    # ── tippen und klicken, egal in welchem Fenster ──────────────────────
+    # Möglich war das schon über desktop.run mit action="computer_control"
+    # und darin nochmal einem "action"-Feld. Zwei verschachtelte Aktionsnamen
+    # sind genau die Stelle, an der ein Modell danebengreift und es niemand
+    # merkt. Also drei eigene Werkzeuge mit klarem Schema — derselbe Weg,
+    # dasselbe Genehmigungstor, nur ohne Ratespiel.
+    async def _computer(ctx: ToolContext, args: dict, inner: dict, label: str):
+        device = desktop.resolve(str(args.get("device", "")))
+        if not any(a.get("name") == "computer_control" for a in device["actions"]):
+            return (f"'{device['name']}' bietet keine Tastatur- und Maussteuerung an. "
+                    f"Läuft dort die aktuelle Desktop-App?", False)
+        cmd = await desktop.dispatch(device_id=device["id"], action="computer_control", params=inner,
+                                     requested_by=ctx.principal.actor, agent_id=ctx.agent_id,
+                                     task_id=ctx.task_id, run_id=ctx.run_id,
+                                     timeout=float(args.get("timeout", 60)))
+        ctx.emit("desktop", {"text": f"{device['name']}: {label}"})
+        return (cmd["result"] or cmd["error"] or "done", cmd["status"] == "done")
+
+    async def desktop_type(ctx: ToolContext, args: dict):
+        text = str(args["text"])
+        return await _computer(ctx, args, {"action": "type", "text": text},
+                               f"getippt ({len(text)} Zeichen)")
+
+    async def desktop_press(ctx: ToolContext, args: dict):
+        keys = str(args["keys"]).strip()
+        inner = {"action": "hotkey", "keys": keys} if "+" in keys else {"action": "press", "key": keys}
+        return await _computer(ctx, args, inner, f"Taste {keys}")
+
+    async def desktop_click(ctx: ToolContext, args: dict):
+        if args.get("description"):
+            inner = {"action": "screen_click", "description": str(args["description"])}
+            label = f"geklickt: {args['description']}"
+        elif args.get("x") is not None and args.get("y") is not None:
+            inner = {"action": "click", "x": int(args["x"]), "y": int(args["y"])}
+            label = f"geklickt bei {args['x']},{args['y']}"
+        else:
+            return "Entweder 'description' oder 'x' und 'y' angeben.", False
+        return await _computer(ctx, args, inner, label)
+
+    reg.register(ToolSpec("desktop.type",
+                          "Type text on the user's PC — into whatever window has the focus: a form, an "
+                          "editor, a chat, a program that has no interface of its own. Bring the right "
+                          "window to the front first (desktop.open_app), then type.",
+                          _obj({"text": _s("the text to type"), "device": _s("which desktop"),
+                                "reason": _s("why this is needed"), "timeout": _i("seconds, default 60")},
+                               ["text", "reason"]),
+                          category="desktop", risk="high" if gate_desktop else "medium",
+                          requires_approval=gate_desktop, handler=desktop_type, timeout_seconds=120))
+    reg.register(ToolSpec("desktop.press",
+                          "Press a key or a combination on the user's PC, e.g. Enter, Escape, F5, ctrl+s, "
+                          "alt+tab.",
+                          _obj({"keys": _s("key or combination, e.g. Enter or ctrl+s"),
+                                "device": _s("which desktop"), "reason": _s("why")},
+                               ["keys", "reason"]),
+                          category="desktop", risk="high" if gate_desktop else "medium",
+                          requires_approval=gate_desktop, handler=desktop_press, timeout_seconds=60))
+    reg.register(ToolSpec("desktop.click",
+                          "Click on the user's screen — either at a coordinate, or by describing what to "
+                          "click; the PC then looks for it on screen.",
+                          _obj({"description": _s("what to click, e.g. 'the Save button'"),
+                                "x": _i("x coordinate"), "y": _i("y coordinate"),
+                                "device": _s("which desktop"), "reason": _s("why")}, ["reason"]),
+                          category="desktop", risk="high" if gate_desktop else "medium",
+                          requires_approval=gate_desktop, handler=desktop_click, timeout_seconds=90))
+
     async def desktop_whatsapp(ctx: ToolContext, args: dict):
         """Reach the user on their phone through the WhatsApp the desktop already has linked."""
         device = desktop.resolve(str(args.get("device", "")))
