@@ -80,6 +80,10 @@ ask() {
     printf '  \033[1m%s\033[0m  [noch leer]\n' "$label"
   fi
   [ -n "$hint" ] && printf '     %s\n' "$hint"
+  # Zwei Versuche mit Formprüfung, danach wird der Wert genommen, wie er ist.
+  # Ein Feld, aus dem nur das exakt richtige Format herausführt, ist eine
+  # Falle: wer den passenden Schlüssel gerade nicht hat, kommt nicht weiter.
+  local tries=0
   while :; do
     printf '     > '
     IFS= read -rs value || value=""
@@ -92,9 +96,15 @@ ask() {
     # shellcheck disable=SC2254  # das Muster soll als Glob wirken
     case "$value" in
       $pattern) break ;;
-      *) warn "Das sieht nicht aus wie $shape."
-         warn "Nochmal einfügen, oder nur Enter zum Überspringen." ;;
     esac
+    tries=$((tries + 1))
+    if [ "$tries" -ge 2 ]; then
+      warn "Passt immer noch nicht zur erwarteten Form — wird trotzdem eingetragen."
+      warn "Falls es der falsche Wert war: Skript einfach nochmal laufen lassen."
+      break
+    fi
+    warn "Das sieht nicht aus wie $shape."
+    warn "Nochmal einfügen — oder Enter drücken, ohne etwas einzufügen, zum Überspringen."
   done
   set_value "$key" "$value"
   printf '     \033[32meingetragen: %s\033[0m\n\n' "$(mask "$value")"
