@@ -27,8 +27,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-build/
-dist/
+/build/
+/dist/
 *.egg-info/
 .eggs/
 
@@ -48,9 +48,9 @@ desktop.ini
 
 # ── Runtime output ────────────────────────────────────────────────────────────
 *.log
-logs/
-downloads/
-screenshots/
+/logs/
+/downloads/
+/screenshots/
 
 # ── JARVIS Command Center ─────────────────────────────────────────────────
 command_center/.env

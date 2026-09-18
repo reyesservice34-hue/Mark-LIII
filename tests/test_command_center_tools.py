@@ -495,5 +495,39 @@ for required in ("JARVIS_CC_ADMIN_USER", "JARVIS_CC_ADMIN_PASSWORD", "JARVIS_CC_
 check("no dead WhatsApp credentials are still asked for",
       "WHATSAPP_TOKEN" not in parsed and "WHATSAPP_PHONE_ID" not in parsed, list(parsed)[:0])
 
+print("\n12. no source file may be swallowed by .gitignore")
+# A rule meant for runtime output ("logs/") matched every directory of that name
+# at any depth, so command_center/{backend/modules,frontend/src/modules}/logs/
+# never reached the repository and the Docker build died on a missing import.
+# Guard every source tree against that whole class of mistake.
+import subprocess  # noqa: E402
+
+source_files: list[str] = []
+for tree, suffixes in ((ROOT / "command_center" / "backend", (".py",)),
+                       (ROOT / "command_center" / "frontend" / "src", (".ts", ".tsx", ".css")),
+                       (ROOT / "core", (".py", ".txt")),
+                       (ROOT / "actions", (".py",)),
+                       (ROOT / "plugins", (".py",)),
+                       (ROOT / "tests", (".py",))):
+    for path in tree.rglob("*"):
+        if path.is_file() and path.suffix in suffixes and "__pycache__" not in path.parts:
+            source_files.append(str(path.relative_to(ROOT)))
+
+check("source trees were found at all", len(source_files) > 100, len(source_files))
+ignored = subprocess.run(["git", "check-ignore", "--stdin"], cwd=ROOT, input="\n".join(source_files),
+                         capture_output=True, text=True).stdout.split()
+check("no source file is gitignored", not ignored, ignored[:5])
+
+tracked = set(subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True)
+              .stdout.splitlines())
+untracked = [f for f in source_files if f not in tracked]
+check("every source file is tracked by git", not untracked, untracked[:5])
+
+# Both halves of every backend module must exist, or the app cannot even import.
+from command_center.backend.modules import DEFAULT_MODULES  # noqa: E402
+missing_modules = [m for m in DEFAULT_MODULES
+                   if not (ROOT / "command_center" / "backend" / "modules" / m / "__init__.py").exists()]
+check("every module in DEFAULT_MODULES exists on disk", not missing_modules, missing_modules)
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)
