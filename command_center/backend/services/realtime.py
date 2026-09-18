@@ -78,6 +78,11 @@ def capabilities() -> dict:
         # assumed, because getting the sample rate wrong sounds like a broken
         # microphone rather than a configuration mistake.
         "audio": {"format": "pcm16", "sample_rate": 24000, "channels": 1},
+        # Ob diese Fassung die Leitung auch einem Maschinen-Token öffnet. Ältere
+        # ließen nur Browser-Sitzungen zu und wiesen die Desktop-App mit einem
+        # nackten HTTP 403 ab — ununterscheidbar von „Rolle reicht nicht".
+        # Die App fragt dieses Feld ab, um genau das sagen zu können.
+        "machine_tokens": True,
     }
 
 

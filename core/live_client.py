@@ -128,6 +128,44 @@ class LiveClient:
         except Exception:  # noqa: BLE001
             pass      # ein Fehler in der Oberfläche darf die Leitung nicht kappen
 
+    def _why_refused(self, err: Exception) -> str:
+        """Aus „HTTP 403" einen Satz machen, mit dem man etwas anfangen kann.
+
+        Ein WebSocket, der vor dem Händedruck geschlossen wird, kommt beim
+        Aufrufer immer als 403 an — egal ob das Token unbekannt ist, die Rolle
+        nicht reicht oder der Server zu alt ist, um Maschinen-Token auf die
+        Leitung zu lassen. Die drei sind über die normale HTTP-Schnittstelle
+        auseinanderzuhalten, also wird dort nachgefragt statt geraten.
+        """
+        text = f"{err.__class__.__name__}: {err}"
+        if "403" not in text and "401" not in text:
+            return f"Die Leitung kam nicht zustande: {text}"
+
+        import urllib.error
+        import urllib.request
+        req = urllib.request.Request(self.url.rstrip("/") + "/api/voice/live/capabilities",
+                                     headers={"X-Jarvis-Token": self.token})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as res:
+                caps = json.loads(res.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                return ("Der Server kennt dieses Token nicht. Ein neues erzeugen: "
+                        "python install_desktop.py")
+            if e.code == 403:
+                return ("Das Token gilt, aber seine Rolle reicht nicht. Gebraucht wird "
+                        "'operator', nicht 'viewer'.")
+            return f"Die Leitung wurde abgelehnt (HTTP {e.code})."
+        except Exception:  # noqa: BLE001
+            return f"Die Leitung kam nicht zustande: {text}"
+
+        if not caps.get("machine_tokens"):
+            return ("Der Server läuft noch in einer älteren Fassung: sie lässt nur den "
+                    "Browser auf die Live-Leitung, nicht diesen Rechner. Auf dem Server "
+                    "neu bauen (git pull, dann command_center/install.sh), danach geht es.")
+        return ("Das Token gilt für die Schnittstelle, aber nicht für die Live-Leitung. "
+                "Gebraucht wird die Rolle 'operator'.")
+
     async def run(self) -> str:
         """Leitung öffnen und halten. Gibt zurück, warum sie endete."""
         if not self.url or not self.token:
@@ -151,7 +189,7 @@ class LiveClient:
                                               max_size=16 * 1024 * 1024)
         except Exception as e:  # noqa: BLE001
             self._fire(self.on_state, "closed")
-            return f"Die Leitung kam nicht zustande: {e.__class__.__name__}: {e}"
+            return self._why_refused(e)
         self._ws = ws
 
         speaker = Speaker(sd, np)
