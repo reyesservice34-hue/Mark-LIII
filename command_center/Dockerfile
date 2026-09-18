@@ -47,6 +47,12 @@ RUN if [ "$JARVIS_CC_SELF_BUILD" != "true" ]; then \
         ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm; \
     fi
 
+# Welcher Stand im Bild steckt. Ohne das ist von außen nicht zu sehen, ob ein
+# `git pull` auf dem Server durchging — ein misslungener sieht genauso aus wie
+# ein geglückter, und man sucht den Fehler dann in der Anwendung.
+ARG JARVIS_CC_BUILD=""
+ENV JARVIS_CC_BUILD=${JARVIS_CC_BUILD}
+
 RUN mkdir -p /data && chown -R jarvis:jarvis /app /data
 USER jarvis
 VOLUME ["/data"]

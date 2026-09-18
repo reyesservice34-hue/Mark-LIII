@@ -77,6 +77,10 @@ fi
 
 # ── 4. Bauen und starten ─────────────────────────────────────────────────
 info "Baue das Image (beim ersten Mal dauert das ein paar Minuten) …"
+# Der ausgecheckte Commit wandert ins Image und steht danach in /api/health.
+# Damit ist von außen zu sehen, welcher Stand wirklich läuft — und nicht nur,
+# welcher im Ordner liegt.
+export JARVIS_CC_BUILD="$(git rev-parse --short=10 HEAD 2>/dev/null || echo unbekannt)"
 $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d --build
 
 # ── 5. Warten, bis er antwortet ──────────────────────────────────────────

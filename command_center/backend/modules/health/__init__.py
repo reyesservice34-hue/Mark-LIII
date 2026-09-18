@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from functools import lru_cache
 
 from fastapi import APIRouter, Depends
 
@@ -10,6 +11,34 @@ from ...deps import AppState, current_principal, get_state
 from .. import ModuleSpec
 
 router = APIRouter(prefix="/api", tags=["health"])
+
+
+@lru_cache(maxsize=1)
+def build_rev() -> str:
+    """Welcher Stand hier wirklich läuft.
+
+    „Ist der neue Code drauf?" war bisher nicht zu beantworten, ohne sich auf
+    den Server zu setzen — und ein `git pull`, der wegen lokaler Änderungen
+    nicht durchging, sieht von außen genauso aus wie ein geglückter. Der
+    Commit wird beim Bauen ins Bild geschrieben; steht er nicht drin, wird er
+    aus dem Arbeitsverzeichnis gelesen, und sonst heißt es ehrlich „unbekannt".
+    """
+    import os
+    import subprocess
+    from pathlib import Path
+
+    rev = os.environ.get("JARVIS_CC_BUILD", "").strip()
+    if rev:
+        return rev[:12]
+    try:
+        root = Path(__file__).resolve().parents[4]
+        out = subprocess.run(["git", "-C", str(root), "rev-parse", "--short=10", "HEAD"],
+                             capture_output=True, text=True, timeout=3)
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return "unbekannt"
 
 
 def _overall(parts: dict) -> str:
@@ -44,7 +73,8 @@ async def health(state: AppState = Depends(get_state)):
               ("degraded" if any(s["status"] == "degraded" for s in svc) else "healthy"),
               "detail": f"{len(svc)} monitored services" if svc else "no monitored services configured",
               "docker": metrics.overview()["docker"]}
-    parts = {"application": {"status": "healthy", "detail": f"v{state.version}",
+    parts = {"application": {"status": "healthy", "detail": f"v{state.version} · {build_rev()}",
+                             "build": build_rev(),
                              "uptime_seconds": int(time.time() - state.started_at)},
              "database": db_status, "agent_gateway": gateway, "integrations": integrations,
              "server_services": server}

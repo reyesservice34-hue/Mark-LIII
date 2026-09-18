@@ -10,6 +10,12 @@ services:
     build:
       context: .
       dockerfile: command_center/Dockerfile
+      args:
+        # install.sh und setup-keys.sh setzen das auf den ausgecheckten Commit.
+        # Steht es leer, liest die Anwendung ihn beim Start selbst aus dem
+        # Arbeitsverzeichnis — im Container gibt es das nicht, dann sagt
+        # /api/health ehrlich "unbekannt".
+        JARVIS_CC_BUILD: "${JARVIS_CC_BUILD:-}"
     image: jarvis-command-center:latest
     container_name: jarvis-command-center
     restart: unless-stopped
