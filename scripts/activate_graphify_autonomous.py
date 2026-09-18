@@ -58,7 +58,8 @@ class GraphifyAutonomousActivator:
             structure["dockerfiles"].append(str(dockerfile))
 
         # Analyze configuration files
-        for config in Path(".").glob("*.yml") | Path(".").glob("*.yaml") | Path(".").glob(".env*"):
+        from itertools import chain
+        for config in chain(Path(".").glob("*.yml"), Path(".").glob("*.yaml"), Path(".").glob(".env*")):
             if config.is_file():
                 structure["configs"].append(str(config))
 

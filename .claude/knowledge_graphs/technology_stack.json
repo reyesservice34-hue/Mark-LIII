@@ -1,0 +1,54 @@
+{
+  "name": "JARVIS Technology Stack",
+  "timestamp": "2026-09-18T06:58:56.052927",
+  "languages": [
+    "Python 3.12",
+    "PowerShell",
+    "Bash"
+  ],
+  "frameworks": {
+    "backend": [
+      "Flask",
+      "requests",
+      "python-dotenv"
+    ],
+    "llm": [
+      "Ollama (Mistral 7B)"
+    ],
+    "containerization": [
+      "Docker",
+      "Docker Compose"
+    ],
+    "voice": [
+      "pyttsx3",
+      "espeak",
+      "ffmpeg"
+    ],
+    "integrations": [
+      "Twilio",
+      "n8n (optional)"
+    ]
+  },
+  "databases": {
+    "memory": "JSON-based (multi-layer)",
+    "vectors": "Qdrant (optional)",
+    "graphs": "Graphify (semantic)"
+  },
+  "infrastructure": {
+    "deployment": "Docker Compose",
+    "networking": "Docker network bridge",
+    "monitoring": "Custom health checks + autonomous monitor",
+    "orchestration": "10-agent system"
+  },
+  "apis": {
+    "external": [
+      "Twilio (optional)",
+      "OpenAI (optional)"
+    ],
+    "internal": [
+      "REST endpoints",
+      "Docker network"
+    ]
+  },
+  "cost": "€0.00/month (100% local)"
+}

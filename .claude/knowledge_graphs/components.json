@@ -1,0 +1,90 @@
+{
+  "coordinator": {
+    "name": "JARVIS Coordinator Component",
+    "description": "10-agent orchestration system",
+    "files": [
+      "scripts/jarvis_coordinator_api.py"
+    ],
+    "dependencies": [
+      "Flask",
+      "requests",
+      "python-dotenv"
+    ],
+    "agents": 10,
+    "endpoints": [
+      "/process_instruction",
+      "/agent_status",
+      "/instruction_history",
+      "/optimize_prompt",
+      "/master_prompt",
+      "/health"
+    ],
+    "features": [
+      "prompt optimization",
+      "agent delegation",
+      "memory integration"
+    ],
+    "status": "production_ready"
+  },
+  "ollama": {
+    "name": "Ollama LLM Component",
+    "description": "Local language model provider",
+    "files": [
+      "scripts/jarvis_ollama_integration.py",
+      "scripts/jarvis_ollama_enhanced_coordinator.py"
+    ],
+    "model": "mistral",
+    "model_size": "4.4GB",
+    "features": [
+      "inference",
+      "prompt enhancement",
+      "response generation"
+    ],
+    "capabilities": [
+      "text_generation",
+      "context_understanding",
+      "intent_analysis"
+    ],
+    "cost": "€0.00",
+    "status": "production_ready"
+  },
+  "gateway": {
+    "name": "WhatsApp Gateway Component",
+    "description": "Message and voice processing",
+    "files": [
+      "scripts/whatsapp_gateway_with_voice.py"
+    ],
+    "features": [
+      "message_processing",
+      "voice_generation",
+      "twilio_integration"
+    ],
+    "ports": [
+      5000
+    ],
+    "endpoints": [
+      "/receive_message",
+      "/generate_voice",
+      "/health"
+    ],
+    "voice_engine": "pyttsx3",
+    "status": "production_ready"
+  },
+  "memory": {
+    "name": "JARVIS Memory Systems",
+    "description": "Multi-layer persistent memory",
+    "files": [
+      ".claude/long_term_memory.md",
+      ".claude/session_instructions_memory.json",
+      ".claude/jarvis_master_system.md"
+    ],
+    "layers": [
+      "session_instructions (highest priority)",
+      "long_term (persistent learning)",
+      "session (current context)",
+      "identity (core directives)"
+    ],
+    "protocol": "Memory-First (mandatory retrieval)",
+    "status": "active"
+  }
+}
