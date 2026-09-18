@@ -50,6 +50,17 @@ export function JarvisShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [nav]);
 
+  // JARVIS kann zeigen, wovon er redet: dashboard.open schickt einen Hinweis
+  // über den Ereignisbus, und hier wird er zur Navigation. Mit einer Meldung
+  // dazu — eine Seite, die von selbst wechselt, ohne dass jemand sagt warum,
+  // ist gruselig, keine Hilfe.
+  useEvent("ui.open", (ev) => {
+    const path = String(ev.data?.path || "");
+    if (!path.startsWith("/")) return;
+    toast({ title: "JARVIS zeigt dir etwas", body: ev.data?.reason || path, tone: "info" });
+    nav(path);
+  });
+
   useEvent("notification.created", (ev) => {
     const n = ev.data;
     toast({ title: n.title, body: n.body, tone: n.severity === "error" || n.severity === "critical" ? "err" : n.severity === "warning" ? "warn" : n.severity === "success" ? "ok" : "info" });

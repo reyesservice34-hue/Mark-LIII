@@ -16,6 +16,9 @@ services:
         # Arbeitsverzeichnis — im Container gibt es das nicht, dann sagt
         # /api/health ehrlich "unbekannt".
         JARVIS_CC_BUILD: "${JARVIS_CC_BUILD:-}"
+        # Chromium für die browser.*-Werkzeuge. Kostet mehrere hundert MB,
+        # deshalb aus; einschalten mit JARVIS_CC_BROWSER=true in der .env.
+        JARVIS_CC_BROWSER: "${JARVIS_CC_BROWSER:-false}"
     image: jarvis-command-center:latest
     container_name: jarvis-command-center
     restart: unless-stopped

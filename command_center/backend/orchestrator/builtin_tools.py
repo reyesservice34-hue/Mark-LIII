@@ -1075,3 +1075,148 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                                 "reason": _s("why this is needed")}, ["url", "reason"]),
                           category="web", risk="high", requires_approval=True, handler=web_download,
                           timeout_seconds=120))
+
+    # ── seine Umgebung: das Dashboard, das der Nutzer vor sich hat ────────
+    # Er soll nicht nur handeln, sondern auch sehen, was der Nutzer sieht:
+    # was auf Freigabe wartet, was gemeldet wurde, worüber schon gesprochen
+    # wurde. Und er soll zeigen können, wovon er redet — dafür öffnet
+    # dashboard.open die passende Seite im Browser des Nutzers.
+    #
+    # Was er ausdrücklich NICHT bekommt: Genehmigungen erteilen. Wer seine
+    # eigenen Anträge bewilligen kann, hat kein Genehmigungstor, sondern eine
+    # Formalität.
+    async def approval_list(ctx: ToolContext, args: dict):
+        items = st.services["approvals"].list(status=str(args.get("status", "pending")), limit=20)
+        if not items:
+            return "Es wartet nichts auf eine Freigabe."
+        return [{"id": a["id"], "code": a["code"], "action": a["action"], "target": a["target"],
+                 "risk": a["risk"], "reason": a["reason"], "status": a["status"],
+                 "since": a["created_at"]} for a in items]
+
+    async def notification_list(ctx: ToolContext, args: dict):
+        items = st.services["notifications"].list(ctx.principal.id,
+                                                  unread_only=bool(args.get("unread_only", True)),
+                                                  limit=int(args.get("limit", 20)))
+        if not items:
+            return "Keine Meldungen."
+        return [{"title": n["title"], "body": n["body"][:200], "severity": n["severity"],
+                 "when": n["created_at"], "read": bool(n["read"])} for n in items]
+
+    async def conversation_search(ctx: ToolContext, args: dict):
+        rows = st.services["chat"].list_conversations(ctx.principal.id, q=str(args.get("query", "")),
+                                                      limit=int(args.get("limit", 15)))
+        if not rows:
+            return "Dazu gibt es kein früheres Gespräch."
+        return [{"id": r["id"], "title": r["title"], "last": r["updated_at"]} for r in rows]
+
+    async def dashboard_open(ctx: ToolContext, args: dict):
+        """Die passende Seite im Browser des Nutzers öffnen.
+
+        Das ist kein Fernsteuern des Rechners, sondern ein Wink: Das Dashboard
+        hört auf diesen Hinweis und wechselt die Seite. Läuft gerade keines,
+        passiert nichts — deshalb sagt die Antwort, dass gezeigt wurde, nicht
+        dass jemand hingesehen hat.
+        """
+        path = str(args["path"]).strip()
+        if not path.startswith("/"):
+            path = "/" + path
+        st.bus.publish("ui.open", {"path": path, "reason": str(args.get("reason", "")),
+                                   "by": ctx.principal.actor})
+        ctx.emit("ui", {"text": f"Dashboard geöffnet: {path}"})
+        return f"Im Dashboard {path} geöffnet — sofern gerade eines offen ist."
+
+    reg.register(ToolSpec("approval.list", "What is waiting for the user's approval right now, with the "
+                          "reason and the code they see. You cannot approve anything yourself.",
+                          _obj({"status": _s("pending (default), approved, rejected")}),
+                          category="dashboard", risk="low", min_role="viewer", handler=approval_list))
+    reg.register(ToolSpec("notification.list", "Recent notifications in the user's notification centre.",
+                          _obj({"unread_only": {"type": "boolean"}, "limit": _i("max rows, default 20")}),
+                          category="dashboard", risk="low", min_role="viewer", handler=notification_list))
+    reg.register(ToolSpec("conversation.search", "Find an earlier conversation by its words, so you can "
+                          "refer to what was already discussed instead of asking again.",
+                          _obj({"query": _s("what it was about"), "limit": _i("max rows")}),
+                          category="dashboard", risk="low", min_role="viewer", handler=conversation_search))
+    reg.register(ToolSpec("dashboard.open", "Open a page in the user's dashboard so they see what you are "
+                          "talking about — e.g. /server, /tasks, /calendar, /approvals, /extensions.",
+                          _obj({"path": _s("dashboard path, e.g. /server"),
+                                "reason": _s("what they will see there")}, ["path"]),
+                          category="dashboard", risk="low", handler=dashboard_open))
+
+    # ── ein Browser, wenn ein Abruf nicht reicht ──────────────────────────
+    # Zwei Wege, und das Modell soll den Unterschied kennen: Auf dem PC des
+    # Nutzers läuft SEIN Browser mit seinen Anmeldungen (desktop.run mit
+    # browser_control) — dafür muss der Rechner an sein. Hier auf dem Server
+    # läuft einer ohne Profil, dafür jederzeit.
+    from ..services.browser import BrowserError, BrowserSession
+    from ..services.browser import available as browser_available
+    browser = BrowserSession(files.root)
+    br_ok, br_why = browser_available()
+
+    def _br(fn):
+        async def run(ctx: ToolContext, args: dict):
+            try:
+                return await fn(ctx, args)
+            except BrowserError as e:
+                return str(e), False
+        return run
+
+    @_br
+    async def browser_open(ctx: ToolContext, args: dict):
+        res = await browser.goto(str(args["url"]))
+        ctx.emit("browser", {"text": f"geöffnet: {res['url']}"})
+        return res
+
+    @_br
+    async def browser_read(ctx: ToolContext, args: dict):
+        return await browser.read()
+
+    @_br
+    async def browser_click(ctx: ToolContext, args: dict):
+        return await browser.click(str(args["what"]))
+
+    @_br
+    async def browser_type(ctx: ToolContext, args: dict):
+        return await browser.type(str(args["field"]), str(args["text"]), bool(args.get("submit")))
+
+    @_br
+    async def browser_shot(ctx: ToolContext, args: dict):
+        return await browser.screenshot(str(args.get("name", "browser.png")))
+
+    @_br
+    async def browser_close(ctx: ToolContext, args: dict):
+        await browser.close()
+        return "Browser geschlossen."
+
+    reg.register(ToolSpec("browser.open",
+                          "Open a page in a real browser on this server and read what it actually says — "
+                          "for pages that build themselves with JavaScript, where web.fetch returns "
+                          "nothing useful. No logins, no profile: for the user's own accounts drive THEIR "
+                          "browser with desktop.run + browser_control instead.",
+                          _obj({"url": _s("https address")}, ["url"]),
+                          category="web", risk="medium", handler=browser_open,
+                          available=br_ok, reason=br_why, timeout_seconds=90))
+    reg.register(ToolSpec("browser.read", "Read the page that is currently open, again — after something "
+                          "loaded or changed.", _obj({}),
+                          category="web", risk="low", min_role="viewer", handler=browser_read,
+                          available=br_ok, reason=br_why, timeout_seconds=60))
+    reg.register(ToolSpec("browser.click", "Click something on the open page, by its visible text or a CSS "
+                          "selector. This acts on a real site — it needs approval.",
+                          _obj({"what": _s("visible text or CSS selector"),
+                                "reason": _s("why")}, ["what", "reason"]),
+                          category="web", risk="high", requires_approval=True, handler=browser_click,
+                          available=br_ok, reason=br_why, timeout_seconds=90))
+    reg.register(ToolSpec("browser.type", "Type into a field on the open page, optionally pressing Enter. "
+                          "Acts on a real site — needs approval.",
+                          _obj({"field": _s("label or CSS selector of the field"), "text": _s("what to type"),
+                                "submit": {"type": "boolean", "description": "press Enter afterwards"},
+                                "reason": _s("why")}, ["field", "text", "reason"]),
+                          category="web", risk="high", requires_approval=True, handler=browser_type,
+                          available=br_ok, reason=br_why, timeout_seconds=90))
+    reg.register(ToolSpec("browser.screenshot", "Save a picture of the open page into the workspace, so the "
+                          "user can look at it under Files.",
+                          _obj({"name": _s("file name, default browser.png")}),
+                          category="web", risk="low", handler=browser_shot,
+                          available=br_ok, reason=br_why, timeout_seconds=60))
+    reg.register(ToolSpec("browser.close", "Close the browser on the server and free its memory.", _obj({}),
+                          category="web", risk="low", handler=browser_close,
+                          available=br_ok, reason=br_why))

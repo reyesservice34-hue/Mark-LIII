@@ -446,5 +446,56 @@ with TestClient(app) as c:
     check("nach dem Leeren ist auch das Hauptgedächtnis leer",
           "HAUPTGEDÄCHTNIS" not in state.runtime._system_prompt(master, state.tools.available()))
 
+    print("\n14. Er sieht das Dashboard — und darf sich nicht selbst freigeben")
+    from command_center.backend.auth import Principal as _P
+    from command_center.backend.orchestrator.tool_registry import ToolContext as _TC
+    pr = _P(kind="user", id=state.auth.list_users()[0]["id"], name="admin", role="admin", actor="admin")
+    tc = _TC(state=state, principal=pr, agent_id="master")
+
+    for name in ("approval.list", "notification.list", "conversation.search", "dashboard.open"):
+        check(f"{name} gibt es", state.tools.get(name) is not None)
+
+    check("er kann Genehmigungen NICHT erteilen",
+          not any(t.name.startswith("approval.") and t.name != "approval.list"
+                  for t in state.tools.all()),
+          [t.name for t in state.tools.all() if t.name.startswith("approval.")])
+
+    out = asyncio.run(state.tools.get("approval.list").handler(tc, {}))
+    check("offene Freigaben sind abfragbar", isinstance(out, (list, str)), out)
+
+    seen_ui = []
+    unsub = state.bus.subscribe_sync("ui.open", lambda ev: seen_ui.append(ev)) \
+        if hasattr(state.bus, "subscribe_sync") else None
+    res = asyncio.run(state.tools.get("dashboard.open").handler(tc, {"path": "server", "reason": "Auslastung"}))
+    check("dashboard.open normalisiert den Pfad", "/server" in res, res)
+    if unsub:
+        check("und schickt ein Ereignis", any(e.get("data", {}).get("path") == "/server" for e in seen_ui))
+
+    print("\n15. Browser: nur was wirklich da ist, und nichts ins eigene Netz")
+    from command_center.backend.services.browser import available as br_avail
+    ok_br, why_br = br_avail()
+    for name in ("browser.open", "browser.read", "browser.click", "browser.type",
+                 "browser.screenshot", "browser.close"):
+        t = state.tools.get(name)
+        check(f"{name} gibt es", t is not None)
+        if t is not None:
+            check(f"{name} meldet sich nur verfügbar, wenn es das ist", t.available == ok_br,
+                  f"available={t.available}, playwright={ok_br}")
+    if not ok_br:
+        check("und sagt, was fehlt", "Playwright" in why_br, why_br)
+
+    klick = state.tools.get("browser.click")
+    tippen = state.tools.get("browser.type")
+    check("Klicken fragt vorher nach", klick is not None and klick.needs_approval())
+    check("Tippen fragt vorher nach", tippen is not None and tippen.needs_approval())
+    check("Lesen fragt nicht", state.tools.get("browser.read").needs_approval() is False)
+
+    from command_center.backend.services.browser import BrowserSession
+    sess = BrowserSession(state.services["files"].root)
+    out = asyncio.run(state.tools.get("browser.open").handler(tc, {"url": "http://127.0.0.1:8080/"}))
+    check("eine Adresse ins eigene Netz wird abgelehnt",
+          isinstance(out, tuple) and out[1] is False and "Netz dieses Servers" in out[0], out)
+    del sess
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

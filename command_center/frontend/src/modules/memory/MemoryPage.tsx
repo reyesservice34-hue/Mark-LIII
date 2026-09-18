@@ -30,6 +30,7 @@ export default function MemoryPage() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [neu, setNeu] = useState("");
+  const [kern, setKern] = useState("");
   const [q, setQ] = useState("");
 
   // Den Serverstand übernehmen, solange niemand tippt — sonst überschreibt
@@ -54,6 +55,18 @@ export default function MemoryPage() {
     if (!neu.trim()) return;
     try { await api.post("/api/memory/facts", { text: neu.trim() }); setNeu(""); reload(); }
     catch (e: any) { toast({ title: "Ging nicht", body: e?.message, tone: "err" }); }
+  };
+
+  /** Direkt ins Hauptgedächtnis — der Umweg über „Gemerktes" und das
+   *  Blitzsymbol war zwar möglich, aber niemand kommt darauf. */
+  const addCore = async () => {
+    if (!kern.trim()) return;
+    try {
+      await api.post("/api/memory/facts", { text: kern.trim(), pinned: true });
+      setKern("");
+      toast({ title: "Ins Hauptgedächtnis gelegt", body: "Gilt ab sofort in jedem Gespräch.", tone: "ok" });
+      reload();
+    } catch (e: any) { toast({ title: "Ging nicht", body: e?.message, tone: "err" }); }
   };
 
   const delFact = async (f: Fact) => {
@@ -93,11 +106,27 @@ export default function MemoryPage() {
       <Panel title={`Hauptgedächtnis${data ? ` · ${core.length}/${data.max_core}` : ""}`}
         icon={<Zap size={15} />}
         foot="Diese Sätze stehen in JEDEM Systemtext — vor jeder Antwort und vor jeder Handlung, ohne dass er etwas aufrufen muss. Deshalb ist der Platz begrenzt: Was hier steht, wird bei jeder Anfrage mitgeschickt.">
+        <div className="panel-body row" style={{ gap: 8 }}>
+          <input className="input" placeholder="Satz, der immer gelten soll — z. B. Firmenwagen ist ein Sprinter, HH-RS 412"
+            value={kern} onChange={(e) => setKern(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void addCore(); }}
+            disabled={!!data && core.length >= data.max_core} />
+          <button className="btn primary" onClick={addCore}
+            disabled={!kern.trim() || (!!data && core.length >= data.max_core)}>
+            <Zap size={14} />Eintragen
+          </button>
+        </div>
+        {data && core.length >= data.max_core && (
+          <div className="panel-body small muted" style={{ paddingTop: 0 }}>
+            Alle {data.max_core} Plätze belegt. Nimm erst einen heraus — was hier steht, wird bei jeder
+            Anfrage mitgeschickt.
+          </div>
+        )}
         {loading && !data ? <div className="panel-body"><Skeleton rows={2} /></div>
           : core.length === 0 ? (
             <div className="panel-body small muted">
-              Noch nichts angeheftet. Unten bei „Gemerktes" auf das Blitzsymbol klicken — dann steht
-              der Satz künftig in jedem Gespräch, statt nur gefunden zu werden, wenn er danach sucht.
+              Noch nichts eingetragen. Oben einen Satz hineinschreiben — oder unten bei „Gemerktes"
+              auf das Blitzsymbol klicken, um einen bestehenden hierher zu heben.
             </div>
           ) : (
             <ul className="core-list">
