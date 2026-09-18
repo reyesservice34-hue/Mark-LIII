@@ -35,4 +35,5 @@ registerModule({ id: "logs", component: lazy(() => import("@/modules/logs/LogsPa
 registerModule({ id: "notifications", component: lazy(() => import("@/modules/notifications/NotificationsPage")) });
 registerModule({ id: "approvals", component: lazy(() => import("@/modules/approvals/ApprovalsPage")), routes: [":approvalId"] });
 registerModule({ id: "analytics", component: lazy(() => import("@/modules/analytics/AnalyticsPage")) });
+registerModule({ id: "extensions", component: lazy(() => import("@/modules/extensions/ExtensionsPage")) });
 registerModule({ id: "settings", component: lazy(() => import("@/modules/settings/SettingsPage")) });

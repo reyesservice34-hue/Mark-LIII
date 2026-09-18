@@ -1,0 +1,40 @@
+/* Der Aufbau als Zeichnung. Senkrecht, weil der Weg einer Anweisung senkrecht
+   verläuft: vom Nutzer nach unten zu den Werkzeugen und als Stimme zurück. */
+.arch { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 18px 14px 22px; }
+
+.arch-layer { display: flex; flex-direction: column; align-items: center; width: 100%; }
+
+.arch-box {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  min-width: 240px; max-width: 100%; padding: 9px 18px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--bg-raised, rgba(255,255,255,0.03));
+  text-align: center;
+}
+.arch-title { font-size: 11px; letter-spacing: .09em; font-weight: 600; }
+.arch-detail { font-size: 11px; color: var(--fg-muted); max-width: 46ch;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Der Zustand kommt vom Server, nicht aus dem Stylesheet. */
+.arch-box.ok { border-color: rgba(70,200,140,0.45); box-shadow: inset 0 0 0 1px rgba(70,200,140,0.12); }
+.arch-box.warn { border-color: rgba(255,180,84,0.5); }
+.arch-box.err { border-color: rgba(255,93,108,0.5); }
+.arch-box.ok .arch-title { color: var(--ok, #46c88c); }
+.arch-box.warn .arch-title { color: var(--warn); }
+.arch-box.err .arch-title { color: var(--err); }
+
+.arch-link { width: 1px; height: 16px; background: var(--line); display: block; }
+
+.arch-nodes { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 8px;
+  max-width: 900px; }
+.arch-node { display: flex; align-items: baseline; gap: 6px; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--line); font-size: 11px; background: var(--bg); }
+.arch-node-title { font-weight: 500; }
+.arch-node-detail { color: var(--fg-muted); }
+.arch-node.ok { border-color: rgba(70,200,140,0.35); }
+.arch-node.warn { border-color: rgba(255,180,84,0.4); }
+.arch-node.err { border-color: rgba(255,93,108,0.4); opacity: .75; }
+
+@media (max-width: 720px) {
+  .arch-box { min-width: 0; width: 100%; }
+  .arch-detail { max-width: 100%; }
+}

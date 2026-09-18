@@ -5,7 +5,7 @@ import {
   Server, Settings, ShieldCheck, Sparkles, Square, Timer, Trash2, Upload, Workflow, X, Zap, Play, Pause,
   Download, Copy, RotateCcw, Paperclip, Filter, LogOut, Terminal, Network, Layers, Eye, CircleAlert, Wifi,
   WifiOff, ChevronUp, Plus, FolderPlus, Pencil, MoveRight, KeyRound, UserRound, Circle, Monitor,
-  GraduationCap, BookOpen, CircleStop, Volume2, VolumeX, AudioLines,
+  GraduationCap, BookOpen, CircleStop, Volume2, VolumeX, AudioLines, Puzzle,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -17,7 +17,7 @@ const MAP: Record<string, ComponentType<any>> = {
   "git-branch": GitBranch, radio: Radio, "message-circle": MessageCircle, globe: Globe, box: Box,
   activity: Activity, "layout-grid": LayoutGrid, zap: Zap, "hard-drive": HardDrive, terminal: Terminal,
   network: Network, layers: Layers, mic: Mic, command: Command, monitor: Monitor,
-  "graduation-cap": GraduationCap,
+  "graduation-cap": GraduationCap, puzzle: Puzzle,
 };
 
 export function Icon({ name, size = 16, ...rest }: { name?: string; size?: number; className?: string; style?: any }) {
@@ -27,9 +27,9 @@ export function Icon({ name, size = 16, ...rest }: { name?: string; size?: numbe
 
 export {
   Activity, AlertTriangle, BarChart3, Bell, Bot, Box, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Command, Cpu, FileText, Folder, HardDrive, Home, ListChecks, Mic, Plug, RefreshCw, ScrollText, Search, Send,
+  Code, Command, Cpu, FileText, Folder, HardDrive, Home, ListChecks, Mic, Plug, RefreshCw, ScrollText, Search, Send,
   Server, Settings, ShieldCheck, Sparkles, Square, Timer, Trash2, Upload, Workflow, X, Zap, Play, Pause, Download,
   Copy, RotateCcw, Paperclip, Filter, LogOut, Terminal, Network, Layers, Eye, CircleAlert, Wifi, WifiOff, Plus,
   FolderPlus, Pencil, MoveRight, KeyRound, UserRound, Circle, MessageSquare, Radio, Monitor,
-  GraduationCap, BookOpen, CircleStop, Volume2, VolumeX, AudioLines,
+  GraduationCap, BookOpen, CircleStop, Volume2, VolumeX, AudioLines, Puzzle,
 };

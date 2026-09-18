@@ -56,6 +56,7 @@ python tests/test_control_plane.py          # Desktop-Client-Vertrag
 python tests/test_command_center.py         # Server end-to-end
 python tests/test_command_center_tools.py   # Kalender, Mail, GitHub, Suche, Sprache
 python tests/test_command_center_teach.py   # Desktop-Fernsteuerung, Lernen
+python tests/test_extensions.py             # MCP-Server, Fähigkeiten, Selbstauskunft
 python tests/test_live_line_ui.py           # offene Leitung im Browser (braucht node + Playwright)
 cd command_center/frontend && npx tsc --noEmit && npx eslint src --ext .ts,.tsx && npx vite build
 ```

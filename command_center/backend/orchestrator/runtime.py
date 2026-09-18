@@ -610,6 +610,19 @@ class MasterRuntime:
                 "and teach.learn — that writes the procedure down and can create a specialist for it. "
                 "Before starting something that sounds familiar, check procedure.list: if you already "
                 "learned it, run it with procedure.run instead of improvising it again.")
+        # Fähigkeiten stehen hier nur mit Name und Zweck. Der volle Text kommt
+        # über skill.open, wenn er ihn braucht — sonst bezahlt jedes Gespräch
+        # für Anleitungen, die niemand aufschlägt.
+        lib = st.services.get("skills")
+        if lib is not None:
+            catalogue = lib.catalogue()
+            if catalogue:
+                parts.append(catalogue)
+        parts.append(
+            "WHAT YOU ARE MADE OF: call system.inventory when you need to know what you can actually do "
+            "right now — which tools work, which integrations are connected, which MCP servers and skills "
+            "exist. Do that instead of guessing from memory; the answer changes as the user connects "
+            "things.")
         unavailable = [t for t in st.tools.all() if not (t.available and t.handler)]
         if unavailable:
             parts.append("NOT AVAILABLE right now (integration not connected): " +

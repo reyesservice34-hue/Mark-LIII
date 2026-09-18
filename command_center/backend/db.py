@@ -217,6 +217,29 @@ CREATE TABLE IF NOT EXISTS self_tools (
   written_by TEXT NOT NULL DEFAULT '', activated_by TEXT NOT NULL DEFAULT '',
   activated_at TEXT
 );
+
+-- Fremde Werkzeugserver nach dem Model Context Protocol — dieselben, die auch
+-- Claude benutzt. Das Token bleibt hier und wird nie ausgeliefert; die
+-- Oberfläche erfährt nur, ob eines hinterlegt ist.
+CREATE TABLE IF NOT EXISTS mcp_servers (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, url TEXT NOT NULL,
+  token TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'unknown', detail TEXT NOT NULL DEFAULT '',
+  tools TEXT NOT NULL DEFAULT '[]', tool_count INTEGER NOT NULL DEFAULT 0,
+  server_info TEXT NOT NULL DEFAULT '{}', requires_approval INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL, checked_at TEXT, created_by TEXT NOT NULL DEFAULT ''
+);
+
+-- Fähigkeiten als Text: eine Anleitung, die er bei Bedarf aufschlägt. Im
+-- Systemtext steht nur Name und Zweck, der Inhalt kommt erst, wenn er ihn
+-- braucht — sonst füllt jede ungenutzte Fähigkeit jedes Gespräch.
+CREATE TABLE IF NOT EXISTS skills (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, title TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL DEFAULT 'manual',
+  uses INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  created_by TEXT NOT NULL DEFAULT ''
+);
 """
 
 

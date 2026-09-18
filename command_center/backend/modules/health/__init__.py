@@ -89,6 +89,22 @@ async def health(state: AppState = Depends(get_state)):
     return {"status": _overall(parts), "components": parts, "version": state.version}
 
 
+@router.get("/architecture")
+async def architecture_view(state: AppState = Depends(get_state),
+                            _: Principal = Depends(current_principal)):
+    """Der Aufbau, wie er gerade wirklich ist — für die Zeichnung im Dashboard."""
+    from ...services.inventory import architecture
+    return architecture(state)
+
+
+@router.get("/inventory")
+async def inventory_view(state: AppState = Depends(get_state),
+                         _: Principal = Depends(current_principal)):
+    """Derselbe Bestand in Zahlen. Dasselbe sieht der Master Agent über system.inventory."""
+    from ...services.inventory import inventory
+    return inventory(state)
+
+
 @router.get("/status")
 async def status(state: AppState = Depends(get_state), principal: Principal = Depends(current_principal)):
     """Everything the top status bar shows, in one call."""

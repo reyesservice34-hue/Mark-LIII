@@ -10,6 +10,7 @@ import { AgentCard } from "@/modules/agents/AgentCard";
 import { TaskTimeline } from "@/modules/tasks/TaskTimeline";
 import { ActivityFeed } from "./ActivityFeed";
 import { VoiceConsole } from "./VoiceConsole";
+import { ArchitectureView } from "./ArchitectureView";
 
 export default function HomePage() {
   const nav = useNavigate();
@@ -38,6 +39,8 @@ export default function HomePage() {
       <ErrorState error={status.error} retry={() => status.reload(false)} />
 
       <VoiceConsole />
+
+      <ArchitectureView />
 
       <div className="grid cols-4">
         <Panel title="JARVIS-Kern" icon={<Sparkles size={15} />}>

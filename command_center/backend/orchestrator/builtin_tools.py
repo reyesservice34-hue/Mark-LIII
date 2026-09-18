@@ -903,3 +903,74 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                                 "region": _s("optional region code, e.g. de-de")}, ["query"]),
                           category="web", risk="low", min_role="viewer", handler=web_search_tool,
                           timeout_seconds=45))
+
+    # ── Fähigkeiten: Anleitungen, die er bei Bedarf aufschlägt ───────────
+    # Zwei Stufen, damit ungenutztes Wissen nicht jedes Gespräch belastet: Im
+    # Systemtext stehen nur Name und Zweck, der volle Text kommt über skill.open.
+    # Das ist reiner Text und damit bei jedem Anbieter gleich brauchbar —
+    # Anthropic, OpenAI, Gemini, lokales Modell.
+    skills = st.services["skills"]
+
+    async def skill_list(ctx: ToolContext, args: dict):
+        items = skills.all(enabled_only=True)
+        if not items:
+            return "Es ist noch keine Fähigkeit hinterlegt."
+        return [{"name": s["name"], "what_for": s["description"], "used": s["uses"]} for s in items]
+
+    async def skill_open(ctx: ToolContext, args: dict):
+        from ..services.skills import SkillError
+        try:
+            opened = skills.open(str(args["name"]))
+        except SkillError as e:
+            return str(e), False
+        ctx.emit("skill", {"text": f"Fähigkeit aufgeschlagen: {opened['name']}"})
+        return opened
+
+    reg.register(ToolSpec("skill.list", "Which skills are available — each one a written instruction you "
+                          "can open when a task calls for it.", _obj({}),
+                          category="skills", risk="low", min_role="viewer", handler=skill_list))
+    reg.register(ToolSpec("skill.open", "Open a skill and read its full instructions. Do this BEFORE "
+                          "starting a task of that kind, not after.",
+                          _obj({"name": _s("skill name from skill.list")}, ["name"]),
+                          category="skills", risk="low", min_role="viewer", handler=skill_open))
+
+    # ── MCP: fremde Werkzeugserver ───────────────────────────────────────
+    # Die Werkzeuge selbst melden sich beim Start an und heißen mcp.<server>.<werkzeug>.
+    # Hier steht nur, was der Nutzen für das Modell ist: nachsehen und neu einlesen.
+    mcp = st.services["mcp"]
+
+    async def mcp_servers(ctx: ToolContext, args: dict):
+        items = mcp.servers()
+        if not items:
+            return ("Es ist kein MCP-Server eingetragen. Das geht im Dashboard unter "
+                    "Erweiterungen — dort kommen auch die Werkzeuge her, die Claude benutzt.")
+        return [{"server": s["name"], "status": s["status"], "detail": s["detail"],
+                 "tools": s["tool_count"], "enabled": s["enabled"]} for s in items]
+
+    async def mcp_refresh(ctx: ToolContext, args: dict):
+        done = await mcp.refresh_all()
+        st.tools.snapshot(st.db)
+        return {"servers": len(done), "healthy": sum(1 for d in done if d["status"] == "healthy"),
+                "tools": sum(d["tool_count"] for d in done)}
+
+    reg.register(ToolSpec("mcp.servers", "Which MCP servers are connected, and how many tools each one "
+                          "contributes. Their tools appear as mcp.<server>.<tool>.", _obj({}),
+                          category="integrations", risk="low", min_role="viewer", handler=mcp_servers))
+    reg.register(ToolSpec("mcp.refresh", "Re-read the tool list of every connected MCP server. Use this "
+                          "after a server was added or changed.", _obj({}),
+                          category="integrations", risk="medium", handler=mcp_refresh,
+                          timeout_seconds=120))
+
+    # ── sich selbst kennen ───────────────────────────────────────────────
+    # „Was kannst du?" soll er beantworten, indem er nachsieht. Ein Systemtext
+    # altert mit jedem angebundenen Server; ein Verzeichnis nicht.
+    async def system_inventory(ctx: ToolContext, args: dict):
+        from ..services.inventory import inventory
+        return inventory(st)
+
+    reg.register(ToolSpec("system.inventory",
+                          "What you are made of right now: which tools work and which do not and why, "
+                          "which integrations are connected, which MCP servers, skills, specialists and "
+                          "devices exist. Look here before claiming you can or cannot do something.",
+                          _obj({}), category="self", risk="low", min_role="viewer",
+                          handler=system_inventory))

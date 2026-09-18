@@ -45,7 +45,9 @@ from .services.files import FileService
 from .services.improve import ImprovementService
 from .services.metrics import MetricsService
 from .services.notifications import NotificationService
+from .services.mcp import McpRegistry
 from .services.selfext import SelfExtension
+from .services.skills import SkillLibrary
 from .services.tasks import TaskService
 from .services.teaching import TeachingService
 from .services.voice_service import VoiceService
@@ -86,6 +88,10 @@ def build_state(settings: Settings | None = None) -> AppState:
         "selfext": SelfExtension(db, settings.workspace_dir, log, bus),
         "improve": ImprovementService(db, bus, log),
     })
+    # Fähigkeiten und fremde Werkzeugserver brauchen den fertigen Zustand
+    # (Verzeichnis, Protokoll), deshalb erst hier und nicht in der Liste oben.
+    state.services["skills"] = SkillLibrary(state)
+    state.services["mcp"] = McpRegistry(state)
     state.integrations = IntegrationRegistry(db, bus)
     state.workflows = WorkflowHub(db, bus)
     state.tools = ToolRegistry(approval_threshold=os.environ.get("JARVIS_CC_APPROVAL_RISK", "high"))
