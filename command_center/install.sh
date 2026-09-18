@@ -128,17 +128,29 @@ else
   info "Passwort:          steht in command_center/.env unter JARVIS_CC_ADMIN_PASSWORD"
 fi
 
+info "Stand:             ${JARVIS_CC_BUILD}"
+
 bold ""
 bold "  Nächste Schritte"
-info "1. Von außen erreichbar machen: Reverse Proxy auf ${BIND}:${PORT}, z. B. mit Caddy:"
+# Nicht alle drei Schritte immer aufzählen: was schon steht, muss niemand
+# lesen. Der Zustand steht in der Antwort von /api/health — also wird er
+# gelesen statt vermutet.
+GATEWAY="$(printf '%s' "$BODY" | sed -n 's/.*"agent_gateway":{"status":"\([a-z_]*\)".*/\1/p' | head -1)"
+if [ "$GATEWAY" != "healthy" ]; then
+  info "1. AI-Schlüssel eintragen — ohne den antwortet er nicht:"
+  info "     bash command_center/setup-keys.sh"
+  info "   Das Skript fragt sie einzeln ab (Eingabe bleibt unsichtbar), schreibt"
+  info "   command_center/.env und startet selbst neu. Für die Sprachleitung"
+  info "   wird OPENAI_API_KEY gebraucht."
+else
+  info "1. AI-Schlüssel stehen, der Master Agent antwortet."
+fi
+info "2. Von außen erreichbar machen: Reverse Proxy auf ${BIND}:${PORT}, z. B. mit Caddy:"
 info "     jarvis.deine-domain.de {"
 info "         reverse_proxy ${BIND}:${PORT}"
 info "     }"
-info "2. AI-Schlüssel eintragen in command_center/.env (ANTHROPIC_API_KEY, OPENAI_API_KEY,"
-info "   GEMINI_API_KEY oder LOCAL_LLM_URL), dann:"
-info "     $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d"
-info "3. Im Dashboard unter Einstellungen ein Maschinen-Token anlegen und auf dem PC"
-info "   als JARVIS_GATEWAY_TOKEN setzen — dann steuert der Server den Desktop mit."
+info "3. Auf dem PC einmal  python install_desktop.py  laufen lassen — das legt das"
+info "   Maschinen-Token selbst an und trägt es ein. Danach: JARVIS.bat"
 bold ""
 info "Logs:    $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml logs -f"
 info "Stoppen: $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml down"
