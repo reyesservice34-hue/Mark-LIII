@@ -102,6 +102,8 @@ missing credential rather than pretending.
 | `github.read/issues/commits/repo` | `GITHUB_TOKEN` | read-only |
 | `workflow.list/execute/runs` | `N8N_BASE_URL` + `N8N_API_KEY` | trigger is webhook-based |
 | `composio.apps/tools/run` | `COMPOSIO_API_KEY` | a few hundred services behind one key; `composio.run` acts in real accounts and is approval-gated |
+| `self.write/check/activate/disable` | nothing | writes itself new tools; only `self.activate` is dangerous, and it is `critical` + admin |
+| `self.tree/source/propose/apply/revert` | nothing | reads its own source; changes it only as a reviewed proposal, backed up and revertible |
 | `terminal.execute` | `JARVIS_CC_ALLOW_TERMINAL=true` | admin role **and** approval, runs inside the workspace |
 | `desktop.devices/open_app/run` | a paired PC | drives the desktop's own actions; `desktop.run` is approval-gated |
 | `teach.start/note/stop/learn`, `procedure.list/run` | nothing (learning needs a local AI provider) | records a demonstration and turns it into a procedure |
@@ -181,6 +183,14 @@ and offer to run it instead of improvising the same job twice.
 * Dangerous capabilities are off by default: `JARVIS_CC_ALLOW_TERMINAL`,
   `JARVIS_CC_ALLOW_DOCKER_ACTIONS`, `JARVIS_CC_ALLOW_SERVICE_RESTART`.
 * Files: only the workspace directory is reachable; deletes go to `.trash`.
+* Self-extension: writing a tool or proposing a source change alters nothing
+  that runs. Loading a written tool (`self.activate`) and writing a proposal
+  into the source tree (`self.apply`) are `critical` and admin-only, so a
+  human reads the code first. An applied change is backed up and revertible,
+  and takes effect only on restart. This is **not** a sandbox: an activated
+  tool runs in the server process with the server's rights. The guard is the
+  review before it, not a cage around it — said plainly here so nobody relies
+  on an isolation that does not exist.
 * Composio: the key stays on this server and the OAuth tokens stay at
   Composio — neither ever reaches the browser. `composio.run` acts in real
   accounts, so it is `high` risk and passes the approval gate, and a toolkit

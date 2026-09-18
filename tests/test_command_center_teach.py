@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import tempfile
+import textwrap
 import threading
 import time
 from pathlib import Path
@@ -334,6 +335,106 @@ with TestClient(app) as c:
     check("a viewer cannot start a recording",
           v.post("/api/teach/recordings", json={"title": "x"}, headers=vh).status_code == 403)
     check("but may look at what was learned", v.get("/api/teach/procedures").status_code == 200)
+
+    print("\n8. Selbsterweiterung — schreiben ist harmlos, freigeben nicht")
+    # Der Wert steckt in den Ablehnungen, nicht im Erfolgsfall: ein Agent, der
+    # seine eigenen Bremsen überschreiben kann, hat keine Bremsen mehr.
+    import asyncio as _aio  # noqa: E402
+    from command_center.backend.services.selfext import (  # noqa: E402
+        CRITICAL_FILES, SelfExtError, SelfExtension,
+    )
+
+    sx = state.services["selfext"]
+    existing = {t.name for t in state.tools.all()}
+
+    GOOD = textwrap.dedent("""
+        TOOL = {"name": "wetter.heute", "description": "Sagt das Wetter.",
+                "input_schema": {"type": "object", "properties": {"ort": {"type": "string"}}},
+                "risk": "low"}
+
+
+        async def run(args):
+            return f"In {args.get('ort', 'hier')} ist es sonnig."
+
+
+        def selftest():
+            return "ok"
+        """)
+
+    res = sx.write("wetter.heute", GOOD, author="admin", existing_tools=existing)
+    check("ein neues Werkzeug lässt sich schreiben", res["status"] == "draft", res)
+    check("aber es ist noch nicht in der Registry", state.tools.get("wetter.heute") is None)
+
+    for bad_name, why in (("filesystem.delete", "Kernbereich"), ("../../etc/passwd", "Pfad"),
+                          ("Wetter.Heute", "Großbuchstaben"), ("self.write", "Kernbereich")):
+        try:
+            sx.write(bad_name, GOOD, author="admin", existing_tools=existing)
+            check(f"Name abgelehnt: {why}", False, bad_name)
+        except SelfExtError as e:
+            check(f"Name abgelehnt: {why}", True, str(e)[:60])
+
+    try:
+        sx.write("kaputt.test", "def run(  :", author="admin", existing_tools=existing)
+        check("ungültiges Python wird gar nicht erst geschrieben", False)
+    except SelfExtError as e:
+        check("ungültiges Python wird gar nicht erst geschrieben", "Python" in str(e), str(e)[:60])
+
+    checked = _aio.run(sx.check("wetter.heute"))
+    check("die Prüfung läuft und findet den Selbsttest", checked["selftest"] == "ok", checked)
+    check("und merkt sich, was das Werkzeug deklariert", checked["declares"]["risk"] == "low", checked)
+
+    try:
+        sx.activate("wetter.heute", state.tools, actor="admin")
+        check("erst nach der Prüfung freigebbar", True)
+    except SelfExtError as e:
+        check("erst nach der Prüfung freigebbar", False, str(e))
+    spec = state.tools.get("wetter.heute")
+    check("jetzt ist es ein echtes Werkzeug", spec is not None and spec.available and spec.source == "self")
+    out = _aio.run(spec.handler(None, {"ort": "Köln"}))
+    check("und es tut wirklich etwas", "Köln" in str(out) and "sonnig" in str(out), out)
+
+    # Eine geänderte Quelle verliert ihre Freigabe — sonst wäre sie eine Freigabe
+    # für Code, den niemand gesehen hat.
+    sx.write("wetter.heute", GOOD.replace("sonnig", "regnerisch"), author="admin", existing_tools=existing)
+    try:
+        sx.activate("wetter.heute", state.tools, actor="admin")
+        check("geänderte Quelle verliert die Freigabe", False, "wurde trotzdem aktiviert")
+    except SelfExtError as e:
+        check("geänderte Quelle verliert die Freigabe", "geprüft" in str(e) or "geändert" in str(e), str(e)[:70])
+
+    print("\n9. Zugriff auf den eigenen Quelltext — lesen frei, ändern nur als Vorschlag")
+    tree = sx.source_tree("core")
+    check("er findet seinen eigenen Quelltext", any(f["file"].endswith("prompt.txt") for f in tree), len(tree))
+    check("und weiß, welche Dateien heikel sind",
+          any(f["critical"] for f in sx.source_tree("command_center/backend")))
+    src = sx.source("command_center/backend/auth.py")
+    check("er darf auch die heiklen lesen", src["critical"] is True and "class AuthService" in src["source"])
+
+    for outside in ("../../etc/passwd", "/etc/passwd", "command_center/frontend/src/main.tsx"):
+        try:
+            sx.source(outside)
+            check(f"außerhalb des Quelltexts abgelehnt: {outside}", False)
+        except SelfExtError:
+            check(f"außerhalb des Quelltexts abgelehnt: {outside}", True)
+
+    before = (ROOT / "core" / "prompt.txt").read_text(encoding="utf-8")
+    prop = sx.propose("core/prompt.txt", before + "\n# von JARVIS vorgeschlagen\n",
+                      "Eine Zeile zum Ausprobieren", author="admin")
+    check("ein Vorschlag entsteht mit Diff", prop["added"] >= 1 and "prompt.txt" in prop["diff"], prop["added"])
+    check("und ändert am laufenden Stand nichts",
+          (ROOT / "core" / "prompt.txt").read_text(encoding="utf-8") == before)
+    check("ein Vorschlag an einer heiklen Datei ist als solcher markiert",
+          sx.propose(CRITICAL_FILES[0], sx.source(CRITICAL_FILES[0])["source"] + "\n# probe\n",
+                     "Probe", author="admin")["critical"] is True)
+
+    applied = sx.apply(prop["proposal_id"], actor="admin")
+    check("erst self.apply schreibt wirklich",
+          (ROOT / "core" / "prompt.txt").read_text(encoding="utf-8").endswith("vorgeschlagen\n"), applied["file"])
+    check("und legt vorher eine Sicherung an", Path(applied["backup"]).exists())
+    sx.revert(prop["proposal_id"], actor="admin")
+    check("und es lässt sich zurückdrehen",
+          (ROOT / "core" / "prompt.txt").read_text(encoding="utf-8") == before)
+
 
 print("\n11. learned specialists come back after a restart")
 state.db.close()

@@ -205,6 +205,18 @@ CREATE TABLE IF NOT EXISTS learned_agents (
   icon TEXT NOT NULL DEFAULT 'sparkles', enabled INTEGER NOT NULL DEFAULT 1,
   procedure_id TEXT, created_at TEXT NOT NULL, created_by TEXT NOT NULL DEFAULT ''
 );
+
+-- Werkzeuge, die JARVIS sich selbst geschrieben hat. Die Quelle liegt als
+-- Datei im Arbeitsbereich; hier steht der Zustand, damit sie einen Neustart
+-- übersteht und nachvollziehbar bleibt, wer wann was freigegeben hat.
+CREATE TABLE IF NOT EXISTS self_tools (
+  name TEXT PRIMARY KEY, file TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+  risk TEXT NOT NULL DEFAULT 'medium', status TEXT NOT NULL DEFAULT 'draft',
+  source_sha TEXT NOT NULL DEFAULT '', last_error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  written_by TEXT NOT NULL DEFAULT '', activated_by TEXT NOT NULL DEFAULT '',
+  activated_at TEXT
+);
 """
 
 

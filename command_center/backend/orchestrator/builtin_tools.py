@@ -536,6 +536,112 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           category="integrations", risk="high", handler=composio_run,
                           available=cmp_ok, reason=cmp_reason, timeout_seconds=120))
 
+    # ── sich selbst erweitern ────────────────────────────────────────────
+    # Drei Stufen, weil Schreiben harmlos ist und Ausführen nicht: schreiben,
+    # prüfen, freigeben. Nur die letzte Stufe ist gefährlich, und nur die geht
+    # durch das Gatter.
+    selfext = st.services["selfext"]
+
+    async def self_tools(ctx: ToolContext, args: dict):
+        items = selfext.list()
+        if not items:
+            return ("Du hast dir noch kein Werkzeug geschrieben. self.write legt eines an, "
+                    "self.check prüft es, self.activate gibt es frei.")
+        return items
+
+    async def self_write(ctx: ToolContext, args: dict):
+        return selfext.write(str(args["name"]), str(args["source"]),
+                             author=ctx.principal.actor,
+                             existing_tools={x.name for x in st.tools.all()})
+
+    async def self_read(ctx: ToolContext, args: dict):
+        return selfext.read(str(args["name"]))
+
+    async def self_check(ctx: ToolContext, args: dict):
+        return await selfext.check(str(args["name"]))
+
+    async def self_activate(ctx: ToolContext, args: dict):
+        res = selfext.activate(str(args["name"]), st.tools, actor=ctx.principal.actor)
+        st.tools.snapshot(st.db)
+        ctx.emit("selfext", {"text": f"Neues Werkzeug freigegeben: {args['name']}"})
+        return res
+
+    async def self_disable(ctx: ToolContext, args: dict):
+        return selfext.disable(str(args["name"]), st.tools, actor=ctx.principal.actor)
+
+    # ── seinen eigenen Quelltext ─────────────────────────────────────────
+    async def self_tree(ctx: ToolContext, args: dict):
+        return selfext.source_tree(str(args.get("tree", "")))
+
+    async def self_source(ctx: ToolContext, args: dict):
+        return selfext.source(str(args["file"]))
+
+    async def self_propose(ctx: ToolContext, args: dict):
+        return selfext.propose(str(args["file"]), str(args["source"]), str(args["reason"]),
+                               author=ctx.principal.actor)
+
+    async def self_proposals(ctx: ToolContext, args: dict):
+        items = selfext.proposals()
+        return items or "Es liegt kein Änderungsvorschlag vor."
+
+    async def self_apply(ctx: ToolContext, args: dict):
+        return selfext.apply(str(args["proposal_id"]), actor=ctx.principal.actor)
+
+    async def self_revert(ctx: ToolContext, args: dict):
+        return selfext.revert(str(args["proposal_id"]), actor=ctx.principal.actor)
+
+    reg.register(ToolSpec("self.tools", "Which tools you have written for yourself, and their state.",
+                          _obj({}), category="self", risk="low", min_role="viewer", handler=self_tools))
+    reg.register(ToolSpec("self.write",
+                          "Write a new tool for yourself, or replace one you wrote. The file must define "
+                          "TOOL = {name, description, input_schema, risk} and an async run(args). An "
+                          "optional selftest() is run during self.check. Writing changes nothing yet.",
+                          _obj({"name": _s("area.action, lower case, e.g. wetter.heute"),
+                                "source": _s("the complete Python file")}, ["name", "source"]),
+                          category="self", risk="medium", handler=self_write))
+    reg.register(ToolSpec("self.read", "Read back the source of a tool you wrote.",
+                          _obj({"name": _s("tool name")}, ["name"]),
+                          category="self", risk="low", min_role="viewer", handler=self_read))
+    reg.register(ToolSpec("self.check",
+                          "Import a tool you wrote in a separate process, validate its shape and run its "
+                          "selftest. It must pass before it can be activated.",
+                          _obj({"name": _s("tool name")}, ["name"]),
+                          category="self", risk="low", handler=self_check, timeout_seconds=40))
+    reg.register(ToolSpec("self.activate",
+                          "Load a checked tool into the live registry, permanently. It then runs inside "
+                          "this server with the same rights the server has.",
+                          _obj({"name": _s("tool name"),
+                                "reason": _s("what it is for and why it is safe")}, ["name", "reason"]),
+                          category="self", risk="critical", min_role="admin", handler=self_activate))
+    reg.register(ToolSpec("self.disable", "Switch off a tool you wrote.",
+                          _obj({"name": _s("tool name")}, ["name"]),
+                          category="self", risk="medium", handler=self_disable))
+
+    reg.register(ToolSpec("self.tree", "List the files of your own source code.",
+                          _obj({"tree": _s("limit to one tree, e.g. command_center/backend")}),
+                          category="self", risk="low", min_role="viewer", handler=self_tree))
+    reg.register(ToolSpec("self.source", "Read one file of your own source code.",
+                          _obj({"file": _s("path as self.tree prints it")}, ["file"]),
+                          category="self", risk="low", min_role="viewer", handler=self_source))
+    reg.register(ToolSpec("self.propose",
+                          "Propose a changed version of one of your own source files. This writes a "
+                          "proposal with a diff and changes nothing that is running.",
+                          _obj({"file": _s("path as self.tree prints it"),
+                                "source": _s("the complete new file"),
+                                "reason": _s("what this improves")}, ["file", "source", "reason"]),
+                          category="self", risk="medium", handler=self_propose))
+    reg.register(ToolSpec("self.proposals", "The change proposals you have made to your own code.",
+                          _obj({}), category="self", risk="low", min_role="viewer", handler=self_proposals))
+    reg.register(ToolSpec("self.apply",
+                          "Write a proposal into your own source tree. The old file is backed up first. "
+                          "It takes effect only after the server restarts.",
+                          _obj({"proposal_id": _s("id from self.propose"),
+                                "reason": _s("why this should be applied")}, ["proposal_id", "reason"]),
+                          category="self", risk="critical", min_role="admin", handler=self_apply))
+    reg.register(ToolSpec("self.revert", "Undo an applied proposal from its backup.",
+                          _obj({"proposal_id": _s("id from self.propose")}, ["proposal_id"]),
+                          category="self", risk="high", min_role="admin", handler=self_revert))
+
     # ── desktop (the paired PC) ──────────────────────────────────────────
     desktop = st.services["desktop"]
 

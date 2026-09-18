@@ -44,6 +44,7 @@ from .services.external import GitHubService
 from .services.files import FileService
 from .services.metrics import MetricsService
 from .services.notifications import NotificationService
+from .services.selfext import SelfExtension
 from .services.tasks import TaskService
 from .services.teaching import TeachingService
 from .services.voice_service import VoiceService
@@ -81,6 +82,7 @@ def build_state(settings: Settings | None = None) -> AppState:
         "composio": ComposioService(),
         "desktop": DesktopBridge(db, bus, log),
         "teaching": TeachingService(db, bus, log),
+        "selfext": SelfExtension(db, settings.workspace_dir, log, bus),
     })
     state.integrations = IntegrationRegistry(db, bus)
     state.workflows = WorkflowHub(db, bus)
@@ -94,6 +96,12 @@ def build_state(settings: Settings | None = None) -> AppState:
     state.runtime = MasterRuntime(state)
     register_builtin_tools(state.tools, state)
     state.tools.snapshot(db)
+    # Werkzeuge, die er sich selbst geschrieben und die jemand freigegeben
+    # hat, sind nach einem Neustart wieder da — sonst wäre Lernen folgenlos.
+    restored = state.services["selfext"].restore(state.tools)
+    if restored:
+        log.info("selfext", f"{restored} selbstgeschriebene(s) Werkzeug(e) wieder geladen")
+        state.tools.snapshot(db)
     state.scheduler = Scheduler(bus, log)
     _seed_memory(db)
     return state
