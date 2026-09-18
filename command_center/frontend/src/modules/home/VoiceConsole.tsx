@@ -1,148 +1,93 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { api, streamPost } from "@/lib/api";
+import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
-import { Mic, Square, Volume2, AudioLines, VolumeX } from "@/lib/icons";
-import { useStore } from "@/lib/store";
-import { setSpeechMode, speakable, speechMode } from "@/app/voice/spoken";
-import { resolveVoiceBackend, type VoiceBackend } from "@/app/voice/voice";
+import { Mic, Square } from "@/lib/icons";
+import { LiveLine, type LiveState } from "@/app/voice/live";
 import "./voice-console.css";
 
-type Phase = "idle" | "listening" | "thinking" | "speaking";
-
-const PHASE_LABEL: Record<Phase, string> = {
-  idle: "Bereit",
+const PHASE_LABEL: Record<LiveState, string> = {
+  connecting: "Verbinde",
   listening: "Ich höre",
   thinking: "Denke nach",
   speaking: "Antworte",
+  closed: "Bereit",
 };
 
+interface LiveCaps {
+  available: boolean;
+  detail: string;
+  model: string;
+  voice: string;
+  tools: number;
+}
+
 /**
- * Die Sprachkonsole auf der Startseite.
+ * Die Sprachkonsole: eine offene Leitung, kein Knopfdruck-Betrieb.
  *
- * Kein zweiter, abgekürzter Weg neben dem Chat: sie legt eine echte
- * Unterhaltung an und schickt die Nachricht durch dieselbe Strecke — Master
- * Agent, Werkzeuge, Freigaben, Prüfspur. Was hier gesprochen wird, steht
- * danach im Chatverlauf und lässt sich dort weiterlesen.
+ * Einmal auf „Leitung öffnen", danach bleibt das Mikrofon offen. Wann eine
+ * Äußerung zu Ende ist, entscheidet das Modell; man kann ihm ins Wort fallen
+ * und er hört sofort auf zu reden.
  *
- * Sie täuscht auch nichts vor: fehlt ein Sprach-Backend oder ist die Seite
- * nicht über HTTPS aufgerufen, sagt sie genau das, statt einen Knopf
- * anzubieten, der nichts tut.
+ * Sie täuscht nichts vor: fehlt der Schlüssel oder läuft die Seite nicht über
+ * HTTPS, steht genau das da, statt eines Knopfes, der nichts tut.
  */
-export function VoiceConsole({ masterOnline }: { masterOnline: boolean }) {
-  const nav = useNavigate();
-  const mode = useStore(speechMode);
-  const [backend, setBackend] = useState<VoiceBackend | null>(null);
-  const [phase, setPhase] = useState<Phase>("idle");
+export function VoiceConsole() {
+  const [caps, setCaps] = useState<LiveCaps | null>(null);
+  const [state, setState] = useState<LiveState>("closed");
   const [heard, setHeard] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [convId, setConvId] = useState("");
+  const [said, setSaid] = useState("");
+  const [tools, setTools] = useState<{ name: string; ok: boolean }[]>([]);
+  const line = useRef<LiveLine | null>(null);
   const alive = useRef(true);
-  const phaseRef = useRef<Phase>("idle");
-  const loop = useRef(false);
-  phaseRef.current = phase;
 
   useEffect(() => {
     alive.current = true;
-    resolveVoiceBackend().then((b) => alive.current && setBackend(b));
-    return () => { alive.current = false; loop.current = false; };
+    api.get<LiveCaps>("/api/voice/live/capabilities")
+      .then((c) => alive.current && setCaps(c))
+      .catch(() => alive.current && setCaps({ available: false, detail: "Der Server hat auf die Anfrage "
+        + "nach der Live-Leitung nicht geantwortet.", model: "", voice: "", tools: 0 }));
+    return () => { alive.current = false; void line.current?.stop(); };
   }, []);
 
-  // getUserMedia gibt es nur auf sicherem Ursprung. Das ist keine Einstellung
-  // des Servers, sondern eine Regel des Browsers — also hier benannt, statt
-  // den Nutzer raten zu lassen, warum das Mikrofon nichts tut.
+  // Der Browser gibt das Mikrofon nur auf sicherem Ursprung frei. Das ist
+  // keine Servereinstellung — also hier benannt, statt den Nutzer rätseln zu
+  // lassen, warum nichts passiert.
   const insecure = typeof window !== "undefined" && !window.isSecureContext;
+  const blocked = !caps ? "Prüfe die Leitung …"
+    : insecure ? "Das Mikrofon gibt der Browser nur über HTTPS frei. Ruf das Dashboard über deine Domain auf, nicht über die IP-Adresse."
+      : !caps.available ? caps.detail
+        : "";
 
-  const blocked = !backend ? "Prüfe Sprachfunktion …"
-    : insecure ? "Das Mikrofon gibt der Browser nur über HTTPS frei. Ruf das Dashboard über deine Domain auf."
-      : !backend.available ? backend.reason
-        : !masterOnline ? "Der Master Agent ist offline — ohne AI-Schlüssel gibt es keine Antwort."
-          : "";
+  const open = state !== "closed";
 
-  const ensureConversation = useCallback(async () => {
-    if (convId) return convId;
-    const r = await api.post<{ conversation: { id: string } }>("/api/chat/conversations",
-      { title: "Sprachdialog" });
-    setConvId(r.conversation.id);
-    return r.conversation.id;
-  }, [convId]);
-
-  /** Eine Runde: zuhören, fragen, antworten, vorlesen. */
-  const round = useCallback(async () => {
-    if (blocked || !backend?.available || phaseRef.current !== "idle") return;
-    let text = "";
-    try {
-      setAnswer("");
-      text = await backend.listen((s) => alive.current && setPhase(s === "recording" ? "listening" : "thinking"));
-    } catch (e: any) {
-      if (alive.current) setPhase("idle");
-      toast({ title: "Mikrofon", body: e?.message, tone: "err" });
-      loop.current = false;
-      return;
-    }
-    if (!alive.current) return;
-    if (!text.trim()) {
-      setPhase("idle");
-      toast({ title: "Nichts verstanden", tone: "warn" });
-      loop.current = false;
-      return;
-    }
-    setHeard(text);
-    setPhase("thinking");
-
-    const id = await ensureConversation().catch(() => "");
-    if (!id) { setPhase("idle"); loop.current = false; return; }
-
-    let full = "";
-    await new Promise<void>((resolve) => {
-      streamPost(`/api/chat/conversations/${id}/messages`, { content: text, attachments: [] },
-        (ev) => {
-          const d: any = ev.data;
-          if (ev.type === "chat.delta" && d?.text) {
-            full += d.text;
-            if (alive.current) setAnswer(full);
-          } else if (ev.type === "message.updated" && d?.role === "assistant" && d?.content) {
-            // Die fertige Nachricht ist maßgeblich: sie enthält auch, was
-            // nach dem letzten Delta noch dazukam.
-            full = d.content;
-            if (alive.current) setAnswer(full);
-          }
-        },
-        (err) => {
-          if (err) toast({ title: "JARVIS konnte nicht antworten", body: err.message, tone: "err" });
-          resolve();
-        });
+  const start = useCallback(async () => {
+    if (blocked || open) return;
+    setHeard(""); setSaid(""); setTools([]);
+    const l = new LiveLine({
+      onState: (s) => alive.current && setState(s),
+      onHeard: (t) => alive.current && (setHeard(t), setSaid("")),
+      onSaid: (t) => alive.current && setSaid(t),
+      onTool: (name, ok) => alive.current && setTools((x) => [...x.slice(-4), { name, ok }]),
+      onError: (d) => toast({ title: "Live-Leitung", body: d, tone: "err" }),
+      onClose: () => alive.current && setState("closed"),
     });
-    if (!alive.current) return;
-
-    const body = speakable(full);
-    if (body && backend.canSpeak && speechMode.get() !== "off") {
-      setPhase("speaking");
-      try { await backend.speak(body); }
-      catch (e: any) { toast({ title: "Vorlesen fehlgeschlagen", body: e?.message, tone: "err" }); }
+    line.current = l;
+    try {
+      await l.start();
+    } catch (e: any) {
+      setState("closed");
+      toast({ title: "Leitung nicht geöffnet", body: e?.message, tone: "err" });
     }
-    if (!alive.current) return;
-    setPhase("idle");
-    // Freihand: gleich wieder zuhören, damit ein Gespräch daraus wird.
-    if (loop.current && speechMode.get() === "handsfree") setTimeout(() => void round(), 400);
-    else loop.current = false;
-  }, [backend, blocked, ensureConversation]);
+  }, [blocked, open]);
 
-  const start = () => {
-    if (phase === "listening") { backend?.stop(); return; }
-    if (phase !== "idle") return;
-    loop.current = speechMode.get() === "handsfree";
-    void round();
-  };
+  const stop = useCallback(async () => {
+    await line.current?.stop();
+    line.current = null;
+    setState("closed");
+  }, []);
 
-  const cycleMode = () => {
-    const next = mode === "off" ? "speak" : mode === "speak" ? "handsfree" : "off";
-    setSpeechMode(next);
-  };
-
-  const busy = phase !== "idle";
   return (
-    <section className={`voice-console phase-${phase}`} aria-label="Sprachkonsole">
+    <section className={`voice-console phase-${state}`} aria-label="Sprachkonsole">
       <div className="vc-core" aria-hidden>
         <span className="vc-ring r1" />
         <span className="vc-ring r2" />
@@ -152,8 +97,11 @@ export function VoiceConsole({ masterOnline }: { masterOnline: boolean }) {
 
       <div className="vc-body">
         <div className="vc-phase">
-          <span className={`dot ${phase === "idle" ? "" : "live"} ${blocked ? "err" : "info"}`} />
-          {blocked ? "Nicht verfügbar" : PHASE_LABEL[phase]}
+          <span className={`dot ${open ? "live" : ""} ${blocked ? "err" : open ? "info" : ""}`} />
+          {blocked ? "Nicht verfügbar" : PHASE_LABEL[state]}
+          {caps?.available && !blocked && (
+            <span className="vc-meta">{caps.voice} · {caps.tools} Werkzeuge</span>
+          )}
         </div>
 
         {blocked ? (
@@ -161,34 +109,33 @@ export function VoiceConsole({ masterOnline }: { masterOnline: boolean }) {
         ) : (
           <>
             {heard && <p className="vc-heard">„{heard}"</p>}
-            {answer ? <p className="vc-answer">{answer}</p>
-              : !heard && <p className="vc-hint">Drück auf das Mikrofon und sprich. Frag ihn, was auf dem
-                Server läuft, lass ihn einen Termin eintragen oder eine Aufgabe anlegen.</p>}
+            {said ? <p className="vc-answer">{said}</p>
+              : !heard && (
+                <p className="vc-hint">
+                  {open ? "Sprich einfach los. Das Mikrofon bleibt offen, und du kannst ihm jederzeit "
+                        + "ins Wort fallen."
+                    : "Öffne die Leitung und sprich. Er hört durchgehend zu, antwortet mit Stimme und "
+                      + "greift dabei auf seine echten Werkzeuge zu."}
+                </p>
+              )}
+            {tools.length > 0 && (
+              <div className="vc-tools">
+                {tools.map((t, i) => (
+                  <span key={`${t.name}-${i}`} className={`vc-tool ${t.ok ? "ok" : "err"}`}>
+                    <span className={`dot ${t.ok ? "ok" : "err"}`} />{t.name}
+                  </span>
+                ))}
+              </div>
+            )}
           </>
         )}
 
         <div className="vc-actions">
-          <button className={`btn ${phase === "listening" ? "danger" : "primary"}`} onClick={start}
-            disabled={!!blocked || phase === "thinking" || phase === "speaking"}
-            title={blocked || (phase === "listening" ? "Aufnahme beenden" : "Sprechen")}>
-            {phase === "listening" ? <Square size={15} /> : <Mic size={15} />}
-            {phase === "listening" ? "Fertig" : phase === "thinking" ? "Denkt nach …"
-              : phase === "speaking" ? "Spricht …" : "Sprechen"}
+          <button className={`btn ${open ? "danger" : "primary"}`} onClick={open ? stop : start}
+            disabled={!!blocked || state === "connecting"} title={blocked || undefined}>
+            {open ? <Square size={15} /> : <Mic size={15} />}
+            {state === "connecting" ? "Verbinde …" : open ? "Leitung schließen" : "Leitung öffnen"}
           </button>
-
-          <button className={`btn icon ${mode === "off" ? "ghost" : ""}`} onClick={cycleMode}
-            disabled={!backend?.canSpeak}
-            title={!backend?.canSpeak ? `Vorlesen nicht möglich: ${backend?.speakReason || "nicht eingerichtet"}`
-              : mode === "off" ? "Antworten werden nicht vorgelesen"
-                : mode === "speak" ? "Antworten werden vorgelesen"
-                  : "Freihand: antworten und gleich wieder zuhören"}
-            aria-pressed={mode !== "off"}>
-            {mode === "handsfree" ? <AudioLines size={15} /> : mode === "speak" ? <Volume2 size={15} /> : <VolumeX size={15} />}
-          </button>
-
-          {convId && !busy && (
-            <button className="btn ghost sm" onClick={() => nav(`/chat/${convId}`)}>Im Chat weiterlesen</button>
-          )}
         </div>
       </div>
     </section>

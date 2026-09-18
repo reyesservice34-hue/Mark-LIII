@@ -557,6 +557,27 @@ class MasterRuntime:
                 if a and a.kind != "master" and a.enabled]
 
     # ── prompt & history ─────────────────────────────────────────────────
+    def live_instructions(self) -> str:
+        """The persona for the open line.
+
+        Spoken answers are not written answers read aloud: no lists, no
+        markdown, no headings, and short enough that the other person can
+        interrupt. The honesty rules are the same ones as everywhere else —
+        they are the point, not a style choice.
+        """
+        persona = _persona_from_repo()
+        return "\n\n".join(x for x in [persona, (
+            "You are on an open voice line. Speak German unless spoken to in another language.\n"
+            "Answer in spoken sentences: short, no lists, no markdown, no headings, no code read "
+            "out letter by letter. Two or three sentences unless more is genuinely needed.\n"
+            "You have real tools. Use them rather than guessing, and say what you did.\n"
+            "Never claim something was done that no tool confirmed. If a tool is missing or "
+            "unconfigured, say which one and what it needs.\n"
+            "If something needs approval, say so plainly and tell them it is waiting in the "
+            "dashboard — do not pretend it ran.\n"
+            "The other person can interrupt you at any time. When they do, stop and listen."
+        )] if x)
+
     def _system_prompt(self, agent, tools: list[ToolSpec]) -> str:
         st = self.state
         parts = []

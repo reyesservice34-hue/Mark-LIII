@@ -9,3 +9,5 @@ python-multipart>=0.0.9
 requests>=2.31            # core/control_plane.py (remote master-agent mode)
 anthropic>=0.50           # Anthropic provider (optional at runtime, required to import the provider)
 pypdf>=4.0                # PDF attachment text extraction (optional)
+websockets>=12.0          # the live voice line's upstream socket (uvicorn[standard] pulls it in too,
+                          # but the relay depends on it directly, so it is named here)

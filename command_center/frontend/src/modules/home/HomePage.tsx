@@ -37,7 +37,7 @@ export default function HomePage() {
       </div>
       <ErrorState error={status.error} retry={() => status.reload(false)} />
 
-      <VoiceConsole masterOnline={!!master?.online} />
+      <VoiceConsole />
 
       <div className="grid cols-4">
         <Panel title="JARVIS-Kern" icon={<Sparkles size={15} />}>
