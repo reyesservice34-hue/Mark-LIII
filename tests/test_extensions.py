@@ -281,5 +281,57 @@ with TestClient(app) as c:
     check("nichts davon liegt außerhalb des Arbeitsbereichs",
           str(svc.root).startswith(str(state.services["files"].root)), str(svc.root))
 
+    print("\n9. Anweisungen und Gedächtnis: eintragen, wirken, löschen")
+    r = c.get("/api/memory")
+    check("Gedächtnis antwortet", r.status_code == 200, r.text)
+    check("leer heißt leer", r.json()["instructions"] == "")
+
+    regel = "Sprich mich mit Chef an. Angebote immer mit 14 Tagen Bindefrist."
+    r = c.put("/api/memory/instructions", json={"text": regel}, headers=H)
+    check("Anweisung gespeichert", r.status_code == 200, r.text)
+
+    # Der Punkt der Übung: Sie muss im Systemtext landen, sonst ist das Feld
+    # Dekoration. Und zwar im Chat UND auf der Sprachleitung.
+    master = state.agents.get(state.agents.master_id())
+    prompt = state.runtime._system_prompt(master, state.tools.available())
+    check("die Anweisung steht im Systemtext", regel in prompt)
+    check("sie ist als Anweisung des Nutzers gekennzeichnet", "STEHENDE ANWEISUNGEN" in prompt)
+    check("sie gilt auch auf der Sprachleitung", regel in state.runtime.live_instructions())
+
+    r = c.post("/api/memory/facts", json={"text": "Der Bauhof macht Mittag von 12 bis 13 Uhr."}, headers=H)
+    check("Merksatz angelegt", r.status_code == 201, r.text)
+    fact_id = r.json()["fact"]["id"]
+    r = c.get("/api/memory")
+    check("er steht in der Liste", any(f["id"] == fact_id for f in r.json()["facts"]))
+
+    r = c.delete(f"/api/memory/facts/{fact_id}", headers=H)
+    check("einzeln löschen geht", r.status_code == 200, r.text)
+    check("und er ist weg", not any(f["id"] == fact_id for f in c.get("/api/memory").json()["facts"]))
+    check("ein zweites Mal löschen gibt 404",
+          c.delete(f"/api/memory/facts/{fact_id}", headers=H).status_code == 404)
+
+    c.post("/api/memory/facts", json={"text": "eins"}, headers=H)
+    c.post("/api/memory/facts", json={"text": "zwei"}, headers=H)
+    r = c.delete("/api/memory/facts", headers=H)
+    check("alles löschen ohne Bestätigung passiert NICHT", r.status_code == 400, r.text)
+    check("und es ist auch wirklich noch da", c.get("/api/memory").json()["total"] >= 2)
+    r = c.delete("/api/memory/facts?confirm=ALLES", headers=H)
+    check("mit Bestätigung wird geleert", r.status_code == 200 and r.json()["removed"] >= 2, r.text)
+
+    r = c.put("/api/memory/instructions", json={"text": ""}, headers=H)
+    check("leeren geht auch", r.status_code == 200)
+    prompt = state.runtime._system_prompt(master, state.tools.available())
+    check("dann steht die Anweisung auch nicht mehr im Systemtext", "STEHENDE ANWEISUNGEN" not in prompt)
+
+    print("\n10. Aufgaben lassen sich löschen")
+    r = c.post("/api/tasks", json={"title": "Wegwerfaufgabe", "start": False}, headers=H)
+    check("Aufgabe angelegt", r.status_code == 201, r.text)
+    tid = r.json()["task"]["id"]
+    check("sie ist da", c.get(f"/api/tasks/{tid}").status_code == 200)
+    r = c.delete(f"/api/tasks/{tid}", headers=H)
+    check("gelöscht", r.status_code == 200, r.text)
+    check("und wirklich weg", c.get(f"/api/tasks/{tid}").status_code == 404)
+    check("noch einmal löschen gibt 404", c.delete(f"/api/tasks/{tid}", headers=H).status_code == 404)
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

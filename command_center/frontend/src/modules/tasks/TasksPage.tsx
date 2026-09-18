@@ -35,6 +35,17 @@ export default function TasksPage() {
   const act = async (id: string, action: "cancel" | "retry") => {
     try { await api.post(`/api/tasks/${id}/${action}`); detail.reload(); list.reload(); } catch (e: any) { toast({ title: `${action} failed`, body: e.message, tone: "err" }); }
   };
+  // Löschen ist endgültig und braucht deshalb eine Rückfrage, die den Titel
+  // nennt — „Aufgabe gelöscht" ohne zu wissen welche, ist keine Bestätigung.
+  const remove = async (id: string, title: string) => {
+    if (!window.confirm(`Aufgabe „${title}" endgültig löschen? Das lässt sich nicht rückgängig machen.`)) return;
+    try {
+      await api.del(`/api/tasks/${id}`);
+      toast({ title: "Gelöscht", body: title, tone: "ok" });
+      nav("/tasks");
+      list.reload();
+    } catch (e: any) { toast({ title: "Löschen ging nicht", body: e.message, tone: "err" }); }
+  };
   const t = detail.data?.task;
   const counts = list.data?.counts;
 
@@ -65,6 +76,7 @@ export default function TasksPage() {
                 {can("operator") && <div className="row wrap">
                   {!["COMPLETED", "FAILED", "CANCELLED"].includes(t.status) && <button className="btn sm danger" onClick={() => act(t.id, "cancel")}>Cancel</button>}
                   {["FAILED", "CANCELLED", "COMPLETED", "QUEUED"].includes(t.status) && <button className="btn sm" onClick={() => act(t.id, "retry")}>{t.status === "QUEUED" ? "Start" : "Retry"}</button>}
+                  <button className="btn sm danger" onClick={() => remove(t.id, t.title)} title="Aufgabe endgültig löschen">Löschen</button>
                 </div>}
                 {t.subtasks?.length > 0 && <div><div className="label" style={{ marginBottom: 6 }}>Subtasks</div><div className="panel"><TaskTimeline tasks={t.subtasks} /></div></div>}
                 {t.approvals?.length > 0 && <div><div className="label" style={{ marginBottom: 6 }}>Approvals</div>{t.approvals.map((a: any) => <div key={a.id} className="row small" style={{ gap: 8 }}><Badge status={a.status} /><a href={`/approvals/${a.id}`}>{a.action} → {a.target}</a></div>)}</div>}

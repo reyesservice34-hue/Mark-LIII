@@ -48,6 +48,7 @@ export const api = {
   get: <T = any>(path: string, init?: RequestInit) => request<T>("GET", path, undefined, init),
   post: <T = any>(path: string, body?: any, init?: RequestInit) => request<T>("POST", path, body ?? {}, init),
   patch: <T = any>(path: string, body?: any) => request<T>("PATCH", path, body ?? {}),
+  put: <T = any>(path: string, body?: any) => request<T>("PUT", path, body ?? {}),
   del: <T = any>(path: string) => request<T>("DELETE", path),
   upload: <T = any>(path: string, form: FormData) => request<T>("POST", path, form),
   base: BASE,

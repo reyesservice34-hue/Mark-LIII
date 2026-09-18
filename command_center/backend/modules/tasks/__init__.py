@@ -125,6 +125,28 @@ async def retry_task(task_id: str, state: AppState = Depends(get_state),
     return {"task": svc.get(task_id), **result}
 
 
+@router.delete("/{task_id}")
+async def delete_task(task_id: str, state: AppState = Depends(get_state),
+                      principal: Principal = Depends(require_role("operator"))):
+    """Eine Aufgabe samt ihrer Einträge löschen.
+
+    Eine laufende wird vorher gestoppt: Ein Lauf, dessen Aufgabe verschwunden
+    ist, schreibt ins Leere und taucht als Geist in der Zeitleiste wieder auf.
+    """
+    svc = state.services["tasks"]
+    if not svc.get(task_id):
+        raise HTTPException(status_code=404, detail="Task not found")
+    for run in state.runtime.active_runs():
+        if run["task_id"] == task_id:
+            await state.runtime.cancel_run(run["id"], by=principal.actor)
+    state.db.execute("DELETE FROM task_logs WHERE task_id=?", (task_id,))
+    state.db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="task.delete",
+                    target=task_id, status="ok", task_id=task_id)
+    state.bus.publish("task.deleted", {"id": task_id})
+    return {"ok": True}
+
+
 @router.get("/{task_id}/logs")
 async def task_logs(task_id: str, state: AppState = Depends(get_state), _: Principal = Depends(current_principal)):
     return {"logs": state.services["tasks"].logs(task_id)}

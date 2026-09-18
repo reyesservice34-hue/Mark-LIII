@@ -566,6 +566,9 @@ class MasterRuntime:
         they are the point, not a style choice.
         """
         persona = _persona_from_repo()
+        # Dieselben stehenden Anweisungen wie im Chat: Eine Regel, die nur
+        # getippt gilt und gesprochen nicht, wäre keine Regel.
+        standing = str(self.state.db.get_setting("master_instructions", "") or "").strip()
         return "\n\n".join(x for x in [persona, (
             "You are on an open voice line. Speak German unless spoken to in another language.\n"
             "Answer in spoken sentences: short, no lists, no markdown, no headings, no code read "
@@ -576,7 +579,7 @@ class MasterRuntime:
             "If something needs approval, say so plainly and tell them it is waiting in the "
             "dashboard — do not pretend it ran.\n"
             "The other person can interrupt you at any time. When they do, stop and listen."
-        )] if x)
+        ), ("STEHENDE ANWEISUNGEN DES NUTZERS (gelten immer):\n" + standing) if standing else ""] if x)
 
     def _system_prompt(self, agent, tools: list[ToolSpec]) -> str:
         st = self.state
@@ -618,6 +621,13 @@ class MasterRuntime:
             catalogue = lib.catalogue()
             if catalogue:
                 parts.append(catalogue)
+        # Was der Nutzer im Dashboard unter Gedächtnis einträgt, gilt in jedem
+        # Gespräch — und zwar über den eingebauten Voreinstellungen. Es steht
+        # weit hinten im Text, weil das Letzte am stärksten wirkt.
+        standing = st.db.get_setting("master_instructions", "") or ""
+        if standing:
+            parts.append("STEHENDE ANWEISUNGEN DES NUTZERS (gelten immer, sie gehen deinen eigenen "
+                         "Gewohnheiten vor):\n" + str(standing).strip())
         parts.append(
             "WHAT YOU ARE MADE OF: call system.inventory when you need to know what you can actually do "
             "right now — which tools work, which integrations are connected, which MCP servers and skills "

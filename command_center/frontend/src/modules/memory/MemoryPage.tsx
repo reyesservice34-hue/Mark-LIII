@@ -1,0 +1,146 @@
+/**
+ * Gedächtnis — was er weiß, und was du ihm sagst.
+ *
+ * Oben die stehenden Anweisungen: der Text, der in jedem Gespräch mitläuft,
+ * im Chat wie auf der Sprachleitung. Darunter die einzelnen Merksätze, jeder
+ * für sich löschbar. Beides lag bisher nur im Quelltext beziehungsweise in
+ * der Datenbank — man kam nicht heran, und ein falscher Merksatz vergiftet
+ * still jedes weitere Gespräch.
+ */
+import { useEffect, useState } from "react";
+import { useApi } from "@/lib/useApi";
+import { api } from "@/lib/api";
+import { toast } from "@/lib/toast";
+import { BookOpen, Sparkles, Trash2, Plus, Check } from "@/lib/icons";
+import { Panel, EmptyState, ErrorState, Skeleton } from "@/components/ui";
+import { relative } from "@/lib/format";
+
+interface Fact { id: string; text: string; actor: string; created_at: string }
+interface Payload { instructions: string; facts: Fact[]; total: number }
+
+const BEISPIEL = `Sprich mich mit „Chef" an.
+Angebote immer mit 14 Tagen Bindefrist.
+Bei allem, was an einen Kunden rausgeht, vorher fragen.
+Preise nie ohne meinen Aufschlag nennen.`;
+
+export default function MemoryPage() {
+  const { data, error, loading, reload } = useApi<Payload>("/api/memory");
+  const [text, setText] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [neu, setNeu] = useState("");
+  const [q, setQ] = useState("");
+
+  // Den Serverstand übernehmen, solange niemand tippt — sonst überschreibt
+  // ein Hintergrund-Neuladen die halbfertige Eingabe.
+  useEffect(() => {
+    if (data && !dirty) setText(data.instructions);
+  }, [data, dirty]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put("/api/memory/instructions", { text });
+      setDirty(false);
+      toast({ title: "Gespeichert", body: "Gilt ab dem nächsten Satz — ohne Neustart.", tone: "ok" });
+      reload();
+    } catch (e: any) {
+      toast({ title: "Ging nicht", body: e?.message, tone: "err" });
+    } finally { setSaving(false); }
+  };
+
+  const addFact = async () => {
+    if (!neu.trim()) return;
+    try { await api.post("/api/memory/facts", { text: neu.trim() }); setNeu(""); reload(); }
+    catch (e: any) { toast({ title: "Ging nicht", body: e?.message, tone: "err" }); }
+  };
+
+  const delFact = async (f: Fact) => {
+    try { await api.del(`/api/memory/facts/${f.id}`); reload(); }
+    catch (e: any) { toast({ title: "Ging nicht", body: e?.message, tone: "err" }); }
+  };
+
+  const clearAll = async () => {
+    if (!window.confirm("Wirklich ALLES Gemerkte löschen? Das lässt sich nicht rückgängig machen.")) return;
+    try {
+      const r = await api.del<{ removed: number }>("/api/memory/facts?confirm=ALLES");
+      toast({ title: "Gelöscht", body: `${r.removed} Einträge entfernt.`, tone: "ok" });
+      reload();
+    } catch (e: any) { toast({ title: "Ging nicht", body: e?.message, tone: "err" }); }
+  };
+
+  const facts = (data?.facts || []).filter((f) => !q || f.text.toLowerCase().includes(q.toLowerCase()));
+
+  if (error) return <div className="page"><ErrorState error={error} retry={reload} /></div>;
+
+  return (
+    <div className="page">
+      <header className="page-head">
+        <div>
+          <h1><BookOpen size={20} /> Gedächtnis</h1>
+          <p className="muted">Anweisungen gelten immer. Gemerktes sind einzelne Tatsachen — beides
+            hier änderbar, ohne Neustart.</p>
+        </div>
+      </header>
+
+      <Panel title="Stehende Anweisungen" icon={<Sparkles size={15} />}
+        actions={<button className="btn sm primary" onClick={save} disabled={saving || !dirty}>
+          <Check size={14} />{saving ? "Speichere …" : dirty ? "Speichern" : "Gespeichert"}
+        </button>}
+        foot="Dieser Text läuft in jedem Gespräch mit — im Chat und auf der Sprachleitung. Er geht seinen eigenen Gewohnheiten vor.">
+        {loading && !data ? <div className="panel-body"><Skeleton rows={4} /></div> : (
+          <div className="panel-body">
+            <textarea className="input" style={{ minHeight: 220, lineHeight: 1.6 }}
+              value={text} placeholder={BEISPIEL}
+              onChange={(e) => { setText(e.target.value); setDirty(true); }} />
+            <p className="small muted" style={{ marginTop: 8 }}>
+              Kurze, klare Sätze wirken besser als Absätze. Ein Satz pro Regel.
+              {text.length > 0 && ` · ${text.length} Zeichen`}
+            </p>
+          </div>
+        )}
+      </Panel>
+
+      <Panel title={`Gemerktes${data ? ` (${data.total})` : ""}`} icon={<BookOpen size={15} />}
+        actions={<>
+          <input className="input sm" placeholder="suchen …" value={q} onChange={(e) => setQ(e.target.value)}
+            style={{ width: 160 }} />
+          {(data?.total ?? 0) > 0 && (
+            <button className="btn sm danger" onClick={clearAll}><Trash2 size={13} />Alles löschen</button>
+          )}
+        </>}
+        foot="Was er sich selbst notiert hat oder was du ihm einträgst. Ein falscher Eintrag hier wirkt in jedem Gespräch — deshalb steht er zum Löschen da.">
+        <div className="panel-body row" style={{ gap: 8 }}>
+          <input className="input" placeholder="Etwas eintragen, das er sich merken soll …"
+            value={neu} onChange={(e) => setNeu(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void addFact(); }} />
+          <button className="btn primary" onClick={addFact} disabled={!neu.trim()}><Plus size={14} />Merken</button>
+        </div>
+        {loading && !data ? <div className="panel-body"><Skeleton rows={3} /></div>
+          : facts.length === 0 ? (
+            <EmptyState icon={<BookOpen size={22} />} title={q ? "Nichts gefunden" : "Er hat sich noch nichts gemerkt"}>
+              {q ? "Andere Suche versuchen." : "Im Gespräch merkt er sich von selbst, was wichtig aussieht. Du kannst hier auch direkt etwas eintragen."}
+            </EmptyState>
+          ) : (
+            <table className="table">
+              <thead><tr><th>Eintrag</th><th>von</th><th>wann</th><th /></tr></thead>
+              <tbody>
+                {facts.map((f) => (
+                  <tr key={f.id}>
+                    <td>{f.text}</td>
+                    <td className="small muted">{f.actor || "—"}</td>
+                    <td className="small muted">{relative(f.created_at)}</td>
+                    <td style={{ textAlign: "right" }}>
+                      <button className="btn sm danger" onClick={() => delFact(f)} title="Diesen Eintrag löschen">
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+      </Panel>
+    </div>
+  );
+}
