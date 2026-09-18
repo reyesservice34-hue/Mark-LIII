@@ -338,7 +338,102 @@ try:
 finally:
     EXT.httpx.AsyncClient = real_search_client
 
-print("\n9. the tool registry exposes them with the right risk and availability")
+print("\n9. voice — disabled and honest without a backend, real with one")
+from command_center.backend.services import voice_service as VS  # noqa: E402
+
+for k in ("JARVIS_CC_STT_URL", "JARVIS_CC_TTS_URL", "JARVIS_CC_STT_API_KEY", "JARVIS_CC_TTS_API_KEY",
+          "OPENAI_API_KEY"):
+    os.environ.pop(k, None)
+voice = VS.VoiceService()
+caps = voice.capabilities()
+check("speech-to-text reported unavailable", not caps["speech_to_text"]["available"])
+check("and names the variable to set", "JARVIS_CC_STT_URL" in caps["speech_to_text"]["detail"],
+      caps["speech_to_text"]["detail"])
+check("health says not_configured", run(voice.health())["status"] == "not_configured")
+for coro, label in ((voice.transcribe(b"x", "audio/webm"), "transcribe"), (voice.speak("hallo"), "speak")):
+    try:
+        run(coro)
+        check(f"{label} refuses without a backend", False)
+    except VS.VoiceError as e:
+        check(f"{label} refuses without a backend", "configured" in str(e).lower(), str(e))
+
+check("endpoint from a bare host", VS._endpoint("http://w:8000", "/audio/speech") == "http://w:8000/v1/audio/speech")
+check("endpoint from a /v1 root", VS._endpoint("http://w:8000/v1/", "/audio/speech") == "http://w:8000/v1/audio/speech")
+check("a full endpoint url is left alone",
+      VS._endpoint("http://w:8000/v1/audio/transcriptions", "/audio/transcriptions")
+      == "http://w:8000/v1/audio/transcriptions")
+
+os.environ.update({"JARVIS_CC_STT_URL": "http://whisper:8000", "JARVIS_CC_TTS_URL": "http://kokoro:8880",
+                   "JARVIS_CC_STT_MODEL": "whisper-large", "JARVIS_CC_TTS_VOICE": "nova"})
+voice = VS.VoiceService()
+caps = voice.capabilities()
+check("becomes available once configured", caps["speech_to_text"]["available"] and caps["text_to_speech"]["available"])
+check("names the model and voice it will use",
+      caps["speech_to_text"]["model"] == "whisper-large" and caps["text_to_speech"]["voice"] == "nova", caps)
+
+posted: list[dict] = []
+
+
+class FakeVoiceClient:
+    def __init__(self, *a, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, files=None, data=None, json=None, headers=None):
+        posted.append({"url": url, "data": data, "json": json, "file": files["file"][0] if files else None})
+
+        class R:
+            status_code = 200
+            headers = {"content-type": "audio/mpeg"}
+            content = b"ID3audio"
+            text = ""
+
+            @staticmethod
+            def json():
+                return {"text": "  Trag den Termin ein.  ", "language": "de"}
+        return R()
+
+
+real_voice_client = VS.httpx.AsyncClient
+VS.httpx.AsyncClient = FakeVoiceClient
+try:
+    result = run(voice.transcribe(b"fake-audio-bytes", "audio/webm", "de"))
+    check("transcript trimmed and returned", result["text"] == "Trag den Termin ein.", result)
+    check("posted to the transcriptions endpoint",
+          posted[0]["url"] == "http://whisper:8000/v1/audio/transcriptions", posted[0]["url"])
+    check("model and language sent", posted[0]["data"]["model"] == "whisper-large"
+          and posted[0]["data"]["language"] == "de", posted[0]["data"])
+    check("file named by its real container", posted[0]["file"] == "speech.webm", posted[0]["file"])
+    audio, ctype = run(voice.speak("Erledigt."))
+    check("speech returns audio bytes", audio == b"ID3audio" and ctype == "audio/mpeg")
+    check("speech posted the configured voice", posted[1]["json"]["voice"] == "nova", posted[1]["json"])
+    for bad_type in ("text/plain", "application/octet-stream"):
+        try:
+            run(voice.transcribe(b"x", bad_type))
+            check(f"non-audio upload refused: {bad_type}", False)
+        except VS.VoiceError:
+            check(f"non-audio upload refused: {bad_type}", True)
+    try:
+        run(voice.transcribe(b"", "audio/webm"))
+        check("empty recording refused", False)
+    except VS.VoiceError:
+        check("empty recording refused", True)
+    try:
+        run(voice.transcribe(b"x" * (VS.MAX_AUDIO_BYTES + 1), "audio/webm"))
+        check("oversized recording refused", False)
+    except VS.VoiceError as e:
+        check("oversized recording refused", "MB" in str(e), str(e))
+finally:
+    VS.httpx.AsyncClient = real_voice_client
+    for k in ("JARVIS_CC_STT_URL", "JARVIS_CC_TTS_URL", "JARVIS_CC_STT_MODEL", "JARVIS_CC_TTS_VOICE"):
+        os.environ.pop(k, None)
+
+print("\n10. the tool registry exposes them with the right risk and availability")
 # Back to a bare environment: the registry must report what is *not* configured.
 for k in ("EMAIL_USER", "EMAIL_PASSWORD", "EMAIL_IMAP_HOST", "EMAIL_SENDER_NAME"):
     os.environ.pop(k, None)

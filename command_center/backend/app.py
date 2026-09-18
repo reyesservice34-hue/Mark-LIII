@@ -43,6 +43,7 @@ from .services.files import FileService
 from .services.metrics import MetricsService
 from .services.notifications import NotificationService
 from .services.tasks import TaskService
+from .services.voice_service import VoiceService
 
 VERSION = "0.1.0"
 _logger = logging.getLogger("jarvis.cc")
@@ -73,6 +74,7 @@ def build_state(settings: Settings | None = None) -> AppState:
         "calendar": CalendarService(),
         "email": EmailService(),
         "github": GitHubService(),
+        "voice": VoiceService(),
     })
     state.integrations = IntegrationRegistry(db, bus)
     state.workflows = WorkflowHub(db, bus)

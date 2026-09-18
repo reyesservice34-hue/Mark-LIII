@@ -100,6 +100,13 @@ missing credential rather than pretending.
 | `workflow.list/execute/runs` | `N8N_BASE_URL` + `N8N_API_KEY` | trigger is webhook-based |
 | `terminal.execute` | `JARVIS_CC_ALLOW_TERMINAL=true` | admin role **and** approval, runs inside the workspace |
 
+Voice is the same deal: set `JARVIS_CC_STT_URL` (and optionally
+`JARVIS_CC_TTS_URL`) to any OpenAI-compatible audio endpoint —
+faster-whisper-server, whisper.cpp, Speaches, LocalAI, Kokoro-FastAPI, or
+OpenAI itself — and the microphone in the chat records and transcribes for
+real. With neither set, the button stays disabled and says so; no audio is
+ever stored on the server.
+
 The calendar deliberately reuses `plugins/_calendar_core.py`, so a date the
 desktop refuses is refused here too and appointments booked from either side
 land in the same store.

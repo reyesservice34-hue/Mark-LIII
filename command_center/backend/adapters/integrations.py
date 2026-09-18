@@ -177,6 +177,12 @@ class SmtpImapIntegration(IntegrationAdapter):
         return await svc.health()
 
 
+class VoiceIntegration(IntegrationAdapter):
+    async def check(self) -> dict:
+        from ..services.voice_service import VoiceService
+        return await VoiceService().health()
+
+
 DEFAULT_ADAPTERS: list[IntegrationAdapter] = [
     AnthropicIntegration("anthropic", "Anthropic", "ai", ["chat", "tool use", "vision"],
                          required_env=["ANTHROPIC_API_KEY"], icon="sparkles"),
@@ -208,6 +214,11 @@ DEFAULT_ADAPTERS: list[IntegrationAdapter] = [
                         required_env=["EMAIL_USER", "EMAIL_PASSWORD"],
                         optional_env=["EMAIL_IMAP_HOST", "EMAIL_IMAP_PORT", "EMAIL_SMTP_HOST",
                                       "EMAIL_SMTP_PORT", "EMAIL_SENDER_NAME"], icon="mail"),
+    VoiceIntegration("voice", "Voice (speech to text · text to speech)", "ai",
+                     ["browser transcription", "spoken answers"],
+                     any_env=["JARVIS_CC_STT_URL", "JARVIS_CC_TTS_URL"],
+                     optional_env=["JARVIS_CC_STT_MODEL", "JARVIS_CC_TTS_MODEL", "JARVIS_CC_TTS_VOICE",
+                                   "JARVIS_CC_STT_LANGUAGE"], icon="mic"),
     IntegrationAdapter("whatsapp", "WhatsApp", "communication", ["voice notes (planned)"],
                        required_env=["WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID"], icon="message-circle"),
     IntegrationAdapter("ionos", "IONOS", "hosting", ["dns (planned)", "hosting (planned)"],
