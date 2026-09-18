@@ -82,6 +82,17 @@ class Scheduler:
                 job._task.cancel()
         await asyncio.gather(*[j._task for j in self._jobs.values() if j._task], return_exceptions=True)
 
+    def remove(self, job_id: str) -> bool:
+        """Drop a job entirely — used when the procedure behind it changes or goes."""
+        job = self._jobs.pop(job_id, None)
+        if not job:
+            return False
+        job.enabled = False
+        if job._task:
+            job._task.cancel()
+        self.bus.publish("job.removed", {"id": job_id})
+        return True
+
     def set_enabled(self, job_id: str, enabled: bool) -> Job | None:
         job = self._jobs.get(job_id)
         if not job:

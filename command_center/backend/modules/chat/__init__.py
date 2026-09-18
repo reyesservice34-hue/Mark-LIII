@@ -173,6 +173,9 @@ async def send_message(conv_id: str, body: MessageCreate, state: AppState = Depe
     chat = state.services["chat"]
     user_msg = chat.add_message(conv_id, "user", body.content.strip(),
                                 meta={"attachments": attachments, "actor": principal.actor})
+    teaching = state.services.get("teaching")
+    if teaching is not None and teaching.active_for(principal.id):
+        teaching.record_message(user_id=principal.id, role="user", text=body.content.strip())
     state.log.audit(actor_type=principal.kind, actor_id=principal.actor, action="chat.message", target=conv_id,
                     status="ok", meta={"message_id": user_msg["id"], "attachments": len(attachments)})
     sub = RunSubscription(state) if body.stream else None

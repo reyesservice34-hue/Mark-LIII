@@ -151,6 +151,11 @@ class ToolExecutor:
             text, ok = f"Tool '{name}' failed: {e}", False
         st.tools.record(name, ok)
         st.agents.bump(ctx.agent_id, "tool_calls")
+        # A running recording keeps the real trace: what ran, with what, and what came back.
+        teaching = st.services.get("teaching")
+        if teaching is not None and teaching.any_active() and not name.startswith("teach."):
+            teaching.record_tool_call(user_id=ctx.principal.id, tool=name, params=_safe_args(args),
+                                      result=text, ok=ok, agent_id=ctx.agent_id)
         st.log.audit(actor_type="agent", actor_id=ctx.principal.actor, agent_id=ctx.agent_id, tool=name,
                      action="tool.call", target=_target(args), status="ok" if ok else "error",
                      result=text if ok else "", error="" if ok else text, task_id=ctx.task_id, run_id=ctx.run_id)
@@ -574,6 +579,16 @@ class MasterRuntime:
             parts.append("TASKS: for work with several steps or that the user will want to follow, create a "
                          "task with task.create first, then do the work. High-risk tools pause for the "
                          "user's approval automatically — explain the reason in the 'reason' argument.")
+            parts.append(
+                "THE USER'S PC: when they ask you to open, close or drive something on their computer, use "
+                "desktop.open_app or desktop.run — the paired desktop carries it out. Check desktop.devices "
+                "first if you are unsure which machine or which action exists. If no desktop is online, say "
+                "that plainly instead of claiming you opened something.\n"
+                "LEARNING BY DEMONSTRATION: when they say they want to show you a workflow, start "
+                "teach.start, let them work, add teach.note for the reasons behind steps, then teach.stop "
+                "and teach.learn — that writes the procedure down and can create a specialist for it. "
+                "Before starting something that sounds familiar, check procedure.list: if you already "
+                "learned it, run it with procedure.run instead of improvising it again.")
         unavailable = [t for t in st.tools.all() if not (t.available and t.handler)]
         if unavailable:
             parts.append("NOT AVAILABLE right now (integration not connected): " +

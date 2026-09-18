@@ -394,6 +394,7 @@ class JarvisLive:
         self._resume_handle: str | None = None
         self._turn_done_event: asyncio.Event | None = None
         self._dashboard     = None
+        self._desktop_runner = None   # set in run() when the server may drive this PC
         self._briefing_sent    = False          # morning briefing fires once per process
         self._sys_monitor      = SystemMonitor()  # persistent cooldown state
         self._proactive        = ProactiveEngine()
@@ -1636,6 +1637,19 @@ class JarvisLive:
         except Exception as e:
             print(f"[Dashboard] Disabled: {e}")
             self._dashboard = None
+
+        # Let the Command Center drive this PC. It runs in its own thread and
+        # only starts when a gateway URL and token are configured, so a desktop
+        # without a server is completely unaffected.
+        try:
+            from core.desktop_runner import start_if_configured
+            self._desktop_runner = start_if_configured(
+                logger=lambda m: (print(m), self.ui.write_log(f"SYS: {m}")))
+            if self._desktop_runner:
+                self.ui.write_log("SYS: Remote desktop control active — the server can open apps here.")
+        except Exception as e:
+            print(f"[DesktopRunner] Disabled: {e}")
+            self._desktop_runner = None
 
         while True:
             try:

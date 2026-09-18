@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -156,6 +156,54 @@ CREATE TABLE IF NOT EXISTS memory (
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS metrics (
   ts TEXT NOT NULL, cpu REAL, ram REAL, disk REAL, load REAL, net_rx REAL, net_tx REAL
+);
+
+-- ── desktops the server may drive ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS desktop_devices (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, actor TEXT NOT NULL DEFAULT '',
+  platform TEXT NOT NULL DEFAULT '', version TEXT NOT NULL DEFAULT '',
+  actions TEXT NOT NULL DEFAULT '[]', registered_at TEXT NOT NULL, last_seen_at TEXT NOT NULL,
+  meta TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS desktop_commands (
+  id TEXT PRIMARY KEY, device_id TEXT NOT NULL, action TEXT NOT NULL,
+  params TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'queued',
+  created_at TEXT NOT NULL, dispatched_at TEXT, finished_at TEXT,
+  result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
+  requested_by TEXT NOT NULL DEFAULT '', agent_id TEXT NOT NULL DEFAULT '',
+  task_id TEXT, run_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_desktop_cmds ON desktop_commands(device_id, status, created_at);
+
+-- ── teaching: recordings, the procedures distilled from them ────────────────
+CREATE TABLE IF NOT EXISTS recordings (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'recording', user_id TEXT NOT NULL DEFAULT '',
+  actor TEXT NOT NULL DEFAULT '', conversation_id TEXT,
+  started_at TEXT NOT NULL, ended_at TEXT, procedure_id TEXT, meta TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS recording_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, recording_id TEXT NOT NULL,
+  ts TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL DEFAULT '',
+  tool TEXT NOT NULL DEFAULT '', params TEXT NOT NULL DEFAULT '{}',
+  result TEXT NOT NULL DEFAULT '', ok INTEGER NOT NULL DEFAULT 1, actor TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_rec_events ON recording_events(recording_id, seq);
+CREATE TABLE IF NOT EXISTS procedures (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+  goal TEXT NOT NULL DEFAULT '', steps TEXT NOT NULL DEFAULT '[]',
+  tools TEXT NOT NULL DEFAULT '[]', trigger TEXT NOT NULL DEFAULT '{}',
+  agent_id TEXT NOT NULL DEFAULT '', recording_id TEXT, enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by TEXT NOT NULL DEFAULT '',
+  runs INTEGER NOT NULL DEFAULT 0, last_run_at TEXT, last_status TEXT NOT NULL DEFAULT '',
+  meta TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS learned_agents (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '', instructions TEXT NOT NULL DEFAULT '',
+  capabilities TEXT NOT NULL DEFAULT '[]', tools TEXT NOT NULL DEFAULT '[]',
+  icon TEXT NOT NULL DEFAULT 'sparkles', enabled INTEGER NOT NULL DEFAULT 1,
+  procedure_id TEXT, created_at TEXT NOT NULL, created_by TEXT NOT NULL DEFAULT ''
 );
 """
 

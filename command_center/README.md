@@ -99,6 +99,8 @@ missing credential rather than pretending.
 | `github.read/issues/commits/repo` | `GITHUB_TOKEN` | read-only |
 | `workflow.list/execute/runs` | `N8N_BASE_URL` + `N8N_API_KEY` | trigger is webhook-based |
 | `terminal.execute` | `JARVIS_CC_ALLOW_TERMINAL=true` | admin role **and** approval, runs inside the workspace |
+| `desktop.devices/open_app/run` | a paired PC | drives the desktop's own actions; `desktop.run` is approval-gated |
+| `teach.start/note/stop/learn`, `procedure.list/run` | nothing (learning needs a local AI provider) | records a demonstration and turns it into a procedure |
 
 Voice is the same deal: set `JARVIS_CC_STT_URL` (and optionally
 `JARVIS_CC_TTS_URL`) to any OpenAI-compatible audio endpoint —
@@ -110,6 +112,56 @@ ever stored on the server.
 The calendar deliberately reuses `plugins/_calendar_core.py`, so a date the
 desktop refuses is refused here too and appointments booked from either side
 land in the same store.
+
+## Driving the PC from the server
+
+Ask for it in chat ("mach mir Excel auf", "schließ das Fenster") and the paired
+desktop does it. The direction of the connection matters: the server never
+dials into your machine. JARVIS on the PC holds a long poll open outward,
+picks up one command at a time, runs it through the actions it already has
+(`open_app`, `computer_control`, `browser_control`, `computer_settings`,
+`desktop_control`, …) and posts the result back. No port forwarding, no VPN,
+nothing listening on your network.
+
+Start it either way:
+
+```bash
+python desktop_agent.py     # remote control only
+python main.py              # the normal app; the runner starts with it when a token is configured
+```
+
+It needs the same machine token as the rest of the pairing. `desktop.run` asks
+for your approval by default — set `JARVIS_CC_DESKTOP_REQUIRE_APPROVAL=false`
+once you trust the setup. Actions the PC should never expose remotely go in
+`"desktop_blocked_actions"` in `config/api_keys.json`; `dev_agent`,
+`agency_agent` and `shutdown_jarvis` are blocked already.
+
+If the PC is asleep, a command is **refused with that reason** rather than
+queued forever, so JARVIS never claims to have opened something it did not.
+
+## Teaching it by demonstration
+
+Start a recording in the Teach page (or say so in chat: JARVIS calls
+`teach.start`), then do the job once as you normally would. What gets written
+down is what actually happened: what you said, every tool that ran with its
+arguments and result, every action executed on your PC, plus any note you add
+about *why* a step happens.
+
+Stop it, then **Learn**. The model reads the trace and writes a procedure: a
+name, a goal, ordered steps, the tools each step needs, and placeholders for
+the values that change next time. Two rules keep it honest:
+
+* a step may only reference a tool that actually exists — an invented one is
+  dropped, not stored as a promise;
+* a real tool that merely lacks credentials is kept, and the procedure says it
+  still needs setting up.
+
+Optionally it also creates a **specialist agent** with the instructions the
+model wrote, limited to the procedure's tools. It appears in the Agents page,
+survives restarts, and `procedure.run` hands work straight to it. Give a
+procedure a schedule and it runs by itself — that is the proactive half. Every
+lesson also goes into memory, so the master agent can recall it in conversation
+and offer to run it instead of improvising the same job twice.
 
 ## Security model
 

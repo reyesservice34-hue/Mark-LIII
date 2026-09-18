@@ -37,12 +37,14 @@ from .orchestrator.tool_registry import ToolRegistry
 from .services.approvals import ApprovalService
 from .services.calendar_service import CalendarService
 from .services.chat_store import ChatStore
+from .services.desktop_bridge import DesktopBridge
 from .services.email_service import EmailService
 from .services.external import GitHubService
 from .services.files import FileService
 from .services.metrics import MetricsService
 from .services.notifications import NotificationService
 from .services.tasks import TaskService
+from .services.teaching import TeachingService
 from .services.voice_service import VoiceService
 
 VERSION = "0.1.0"
@@ -75,12 +77,18 @@ def build_state(settings: Settings | None = None) -> AppState:
         "email": EmailService(),
         "github": GitHubService(),
         "voice": VoiceService(),
+        "desktop": DesktopBridge(db, bus, log),
+        "teaching": TeachingService(db, bus, log),
     })
     state.integrations = IntegrationRegistry(db, bus)
     state.workflows = WorkflowHub(db, bus)
     state.tools = ToolRegistry(approval_threshold=os.environ.get("JARVIS_CC_APPROVAL_RISK", "high"))
     state.agents = AgentRegistry(db, bus, logger=lambda m: log.info("agents", m))
     state.agents.load(settings.agent_roster_path)
+    # Specialists distilled from recordings are part of the roster again on restart.
+    learned = TeachingService.load_learned_agents(db, state.agents)
+    if learned:
+        log.info("agents", f"{learned} learned agent(s) restored from earlier recordings")
     state.runtime = MasterRuntime(state)
     register_builtin_tools(state.tools, state)
     state.tools.snapshot(db)

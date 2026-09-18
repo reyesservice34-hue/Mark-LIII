@@ -479,6 +479,150 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           _obj({"repo": _s("owner/repo")}), category="code", risk="low", min_role="viewer",
                           handler=github_repo, available=gh_ok, reason=gh_reason))
 
+    # ── desktop (the paired PC) ──────────────────────────────────────────
+    desktop = st.services["desktop"]
+
+    async def desktop_devices(ctx: ToolContext, args: dict):
+        devices = desktop.list()
+        if not devices:
+            return ("No desktop is paired yet. Start JARVIS on the PC with the gateway token set and it "
+                    "registers itself.")
+        return [{"name": d["name"], "id": d["id"], "platform": d["platform"], "online": d["online"],
+                 "last_seen": d["last_seen_at"], "can": [a.get("name") for a in d["actions"]]}
+                for d in devices]
+
+    async def desktop_open_app(ctx: ToolContext, args: dict):
+        device = desktop.resolve(str(args.get("device", "")))
+        cmd = await desktop.dispatch(device_id=device["id"], action="open_app",
+                                     params={"app_name": str(args["app"])},
+                                     requested_by=ctx.principal.actor, agent_id=ctx.agent_id,
+                                     task_id=ctx.task_id, run_id=ctx.run_id)
+        ctx.emit("desktop", {"text": f"{device['name']}: opened {args['app']}"})
+        return (cmd["result"] or "done", cmd["status"] == "done")
+
+    async def desktop_run(ctx: ToolContext, args: dict):
+        device = desktop.resolve(str(args.get("device", "")))
+        action = str(args["action"])
+        params = args.get("params") or {}
+        if not isinstance(params, dict):
+            return "params must be a JSON object", False
+        cmd = await desktop.dispatch(device_id=device["id"], action=action, params=params,
+                                     requested_by=ctx.principal.actor, agent_id=ctx.agent_id,
+                                     task_id=ctx.task_id, run_id=ctx.run_id,
+                                     timeout=float(args.get("timeout", 90)))
+        ctx.emit("desktop", {"text": f"{device['name']}: {action}"})
+        return (cmd["result"] or cmd["error"] or "done", cmd["status"] == "done")
+
+    # Driving someone's own machine is gated by default; set
+    # JARVIS_CC_DESKTOP_REQUIRE_APPROVAL=false once you trust the setup.
+    gate_desktop = (os.environ.get("JARVIS_CC_DESKTOP_REQUIRE_APPROVAL", "true").strip().lower()
+                    not in ("0", "false", "no", "off"))
+
+    reg.register(ToolSpec("desktop.devices", "List the paired desktops, whether they are online, and which "
+                          "actions each one offers.", _obj({}), category="desktop", risk="low",
+                          min_role="viewer", handler=desktop_devices))
+    reg.register(ToolSpec("desktop.open_app", "Open an application or website on the paired PC.",
+                          _obj({"app": _s("application name, e.g. 'Chrome', 'Excel', 'WhatsApp'"),
+                                "device": _s("which desktop, if more than one is online")}, ["app"]),
+                          category="desktop", risk="medium", handler=desktop_open_app, timeout_seconds=120))
+    reg.register(ToolSpec("desktop.run", "Run one of the PC's own actions on it — typing, clicking, window "
+                          "control, volume, browser control, screenshots. Call desktop.devices first to see "
+                          "what that machine offers and which parameters it takes.",
+                          _obj({"action": _s("action name from desktop.devices"),
+                                "params": {"type": "object", "description": "arguments for that action"},
+                                "device": _s("which desktop"), "reason": _s("why this is needed"),
+                                "timeout": _i("seconds to wait, default 90")}, ["action", "reason"]),
+                          category="desktop", risk="high" if gate_desktop else "medium",
+                          requires_approval=gate_desktop, handler=desktop_run, timeout_seconds=180))
+
+    # ── teach mode ───────────────────────────────────────────────────────
+    teaching = st.services["teaching"]
+
+    async def teach_start(ctx: ToolContext, args: dict):
+        rec = teaching.start(title=str(args["title"]), goal=str(args.get("goal", "")),
+                             user_id=ctx.principal.id, actor=ctx.principal.actor,
+                             conversation_id=ctx.conversation_id)
+        ctx.emit("teach", {"text": f"Recording started: {rec['title']}"})
+        return {"recording_id": rec["id"], "note": "Everything said and every tool used is now recorded "
+                                                    "until teach.stop."}
+
+    async def teach_note(ctx: ToolContext, args: dict):
+        rec_id = teaching.active_for(ctx.principal.id)
+        if not rec_id:
+            return "Nothing is being recorded right now.", False
+        teaching.append(rec_id, kind="note", text=str(args["text"]), actor=ctx.agent_id)
+        return "noted"
+
+    async def teach_stop(ctx: ToolContext, args: dict):
+        rec = teaching.stop(user_id=ctx.principal.id)
+        return {"recording_id": rec["id"], "events": rec["event_count"],
+                "note": "Use teach.learn to turn it into a procedure."}
+
+    async def teach_learn(ctx: ToolContext, args: dict):
+        rec_id = str(args.get("recording_id") or "") or teaching.active_for(ctx.principal.id) or ""
+        if not rec_id:
+            recent = teaching.list(limit=1)
+            rec_id = recent[0]["id"] if recent else ""
+        if not rec_id:
+            return "There is no recording to learn from.", False
+        result = await teaching.distill(st, rec_id, create_agent=bool(args.get("create_agent", True)),
+                                        actor=ctx.principal.actor)
+        proc = result["procedure"]
+        ctx.emit("teach", {"text": f"Learned procedure: {proc['name']}"})
+        return {"procedure_id": proc["id"], "name": proc["name"], "steps": len(proc["steps"]),
+                "agent": (result.get("agent") or {}).get("name", ""),
+                "dropped_tools": result.get("dropped_tools", [])}
+
+    async def procedure_list(ctx: ToolContext, args: dict):
+        procs = teaching.procedures()
+        if not procs:
+            return "Nothing has been learned yet."
+        return [{"id": p["id"], "name": p["name"], "description": p["description"],
+                 "steps": len(p["steps"]), "agent": p["agent_id"], "trigger": p["trigger"],
+                 "runs": p["runs"], "last_run_at": p["last_run_at"]} for p in procs]
+
+    async def procedure_run(ctx: ToolContext, args: dict):
+        proc = teaching.procedure(str(args["procedure_id"]))
+        if not proc:
+            matches = [p for p in teaching.procedures()
+                       if str(args["procedure_id"]).lower() in p["name"].lower()]
+            if len(matches) != 1:
+                return "No single procedure matches that — use procedure.list first.", False
+            proc = matches[0]
+        agent_id = proc["agent_id"] or ctx.agent_id
+        briefing = teaching.briefing(proc)
+        if args.get("inputs"):
+            briefing += "\n\nValues for this run:\n" + "\n".join(
+                f"- {k}: {v}" for k, v in (args["inputs"] or {}).items())
+        teaching.mark_run(proc["id"], "started")
+        if agent_id and agent_id != ctx.agent_id and st.agents.get(agent_id):
+            return await st.runtime.delegate(ctx, agent_id, briefing, title=f"Procedure: {proc['name']}")
+        return {"procedure": proc["name"], "briefing": briefing,
+                "note": "No specialist is attached — carry out these steps yourself."}
+
+    reg.register(ToolSpec("teach.start", "Start recording a demonstration: everything the user says and "
+                          "every tool that runs is captured so it can be turned into a repeatable procedure.",
+                          _obj({"title": _s("what is being demonstrated"),
+                                "goal": _s("what a successful run achieves")}, ["title"]),
+                          category="teaching", risk="low", handler=teach_start))
+    reg.register(ToolSpec("teach.note", "Add a note to the running recording — why a step happens, or a rule "
+                          "to remember.", _obj({"text": _s("the note")}, ["text"]),
+                          category="teaching", risk="low", handler=teach_note))
+    reg.register(ToolSpec("teach.stop", "Stop the running recording.", _obj({}),
+                          category="teaching", risk="low", handler=teach_stop))
+    reg.register(ToolSpec("teach.learn", "Turn a recording into a named procedure, and optionally into a "
+                          "specialist agent that can run it from then on.",
+                          _obj({"recording_id": _s("defaults to the most recent recording"),
+                                "create_agent": _b("also create a specialist, default true")}),
+                          category="teaching", risk="medium", handler=teach_learn, timeout_seconds=300))
+    reg.register(ToolSpec("procedure.list", "List everything JARVIS has learned so far.", _obj({}),
+                          category="teaching", risk="low", min_role="viewer", handler=procedure_list))
+    reg.register(ToolSpec("procedure.run", "Run a learned procedure, handing it to its specialist if it has one.",
+                          _obj({"procedure_id": _s("id or name"),
+                                "inputs": {"type": "object", "description": "values for its placeholders"}},
+                               ["procedure_id"]),
+                          category="teaching", risk="medium", handler=procedure_run, timeout_seconds=900))
+
     # ── web search ───────────────────────────────────────────────────────
     async def web_search_tool(ctx: ToolContext, args: dict):
         from ..services.external import web_search

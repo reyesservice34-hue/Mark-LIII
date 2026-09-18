@@ -17,8 +17,8 @@ from typing import Callable
 from fastapi import APIRouter
 
 DEFAULT_MODULES = [
-    "auth", "health", "events", "chat", "agents", "tasks", "workflows", "automations",
-    "server", "files", "integrations", "logs", "notifications", "approvals", "analytics",
+    "auth", "health", "events", "chat", "agents", "tasks", "teach", "workflows", "automations",
+    "server", "desktop", "files", "integrations", "logs", "notifications", "approvals", "analytics",
     "settings", "gateway", "voice",
 ]
 

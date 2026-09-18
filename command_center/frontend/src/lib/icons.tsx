@@ -4,7 +4,8 @@ import {
   ListChecks, Mail, MessageCircle, MessageSquare, Mic, Plug, Radio, RefreshCw, ScrollText, Search, Send,
   Server, Settings, ShieldCheck, Sparkles, Square, Timer, Trash2, Upload, Workflow, X, Zap, Play, Pause,
   Download, Copy, RotateCcw, Paperclip, Filter, LogOut, Terminal, Network, Layers, Eye, CircleAlert, Wifi,
-  WifiOff, ChevronUp, Plus, FolderPlus, Pencil, MoveRight, KeyRound, UserRound, Circle,
+  WifiOff, ChevronUp, Plus, FolderPlus, Pencil, MoveRight, KeyRound, UserRound, Circle, Monitor,
+  GraduationCap, BookOpen, CircleStop,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -15,7 +16,8 @@ const MAP: Record<string, ComponentType<any>> = {
   search: Search, "file-text": FileText, briefcase: Briefcase, mail: Mail, calendar: Calendar, cpu: Cpu,
   "git-branch": GitBranch, radio: Radio, "message-circle": MessageCircle, globe: Globe, box: Box,
   activity: Activity, "layout-grid": LayoutGrid, zap: Zap, "hard-drive": HardDrive, terminal: Terminal,
-  network: Network, layers: Layers, mic: Mic, command: Command,
+  network: Network, layers: Layers, mic: Mic, command: Command, monitor: Monitor,
+  "graduation-cap": GraduationCap,
 };
 
 export function Icon({ name, size = 16, ...rest }: { name?: string; size?: number; className?: string; style?: any }) {
@@ -28,5 +30,6 @@ export {
   Command, Cpu, FileText, Folder, HardDrive, Home, ListChecks, Mic, Plug, RefreshCw, ScrollText, Search, Send,
   Server, Settings, ShieldCheck, Sparkles, Square, Timer, Trash2, Upload, Workflow, X, Zap, Play, Pause, Download,
   Copy, RotateCcw, Paperclip, Filter, LogOut, Terminal, Network, Layers, Eye, CircleAlert, Wifi, WifiOff, Plus,
-  FolderPlus, Pencil, MoveRight, KeyRound, UserRound, Circle, MessageSquare, Radio,
+  FolderPlus, Pencil, MoveRight, KeyRound, UserRound, Circle, MessageSquare, Radio, Monitor,
+  GraduationCap, BookOpen, CircleStop,
 };

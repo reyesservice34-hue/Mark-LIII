@@ -18,6 +18,11 @@ See [`command_center/README.md`](command_center/README.md) for deployment
 (`docker compose -f docker-compose.command-center.yml up -d`), configuration
 and desktop pairing.
 
+
+It can also **drive the desktop on instruction** (open apps, windows, keyboard,
+browser) and **learn by demonstration**: record yourself doing a job once and it
+becomes a named procedure, optionally with its own specialist agent.
+
 ---
 
 ## ✨ Overview
