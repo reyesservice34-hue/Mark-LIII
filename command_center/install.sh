@@ -98,17 +98,30 @@ if [ "${OK:-0}" != "1" ]; then
   exit 1
 fi
 
-STATUS="$(curl -fsS "$HEALTH" | sed -n 's/.*"status":"\([a-z]*\)".*/\1/p' | head -1)"
+# Die Gesamtbewertung steht ganz vorn in der Antwort ({"status":"…","components":…).
+# Ohne den Anker am Zeilenanfang würde das letzte "status" einer Komponente gewinnen.
+BODY="$(curl -fsS "$HEALTH")"
+STATUS="$(printf '%s' "$BODY" | sed -n 's/^{"status":"\([a-z_]*\)".*/\1/p' | head -1)"
 bold ""
 bold "  Läuft. Health: ${STATUS:-ok}"
 bold ""
+if [ "$STATUS" = "degraded" ]; then
+  info "\"degraded\" heißt: der Server läuft, aber es fehlt noch etwas —"
+  info "ohne AI-Schlüssel ist das normal und wird mit Schritt 2 unten grün."
+fi
 info "Adresse (lokal):   http://${BIND}:${PORT}"
-info "Benutzer:          $(grep -E '^JARVIS_CC_ADMIN_USER=' "$ENV_FILE" | cut -d= -f2)"
+info "Benutzer:          $(sed -n 's/^JARVIS_CC_ADMIN_USER=\([^#]*\).*/\1/p' "$ENV_FILE" | tr -d '[:space:]' | head -1)"
+# Auch beim zweiten Lauf das echte Passwort zeigen: es steht ohnehin in einer
+# Datei, die nur root lesen darf, und Raten hilft niemandem.
+ENV_PW="$(sed -n 's/^JARVIS_CC_ADMIN_PASSWORD=\(.*\)$/\1/p' "$ENV_FILE" | head -1)"
 if [ -n "$GENERATED_PW" ]; then
   info "Passwort:          ${GENERATED_PW}"
   warn "Dieses Passwort steht nur hier und in command_center/.env — jetzt notieren."
+elif [ -n "$ENV_PW" ]; then
+  info "Passwort:          ${ENV_PW}"
+  info "                   (aus command_center/.env, unverändert übernommen)"
 else
-  info "Passwort:          wie in command_center/.env hinterlegt"
+  info "Passwort:          steht in command_center/.env unter JARVIS_CC_ADMIN_PASSWORD"
 fi
 
 bold ""

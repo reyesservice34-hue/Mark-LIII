@@ -106,6 +106,24 @@ with TestClient(app) as c:
     check("status requires auth", c.get("/api/status").status_code == 401)
     check("SPA fallback answers (frontend may be unbuilt)", c.get("/").status_code in (200, 503))
 
+    # The installer prints this value after the build. Its first attempt used a
+    # greedy pattern and showed the *last* component's status ("offline"), which
+    # made a working server look dead. Run the installer's own extraction
+    # against the real response body so it cannot drift again.
+    import re  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    installer = (ROOT / "command_center" / "install.sh").read_text(encoding="utf-8")
+    status_line = next((l for l in installer.splitlines() if l.startswith("STATUS=")), "")
+    expr = re.search(r"sed -n '(.*?)'", status_line)
+    check("installer has a status extraction", expr is not None, status_line)
+    if expr:
+        extracted = subprocess.run(["sed", "-n", expr.group(1)], input=r.text,
+                                   capture_output=True, text=True).stdout.split()
+        check("installer reads the overall status, not a component's",
+              extracted[:1] == [body["status"]], (extracted, body["status"]))
+    check("a server with no AI key reports degraded, not offline",
+          body["status"] == "degraded", body["status"])
+
     print("\n2. login, cookies, CSRF")
     check("wrong password 401", c.post("/api/auth/login", json={"username": "admin", "password": "nope"}).status_code == 401)
     r = c.post("/api/auth/login", json={"username": "admin", "password": "adminpass123"})

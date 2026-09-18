@@ -14,7 +14,10 @@ Browser ──HTTPS──▶ reverse proxy ──▶ FastAPI backend (command_ce
                                        ├─ integrations / workflow adapters (n8n, …)
                                        └─ SQLite (/data/jarvis.db) + workspace (/data/workspace)
 Desktop (main.py) ──X-Jarvis-Token──▶ /v1/commands  (same backend, same identity)
+Desktop agent      ──X-Jarvis-Token──▶ /v1/desktop/{register,poll,result}  (outbound only)
 ```
+
+Every directory, file and what it is for: [STRUKTUR.md](STRUKTUR.md) (in German).
 
 ## Run it
 
