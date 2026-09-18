@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-09-17T13:18:30Z",
+  "system": "Agency",
+  "status": "ACTIVE",
+  "agents": 10,
+  "coordinator": {
+    "name": "coordinator",
+    "status": "ACTIVE",
+    "role": "Orchestrate and delegate"
+  },
+  "pipeline_agents": {
+    "prompt_architect": "Create master prompts",
+    "executor": "Execute instructions",
+    "reviewer": "Review & verify"
+  },
+  "business_agents": {
+    "angebot": "Quotations & pricing",
+    "dispo": "Planning & scheduling",
+    "kunde": "Customer communication",
+    "recherche": "Research & facts",
+    "technik": "Code & automation",
+    "berater": "Advisory & consulting"
+  },
+  "cost_strategy": {
+    "primary": "Gemini free tier",
+    "fallback": "Ollama (local)",
+    "expensive_tasks_only": "OpenAI GPT models"
+  },
+  "capabilities": {
+    "autonomous_execution": true,
+    "proactive_decision_making": true,
+    "continuous_learning": true,
+    "cost_optimization": true,
+    "parallel_delegation": true
+  },
+  "ready_for_operation": true
+}

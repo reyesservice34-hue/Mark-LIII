@@ -1,0 +1,136 @@
+{
+  "name": "JARVIS System Architecture",
+  "timestamp": "2026-09-18T06:58:56.052767",
+  "nodes": {
+    "services": {
+      "ollama": {
+        "type": "service",
+        "role": "Local LLM Provider",
+        "port": 11434,
+        "status": "core",
+        "description": "Mistral 7B language model"
+      },
+      "coordinator": {
+        "type": "service",
+        "role": "10-Agent Orchestration",
+        "port": 8000,
+        "status": "core",
+        "description": "Main REST API coordinator"
+      },
+      "whatsapp_gateway": {
+        "type": "service",
+        "role": "Message Processing",
+        "port": 5000,
+        "status": "core",
+        "description": "WhatsApp + Voice integration"
+      },
+      "health_monitor": {
+        "type": "service",
+        "role": "Health & Optimization",
+        "port": 9000,
+        "status": "core",
+        "description": "Autonomous monitoring"
+      }
+    },
+    "agents": {
+      "executor": {
+        "role": "Task execution"
+      },
+      "prompt_architect": {
+        "role": "Prompt optimization"
+      },
+      "reviewer": {
+        "role": "Quality verification"
+      },
+      "angebot": {
+        "role": "Pricing/Quotations"
+      },
+      "dispo": {
+        "role": "Planning/Scheduling"
+      },
+      "kunde": {
+        "role": "Customer communication"
+      },
+      "recherche": {
+        "role": "Research/Facts"
+      },
+      "technik": {
+        "role": "Code/Automation"
+      },
+      "berater": {
+        "role": "Advisory/Consulting"
+      },
+      "coordinator": {
+        "role": "Orchestration master"
+      }
+    },
+    "features": {
+      "memory_first": {
+        "type": "protocol",
+        "status": "active"
+      },
+      "prompt_optimization": {
+        "type": "engine",
+        "status": "active"
+      },
+      "knowledge_graphs": {
+        "type": "system",
+        "status": "active"
+      },
+      "auto_optimization": {
+        "type": "system",
+        "status": "active"
+      },
+      "voice_integration": {
+        "type": "feature",
+        "status": "active"
+      }
+    }
+  },
+  "edges": {
+    "service_dependencies": [
+      {
+        "from": "coordinator",
+        "to": "ollama",
+        "type": "requires"
+      },
+      {
+        "from": "whatsapp_gateway",
+        "to": "coordinator",
+        "type": "calls"
+      },
+      {
+        "from": "health_monitor",
+        "to": "coordinator",
+        "type": "monitors"
+      },
+      {
+        "from": "health_monitor",
+        "to": "ollama",
+        "type": "monitors"
+      },
+      {
+        "from": "health_monitor",
+        "to": "whatsapp_gateway",
+        "type": "monitors"
+      }
+    ],
+    "agent_flows": [
+      {
+        "from": "coordinator",
+        "to": "executor",
+        "type": "delegates"
+      },
+      {
+        "from": "coordinator",
+        "to": "prompt_architect",
+        "type": "uses"
+      },
+      {
+        "from": "coordinator",
+        "to": "reviewer",
+        "type": "uses"
+      }
+    ]
+  }
+}

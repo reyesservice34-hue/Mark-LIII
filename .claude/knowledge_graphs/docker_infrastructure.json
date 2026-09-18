@@ -1,0 +1,58 @@
+{
+  "name": "Docker Infrastructure",
+  "timestamp": "2026-09-18T06:58:56.052889",
+  "containers": {
+    "ollama": {
+      "image": "ollama/ollama:latest",
+      "port": 11434,
+      "volumes": [
+        "ollama-models:/models"
+      ],
+      "healthcheck": "curl -f http://localhost:11434/api/tags",
+      "restart": "always"
+    },
+    "jarvis-coordinator": {
+      "image": "custom:jarvis-coordinator",
+      "port": 8000,
+      "dockerfile": "Dockerfile.jarvis",
+      "depends_on": [
+        "ollama"
+      ],
+      "healthcheck": "curl -f http://localhost:8000/health",
+      "restart": "always"
+    },
+    "jarvis-whatsapp": {
+      "image": "custom:jarvis-whatsapp",
+      "port": 5000,
+      "dockerfile": "Dockerfile.whatsapp",
+      "depends_on": [
+        "jarvis-coordinator"
+      ],
+      "healthcheck": "curl -f http://localhost:5000/health",
+      "restart": "always"
+    },
+    "jarvis-monitor": {
+      "image": "custom:jarvis-monitor",
+      "port": 9000,
+      "dockerfile": "Dockerfile.monitor",
+      "depends_on": [
+        "jarvis-coordinator",
+        "jarvis-whatsapp",
+        "ollama"
+      ],
+      "restart": "always"
+    }
+  },
+  "network": "jarvis-network",
+  "volumes": [
+    "ollama-models",
+    "whatsapp-history"
+  ],
+  "features": [
+    "health_checks_10s",
+    "auto_restart_on_failure",
+    "service_isolation",
+    "data_persistence",
+    "dependency_ordering"
+  ]
+}

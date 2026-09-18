@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-09-18T06:58:56.053963",
+  "graphs": [
+    "system_architecture",
+    "components",
+    "docker_infrastructure",
+    "technology_stack"
+  ],
+  "total_graphs": 4,
+  "storage_location": ".claude/knowledge_graphs"
+}

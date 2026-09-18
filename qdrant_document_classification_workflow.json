@@ -1,0 +1,96 @@
+{
+  "name": "Document Classification with Embeddings",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "uuid.v4()",
+      "name": "Input",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "text": "={{ $json.document }}"
+      },
+      "id": "uuid.v4()",
+      "name": "Embed Document",
+      "type": "n8n-nodes-openai.embeddings",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "connectionType": "apiKey",
+        "credentials": "qdrant_credential",
+        "collectionName": "document_classes",
+        "queryVector": "={{ $json.embedding }}",
+        "limit": 1
+      },
+      "id": "uuid.v4()",
+      "name": "Find Category",
+      "type": "n8n-nodes-base.qdrant",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "responseBody": "={{ { category: $json.results[0]?.category, confidence: $json.results[0]?.score } }}"
+      },
+      "id": "uuid.v4()",
+      "name": "Output",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Input": {
+      "main": [
+        [
+          {
+            "node": "Embed Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Document": {
+      "main": [
+        [
+          {
+            "node": "Find Category",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Category": {
+      "main": [
+        [
+          {
+            "node": "Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

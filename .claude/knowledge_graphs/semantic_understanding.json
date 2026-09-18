@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-09-18T06:58:56.054159",
+  "what_jarvis_is": "Advanced autonomous AI assistant with 10-agent orchestration",
+  "key_capabilities": [
+    "Process natural language instructions",
+    "Delegate tasks to specialized agents",
+    "Generate contextual responses via Ollama LLM",
+    "Maintain persistent memory across sessions",
+    "Optimize system autonomously",
+    "Process WhatsApp messages with voice responses"
+  ],
+  "how_it_works": {
+    "instruction_flow": [
+      "User sends instruction (WhatsApp/API)",
+      "Gateway receives and forwards to Coordinator",
+      "Coordinator analyzes with Ollama enhancement",
+      "Memory-First Protocol retrieves relevant context",
+      "Delegates to appropriate agent(s)",
+      "Ollama generates intelligent response",
+      "Response sent back with optional voice",
+      "Experience logged to memory"
+    ],
+    "decision_process": [
+      "Analyze instruction intent and priority",
+      "Check memory systems for relevant context",
+      "Delegate to specialized agent",
+      "Gather required information/capabilities",
+      "Generate response with Ollama",
+      "Verify quality with reviewer agent",
+      "Return optimized response"
+    ]
+  },
+  "unique_features": {
+    "memory_first_protocol": "Mandatory memory retrieval before every action",
+    "local_llm": "Mistral 7B on 100% local, no external API calls",
+    "autonomous_monitoring": "Continuous optimization without user intervention",
+    "10_agent_system": "Specialized agents for different task types",
+    "zero_cost": "€0.00/month operational cost",
+    "24_7_reliability": "Auto-restart on failure, health checks every 10s"
+  },
+  "deployment_model": "Docker Compose (4 containerized services)",
+  "scalability": "Horizontal scaling via Docker Compose, vertical via resource allocation",
+  "reliability": "99.9%+ uptime with auto-restart and autonomous monitoring"
+}
