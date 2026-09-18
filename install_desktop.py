@@ -282,8 +282,34 @@ def main() -> int:
     save_config(cfg)
     say(f"\n  Gespeichert in {CONFIG}")
 
-    # ── 4. Nachsehen, ob es wirklich steht ───────────────────────────────
-    bold("4. Prüfen")
+    # ── 4. Kopplung dauerhaft machen ─────────────────────────────────────
+    # Die Verbindung besteht nur, solange auf diesem Rechner etwas läuft, das
+    # sich meldet. Ein Fenster, das man nach dem Neustart vergisst, ist keine
+    # Kopplung — dann steht im Dashboard „kein Gerät online" und niemand weiß
+    # warum.
+    bold("4. Mit Windows starten")
+    import autostart
+    if autostart.startup_dir() is None:
+        say("  Das geht so nur unter Windows — übersprungen.")
+    elif autostart.enabled():
+        say("  Ist schon eingetragen. JARVIS meldet sich beim Anmelden von selbst.")
+        say("  Ausschalten mit:  python autostart.py aus")
+    else:
+        say("  Soll JARVIS sich künftig beim Anmelden von selbst mit dem Server")
+        say("  verbinden? Dann ist dein Rechner immer erreichbar, ohne dass du")
+        say("  daran denken musst. Es läuft nur die Brücke, ohne Fenster.")
+        try:
+            answer = input("     [J/n] > ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = "n"
+            say()
+        if answer in ("", "j", "ja", "y", "yes"):
+            say("  " + autostart.turn_on().replace("\n", "\n  "))
+        else:
+            say("  Übersprungen. Später jederzeit:  python autostart.py an")
+
+    # ── 5. Nachsehen, ob es wirklich steht ───────────────────────────────
+    bold("5. Prüfen")
     say(f"  {check_server(cfg.get('jarvis_gateway_url', ''), cfg.get('jarvis_gateway_token', ''))}")
 
     bold("Fertig")

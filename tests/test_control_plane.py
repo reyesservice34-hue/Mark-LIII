@@ -187,5 +187,42 @@ with tempfile.TemporaryDirectory() as td:
     check("play_file degrades gracefully", SO.play_file(p) in (True, False))
 check("play_file exists and is callable", callable(SO.play_file))
 
+print("\n12. Autostart: die Kopplung überlebt einen Neustart")
+import autostart as AS
+from pathlib import Path as _P
+import tempfile as _tf
+
+# Unter Windows ist es ein Eintrag im Autostart-Ordner. Hier wird geprüft, was
+# überall gilt: was in der Datei steht, und dass Aus- und Einschalten nichts
+# durcheinanderbringt.
+launcher = AS._launcher_text()
+check("der Starter ruft die Brücke auf, nicht das Fenster",
+      "desktop_agent.py" in launcher and "jarvis_desktop.py" not in launcher, launcher)
+# pythonw gibt es nur unter Windows; anderswo ist der Rückfall auf python
+# richtig und kein Mangel. Geprüft wird das, was überall gelten muss.
+from pathlib import Path as _PP
+_pyw = _PP(sys.executable).with_name("pythonw.exe")
+check("er startet abgekoppelt (start \"\") und ohne Fenster, wo es geht",
+      "start \"\"" in launcher and (("pythonw" in launcher.lower()) if _pyw.exists() else True),
+      launcher)
+check("und arbeitet im Ordner des Projekts", str(AS.ROOT) in launcher)
+check("ohne Windows meldet er das ehrlich, statt still nichts zu tun",
+      "Windows" in AS.turn_on() if AS.startup_dir() is None else True)
+
+# Der Ordner wird sauber behandelt: anlegen, erkennen, wieder entfernen.
+fake = _P(_tf.mkdtemp())
+real_dir = AS.startup_dir
+AS.startup_dir = lambda: fake
+try:
+    check("vorher nicht eingetragen", AS.enabled() is False)
+    AS.turn_on()
+    check("nach dem Einschalten liegt der Starter da", AS.enabled() is True)
+    check("und enthält den Aufruf", "desktop_agent.py" in (fake / AS.NAME).read_text(encoding="utf-8"))
+    AS.turn_off()
+    check("nach dem Ausschalten ist er weg", AS.enabled() is False)
+    check("zweimal ausschalten tut nicht weh", "nicht eingetragen" in AS.turn_off())
+finally:
+    AS.startup_dir = real_dir
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

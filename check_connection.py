@@ -118,6 +118,20 @@ def main() -> int:
     except ImportError:
         bad("Fenster (PyQt6)", "fehlt — python setup.py; ohne das geht nur desktop_voice.py")
 
+    # Die Kopplung hält nur, solange hier etwas läuft. Ob das nach einem
+    # Neustart von selbst passiert, ist deshalb keine Nebensache.
+    try:
+        import autostart
+        if autostart.startup_dir() is None:
+            pass                     # nur Windows hat diesen Ordner
+        elif autostart.enabled():
+            ok("Autostart", "JARVIS meldet sich beim Anmelden von selbst")
+        else:
+            bad("Autostart", "aus — nach einem Neustart ist der PC nicht erreichbar")
+            print("      Einschalten mit:  python autostart.py an   (oder AUTOSTART.bat)")
+    except Exception:  # noqa: BLE001
+        pass
+
     print("\n  Alles Grüne steht. Starten mit:  JARVIS.bat\n")
     return 0
 
