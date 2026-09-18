@@ -420,5 +420,76 @@ with TestClient(app) as c:
     check("logout", c.post("/api/auth/logout", headers=H).status_code == 200)
     check("session gone", c.get("/api/auth/me").status_code == 401)
 
+
+# ── 13. der Desktop-Installer holt sich selbst ein Token ──────────────────
+# Das hier ist keine Theorie: der Nutzer stand mit dem Hash aus der Tabelle da,
+# weil der Weg über Dashboard und zweites Terminal zu viele Stellen zum
+# Verrutschen hat. Der Installer macht es jetzt selbst — und genau das wird
+# geprüft, gegen einen echten Server auf einem echten Socket, weil urllib
+# keinen TestClient kennt.
+print("\n13. install_desktop erzeugt ein brauchbares Token")
+try:
+    import socket  # noqa: PLC0415
+    import threading  # noqa: PLC0415
+
+    import uvicorn  # noqa: PLC0415
+except ImportError as e:  # pragma: no cover
+    check("uvicorn vorhanden", False, f"{e.name} fehlt — Abschnitt 13 nicht gelaufen")
+else:
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+
+    live = uvicorn.Server(uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_level="error"))
+    threading.Thread(target=live.run, daemon=True).start()
+    for _ in range(100):
+        if live.started:
+            break
+        time.sleep(0.1)
+
+    if not live.started:
+        check("Testserver startet", False, "uvicorn kam nicht hoch")
+    else:
+        import builtins  # noqa: PLC0415
+        import getpass  # noqa: PLC0415
+
+        import install_desktop as INST  # noqa: PLC0415
+
+        base = f"http://127.0.0.1:{port}"
+        real_input, real_getpass = builtins.input, getpass.getpass
+
+        def drive(password: str) -> None:
+            """Benutzername per Enter (= admin), Passwort ohne Tastatur."""
+            builtins.input = lambda *a, **k: ""
+            getpass.getpass = lambda *a, **k: password
+
+        try:
+            drive("")
+            check("leeres Passwort bricht ab, statt zu raten", INST.create_token(base, "Test-PC") == "")
+            drive("ganz-falsch")
+            check("falsches Passwort erzeugt kein Token", INST.create_token(base, "Test-PC") == "")
+            drive("adminpass123")
+            made = INST.create_token(base, "Test-PC")
+        finally:
+            builtins.input, getpass.getpass = real_input, real_getpass
+
+        check("Token erzeugt", made.startswith("jcc_"), made[:12])
+        import urllib.request  # noqa: PLC0415
+        cap_req = urllib.request.Request(base + "/api/voice/live/capabilities",
+                                         headers={"X-Jarvis-Token": made})
+        try:
+            with urllib.request.urlopen(cap_req, timeout=10) as res:
+                check("der Server nimmt das Token an", res.status == 200, res.status)
+        except Exception as e:  # noqa: BLE001
+            check("der Server nimmt das Token an", False, repr(e))
+        report = INST.check_server(base, made)
+        check("die Schlussprüfung testet das Token, nicht nur /api/health",
+              "Token akzeptiert" in report, report)
+        check("ein ungültiges Token wird benannt, nicht verschwiegen",
+              "401" in INST.check_server(base, "jcc_" + "x" * 48))
+        check("ohne Token sagt die Prüfung das auch", "ohne Token" in INST.check_server(base, ""))
+        live.should_exit = True
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

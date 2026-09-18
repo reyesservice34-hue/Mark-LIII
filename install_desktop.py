@@ -67,22 +67,127 @@ def save_config(cfg: dict) -> None:
 
 
 def check_server(url: str, token: str) -> str:
-    """Wirklich nachfragen, statt zu behaupten, es sei eingerichtet."""
+    """Wirklich nachfragen, statt zu behaupten, es sei eingerichtet.
+
+    Zwei Fragen, nicht eine: lebt der Server, und taugt das Token? Nur das
+    erste zu prüfen und „fertig" zu melden hat den Nutzer schon einmal mit
+    einem unbrauchbaren Token vor die Tür gesetzt.
+    """
     if not url:
         return "keine Serveradresse angegeben"
+    import urllib.error
+    import urllib.request
+
+    base = url.rstrip("/")
     try:
-        import urllib.error
-        import urllib.request
-        req = urllib.request.Request(url.rstrip("/") + "/api/health")
-        with urllib.request.urlopen(req, timeout=10) as res:
+        with urllib.request.urlopen(base + "/api/health", timeout=10) as res:
             body = json.loads(res.read().decode("utf-8"))
         status = body.get("status", "?")
         mode = (body.get("components", {}).get("agent_gateway", {}) or {}).get("mode", "?")
-        if not token:
-            return f"Server erreichbar (Status {status}, Master Agent {mode}) — aber ohne Token"
-        return f"Server erreichbar. Status {status}, Master Agent {mode}"
     except Exception as e:  # noqa: BLE001
         return f"nicht erreichbar: {e.__class__.__name__}"
+
+    head = f"Server erreichbar. Status {status}, Master Agent {mode}"
+    if not token:
+        return head + " — aber ohne Token. Ohne das geht die Desktop-App nicht."
+
+    req = urllib.request.Request(base + "/api/voice/live/capabilities",
+                                 headers={"X-Jarvis-Token": token})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as res:
+            caps = json.loads(res.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return head + "\n  Aber: der Server kennt dieses Token nicht (401). Ein neues erzeugen."
+        if e.code == 403:
+            return head + "\n  Aber: das Token gilt, die Rolle reicht nicht (403). Gebraucht wird 'operator'."
+        return head + f"\n  Aber: Token-Prüfung gab HTTP {e.code}."
+    except Exception as e:  # noqa: BLE001
+        return head + f"\n  Token-Prüfung fehlgeschlagen: {e.__class__.__name__}"
+
+    line = head + f"\n  Token akzeptiert, {caps.get('tools', 0)} Werkzeuge stehen bereit."
+    if not caps.get("available"):
+        line += f"\n  Live-Leitung noch nicht bereit: {caps.get('detail', '')}"
+    return line
+
+
+def create_token(url: str, name: str) -> str:
+    """Ein Maschinen-Token direkt hier erzeugen.
+
+    Der Umweg über das Dashboard und ein zweites Terminal ist genau die
+    Stelle, an der es in der Praxis scheitert: falsches Fenster, falscher
+    Wert aus der Tabelle, halb kopiert. Hier wird einmal das Admin-Passwort
+    gefragt, der Rest läuft von selbst — und das Passwort wird nirgends
+    gespeichert.
+    """
+    import getpass
+    import http.cookiejar
+    import urllib.error
+    import urllib.request
+
+    say()
+    say("  Kein Token vorhanden. Ich kann jetzt eines erzeugen —")
+    say("  dafür brauche ich einmal deine Dashboard-Anmeldung.")
+    say("  Sie wird nur für diesen Aufruf benutzt und nirgends gespeichert.")
+    say("  (Leer lassen und Enter, wenn du es lieber selbst im Dashboard machst.)")
+    try:
+        user = input("     Benutzername [admin]: ").strip() or "admin"
+        # getpass zeigt nichts an, auch keine Sternchen. Das irritiert beim
+        # Tippen, deshalb steht es dabei — sonst hält man es für hängend.
+        say("     (Das Passwort bleibt beim Tippen unsichtbar, das ist normal.)")
+        pw = getpass.getpass("     Passwort: ")
+    except (EOFError, KeyboardInterrupt):
+        return ""
+    if not pw:
+        return ""
+
+    base = url.rstrip("/")
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+
+    def post(path: str, body: dict, headers: dict | None = None) -> dict:
+        req = urllib.request.Request(base + path, data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json", **(headers or {})})
+        with opener.open(req, timeout=20) as res:
+            return json.loads(res.read().decode("utf-8"))
+
+    try:
+        login = post("/api/auth/login", {"username": user, "password": pw})
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            say("     Anmeldung abgelehnt: Benutzername oder Passwort stimmt nicht.")
+        elif e.code == 429:
+            say("     Zu viele Versuche. Eine Minute warten, dann noch einmal.")
+        else:
+            say(f"     Anmeldung fehlgeschlagen (HTTP {e.code}).")
+        return ""
+    except Exception as e:  # noqa: BLE001
+        say(f"     Der Server antwortet nicht: {e.__class__.__name__}: {e}")
+        return ""
+
+    role = (login.get("user") or {}).get("role", "")
+    if role != "admin":
+        say(f"     Dieses Konto hat die Rolle '{role}'. Token anlegen darf nur ein Administrator.")
+        return ""
+
+    actor = (name or "desktop").lower().replace(" ", "-")[:40] or "desktop"
+    try:
+        created = post("/api/auth/tokens", {"name": name or "Desktop", "actor": actor,
+                                            "role": "operator"},
+                       {"X-CSRF-Token": login.get("csrf_token", "")})
+    except urllib.error.HTTPError as e:
+        say(f"     Token konnte nicht erzeugt werden (HTTP {e.code}).")
+        return ""
+    except Exception as e:  # noqa: BLE001
+        say(f"     Token konnte nicht erzeugt werden: {e.__class__.__name__}: {e}")
+        return ""
+
+    secret = created.get("secret", "")
+    if secret:
+        say(f"     Token erzeugt: {secret[:10]}… ({len(secret)} Zeichen) — eingetragen.")
+    else:
+        say("     Der Server hat kein Token zurückgegeben. Dann bitte im Dashboard anlegen.")
+    return secret
 
 
 def main() -> int:
@@ -120,8 +225,17 @@ def main() -> int:
 
     url = ask("Adresse des Servers", "z. B. https://jarvis.jarvis-reyes.de",
               cfg.get("jarvis_gateway_url", ""))
-    token = ask("Maschinen-Token", "beginnt mit jcc_ — wird nur einmal angezeigt",
+    token = ask("Maschinen-Token", "beginnt mit jcc_ — Enter drücken, dann erzeuge ich eines",
                 cfg.get("jarvis_gateway_token", ""), secret=True)
+    # Nichts da oder offensichtlich falsch: gleich hier eines besorgen, statt
+    # den Nutzer zwischen Fenstern hin- und herzuschicken.
+    if url and (not token or not token.startswith("jcc_")):
+        if token and not token.startswith("jcc_"):
+            say()
+            say("  Der bisherige Wert ist kein Token (ein Token beginnt mit jcc_).")
+        made = create_token(url, cfg.get("desktop_device_name", "") or platform.node() or "Desktop")
+        if made:
+            token = made
     # Die Tabelle im Dashboard zeigt auch Kennungen und Hashes. Wer den falschen
     # Wert erwischt, sieht das sonst erst beim ersten Verbindungsversuch, und
     # dann sagt der Server nur „unbekannt".
