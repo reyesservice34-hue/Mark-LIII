@@ -54,6 +54,8 @@ screenshots/
 
 # ── JARVIS Command Center ─────────────────────────────────────────────────
 command_center/.env
+# ...but the documented example must stay in the repository
+!command_center/.env.example
 command_center/frontend/node_modules/
 command_center/frontend/dist/
 # built by `npm run build` / the Docker image
