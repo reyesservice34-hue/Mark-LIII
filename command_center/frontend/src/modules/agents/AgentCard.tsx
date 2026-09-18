@@ -10,6 +10,7 @@ export interface Agent {
   enabled: boolean; icon: string; status: string; current_task_id: string | null; current_run_id: string | null;
   current_activity: string; last_activity_at: string | null; last_error: string; started_at: string | null;
   stats: { runs: number; errors: number; tool_calls: number; completed: number }; health: string;
+  missing_tools?: string[]; health_detail?: string;
 }
 
 export function AgentCard({ agent, compact = false, onClick }: { agent: Agent; compact?: boolean; onClick?: () => void }) {
@@ -27,12 +28,15 @@ export function AgentCard({ agent, compact = false, onClick }: { agent: Agent; c
             : agent.status === "ERROR" ? <span style={{ color: "var(--err)" }} className="truncate">{agent.last_error}</span>
               : <span className="muted">{agent.last_activity_at ? `last active ${relative(agent.last_activity_at)}` : "no activity yet"}</span>}
         </div>
-        {!compact && <div className="row wrap" style={{ marginTop: 8, gap: 6 }}>
-          <Badge status={agent.health} />
-          <span className="badge muted">{agent.available_tools}/{agent.tools_resolved.length} tools</span>
-          <span className="badge muted">{agent.stats.runs} runs</span>
-          {agent.stats.errors > 0 && <span className="badge err">{agent.stats.errors} errors</span>}
-        </div>}
+        {!compact && <>
+          <div className="row wrap" style={{ marginTop: 8, gap: 6 }}>
+            <Badge status={agent.health} />
+            <span className="badge muted">{agent.available_tools}/{agent.tools_resolved.length} tools</span>
+            <span className="badge muted">{agent.stats.runs} runs</span>
+            {agent.stats.errors > 0 && <span className="badge err">{agent.stats.errors} errors</span>}
+          </div>
+          {agent.health_detail && <div className="tiny" style={{ color: "var(--warn)", marginTop: 5 }}>{agent.health_detail}</div>}
+        </>}
       </div>
     </div>
   );

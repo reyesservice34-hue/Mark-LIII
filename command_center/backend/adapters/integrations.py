@@ -139,35 +139,42 @@ class ControlPlaneIntegration(IntegrationAdapter):
 
 
 class GoogleIntegration(IntegrationAdapter):
+    """Checked through the calendar service, because that is what actually uses it."""
+
     async def check(self) -> dict:
         if not self.configured():
             return {"status": "not_configured",
                     "detail": "GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN not set"}
-        try:
-            async with httpx.AsyncClient(timeout=8.0) as c:
-                r = await c.post("https://oauth2.googleapis.com/token", data={
-                    "client_id": os.environ["GOOGLE_CLIENT_ID"],
-                    "client_secret": os.environ["GOOGLE_CLIENT_SECRET"],
-                    "refresh_token": os.environ["GOOGLE_REFRESH_TOKEN"], "grant_type": "refresh_token"})
-            if r.status_code == 200:
-                return {"status": "healthy", "detail": "OAuth refresh succeeded"}
-            return {"status": "offline", "detail": f"OAuth refresh failed (HTTP {r.status_code})"}
-        except httpx.HTTPError as e:
-            return {"status": "offline", "detail": f"cannot reach Google: {e.__class__.__name__}"}
+        from ..services.calendar_service import CalendarService
+        return await CalendarService().health()
+
+
+class LocalCalendarIntegration(IntegrationAdapter):
+    """Always present: the local calendar store needs no credentials at all."""
+
+    def configured(self) -> bool:
+        return True
+
+    def config_state(self) -> dict:
+        return {}
+
+    async def check(self) -> dict:
+        from ..services.calendar_service import CalendarService
+        svc = CalendarService()
+        if not svc.available():
+            return {"status": "offline", "detail": svc.unavailable_reason()}
+        if svc.backend_name() == "google":
+            return {"status": "healthy", "detail": "standing by — Google Calendar is the active backend"}
+        return await svc.health()
 
 
 class SmtpImapIntegration(IntegrationAdapter):
     async def check(self) -> dict:
-        if not self.configured():
-            return {"status": "not_configured", "detail": "EMAIL_IMAP_HOST / EMAIL_USER / EMAIL_PASSWORD not set"}
-        host = os.environ["EMAIL_IMAP_HOST"]
-        port = int(os.environ.get("EMAIL_IMAP_PORT", "993") or 993)
-        try:
-            _, w = await asyncio.wait_for(asyncio.open_connection(host, port, ssl=port == 993), timeout=6)
-            w.close()
-            return {"status": "degraded", "detail": f"IMAP {host}:{port} reachable; mailbox tools not implemented yet"}
-        except Exception as e:  # noqa: BLE001
-            return {"status": "offline", "detail": f"cannot reach {host}:{port} ({e.__class__.__name__})"}
+        from ..services.email_service import EmailService
+        svc = EmailService()
+        if not svc.configured():
+            return {"status": "not_configured", "detail": svc.unavailable_reason()}
+        return await svc.health()
 
 
 DEFAULT_ADAPTERS: list[IntegrationAdapter] = [
@@ -183,18 +190,24 @@ DEFAULT_ADAPTERS: list[IntegrationAdapter] = [
                                                   "activate/deactivate"],
                    required_env=["N8N_BASE_URL", "N8N_API_KEY"], optional_env=["N8N_WEBHOOK_BASE_URL"],
                    icon="workflow"),
-    GitHubIntegration("github", "GitHub", "code", ["read repositories", "commits (planned)"],
-                      required_env=["GITHUB_TOKEN"], icon="git-branch"),
+    GitHubIntegration("github", "GitHub", "code",
+                      ["read files", "issues and pull requests", "commits", "repository overview"],
+                      required_env=["GITHUB_TOKEN"], optional_env=["GITHUB_DEFAULT_REPO"], icon="git-branch"),
     ControlPlaneIntegration("control_plane", "Upstream JARVIS control plane", "agent",
                             ["remote master agent", "shared memory"],
                             required_env=["JARVIS_GATEWAY_URL", "JARVIS_GATEWAY_TOKEN"], icon="radio"),
-    GoogleIntegration("google", "Google Workspace (Drive · Gmail · Calendar)", "productivity",
-                      ["drive (planned)", "gmail (planned)", "calendar (planned)"],
+    GoogleIntegration("google_calendar", "Google Calendar", "productivity",
+                      ["read appointments", "book", "move", "cancel"],
                       required_env=["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"],
-                      icon="calendar"),
-    SmtpImapIntegration("email", "E-Mail (IMAP / SMTP)", "communication", ["inbox (planned)", "send (planned)"],
-                        required_env=["EMAIL_IMAP_HOST", "EMAIL_USER", "EMAIL_PASSWORD"],
-                        optional_env=["EMAIL_SMTP_HOST", "EMAIL_IMAP_PORT"], icon="mail"),
+                      optional_env=["GOOGLE_CALENDAR_ID"], icon="calendar"),
+    LocalCalendarIntegration("local_calendar", "Local calendar (fallback)", "productivity",
+                             ["read appointments", "book", "move", "cancel", "writes .ics files"],
+                             icon="calendar"),
+    SmtpImapIntegration("email", "E-Mail (IMAP / SMTP)", "communication",
+                        ["inbox and unread", "search", "read full mail", "draft", "send (approval-gated)"],
+                        required_env=["EMAIL_USER", "EMAIL_PASSWORD"],
+                        optional_env=["EMAIL_IMAP_HOST", "EMAIL_IMAP_PORT", "EMAIL_SMTP_HOST",
+                                      "EMAIL_SMTP_PORT", "EMAIL_SENDER_NAME"], icon="mail"),
     IntegrationAdapter("whatsapp", "WhatsApp", "communication", ["voice notes (planned)"],
                        required_env=["WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID"], icon="message-circle"),
     IntegrationAdapter("ionos", "IONOS", "hosting", ["dns (planned)", "hosting (planned)"],

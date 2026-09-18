@@ -72,7 +72,7 @@ DEFAULT_AGENTS: list[AgentSpec] = [
         description="Reads and writes files in the workspace, runs commands when permitted, "
                     "and reports exactly what changed.",
         capabilities=["code review", "implementation", "debugging", "repository inspection"],
-        tools=["filesystem.*", "terminal.execute", "github.*", "task.*", "web.fetch"],
+        tools=["filesystem.*", "terminal.execute", "github.*", "task.*", "web.fetch", "web.search"],
         instructions=(
             "Work only inside the workspace. Read before you write. Report the files you changed "
             "and anything you could not do. Never claim a command ran if the tool refused it."),
@@ -81,11 +81,12 @@ DEFAULT_AGENTS: list[AgentSpec] = [
         id="research", name="Research Agent", icon="search",
         role="Finds and condenses facts from the web and from workspace documents.",
         description="Fetches pages, reads documents, and returns sourced conclusions.",
-        capabilities=["web research", "document analysis", "summaries"],
-        tools=["web.fetch", "filesystem.list", "filesystem.read", "memory.*"],
+        capabilities=["web search", "web research", "document analysis", "summaries"],
+        tools=["web.search", "web.fetch", "filesystem.list", "filesystem.read", "memory.*", "github.read"],
         instructions=(
-            "Answer only from what you actually fetched or read. Cite the source URL or file. "
-            "Say plainly when something could not be found."),
+            "Search first, then fetch the pages worth reading in full. Answer only from what you "
+            "actually fetched or read, and cite the source URL or file. Say plainly when something "
+            "could not be found rather than filling the gap from memory."),
     ),
     AgentSpec(
         id="server", name="Server Agent", icon="server",
@@ -127,19 +128,23 @@ DEFAULT_AGENTS: list[AgentSpec] = [
     ),
     AgentSpec(
         id="email", name="Email Agent", icon="mail",
-        role="Reads and drafts email once a mailbox integration is connected.",
-        description="Requires the email integration; sending is approval-gated.",
-        capabilities=["inbox search", "drafting", "sending (gated)"],
-        tools=["email.*"],
-        instructions="Draft first, send only through the gated tool.",
+        role="Reads, searches and drafts e-mail; sending is approval-gated.",
+        description="Needs a mailbox in the environment (EMAIL_USER / EMAIL_PASSWORD).",
+        capabilities=["inbox and unread", "search", "read full mail", "drafting", "sending (gated)"],
+        tools=["email.*", "document.create", "memory.*"],
+        instructions=(
+            "Always draft first and read the draft back; send only after the user agrees, and the "
+            "send tool will still ask them to approve it. Write the mail in the recipient's language."),
     ),
     AgentSpec(
         id="calendar", name="Calendar Agent", icon="calendar",
-        role="Books and reads appointments once a calendar integration is connected.",
-        description="Requires the calendar integration.",
-        capabilities=["read calendar", "create events"],
-        tools=["calendar.*"],
-        instructions="Never invent an appointment. Confirm the exact date and time.",
+        role="Books, moves and cancels appointments.",
+        description="Uses Google Calendar when connected, otherwise the local calendar on this server.",
+        capabilities=["read calendar", "create events", "move events", "cancel events"],
+        tools=["calendar.*", "memory.*", "notify.user"],
+        instructions=(
+            "Never invent an appointment and never guess which one was meant — if the title matches "
+            "several, ask. Say which calendar the appointment landed in when it is the local one."),
     ),
 ]
 
@@ -242,11 +247,21 @@ class AgentRegistry:
             return None
         state = self.state(agent_id)
         tools_resolved: list[dict] = []
+        missing: list[str] = []
         if tool_registry is not None:
+            from .tool_registry import _matches
             for t in tool_registry.all():
-                from .tool_registry import _matches
                 if _matches(t.name, spec.tools):
                     tools_resolved.append({"name": t.name, "available": t.available and t.handler is not None})
+            # A capability the agent was given but cannot use is worth naming:
+            # an Email Agent with a working document tool and no mailbox is not
+            # "healthy", it is an agent that cannot do the thing it exists for.
+            for pattern in spec.tools:
+                if pattern == "*":
+                    continue
+                matched = [t for t in tool_registry.all() if _matches(t.name, [pattern])]
+                if matched and not any(t.available and t.handler for t in matched):
+                    missing.append(pattern)
         available_tools = sum(1 for t in tools_resolved if t["available"])
         status = state.status
         if not spec.enabled:
@@ -264,8 +279,12 @@ class AgentRegistry:
             "current_run_id": state.current_run_id, "current_activity": state.current_activity,
             "last_activity_at": state.last_activity_at, "last_error": state.last_error,
             "started_at": state.started_at, "stats": state.stats,
-            "health": "offline" if not spec.enabled else ("degraded" if (
-                tools_resolved and available_tools == 0 and spec.kind != "master") else "healthy"),
+            "missing_tools": missing,
+            "health": ("offline" if not spec.enabled
+                       else "degraded" if (missing or (tools_resolved and available_tools == 0
+                                                       and spec.kind != "master"))
+                       else "healthy"),
+            "health_detail": (f"{', '.join(missing)} not available" if missing else ""),
         }
 
     def list(self, tool_registry=None, provider_info: dict | None = None) -> list[dict]:

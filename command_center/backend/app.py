@@ -35,7 +35,10 @@ from .orchestrator.builtin_tools import register_builtin_tools
 from .orchestrator.runtime import MasterRuntime
 from .orchestrator.tool_registry import ToolRegistry
 from .services.approvals import ApprovalService
+from .services.calendar_service import CalendarService
 from .services.chat_store import ChatStore
+from .services.email_service import EmailService
+from .services.external import GitHubService
 from .services.files import FileService
 from .services.metrics import MetricsService
 from .services.notifications import NotificationService
@@ -67,6 +70,9 @@ def build_state(settings: Settings | None = None) -> AppState:
         "metrics": MetricsService(db, bus, docker_socket=settings.docker_socket,
                                   monitored_services=settings.monitored_services,
                                   history_points=settings.metrics_history_points),
+        "calendar": CalendarService(),
+        "email": EmailService(),
+        "github": GitHubService(),
     })
     state.integrations = IntegrationRegistry(db, bus)
     state.workflows = WorkflowHub(db, bus)

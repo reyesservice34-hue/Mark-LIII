@@ -83,6 +83,27 @@ Conversations created by the desktop appear in the Chat module (owner = the
 token), tasks the agent creates appear in Tasks, every tool call lands in the
 audit trail.
 
+## What the agents can actually do
+
+Every tool is real or honestly marked unavailable — the Agents page names the
+missing credential rather than pretending.
+
+| Tool group | Needs | Notes |
+|---|---|---|
+| `server.*`, `docker.*`, `logs.search` | nothing (docker socket optional) | restarts are approval-gated and off by default |
+| `filesystem.*`, `document.create` | nothing | sandboxed to the workspace, deletes go to `.trash` |
+| `task.*`, `agent.delegate`, `memory.*`, `notify.user` | nothing | |
+| `web.search`, `web.fetch` | nothing | DuckDuckGo HTML, no key or account |
+| `calendar.read/create/move/cancel` | nothing | Google Calendar when configured, otherwise the local store the desktop also reads; cancelling needs approval |
+| `email.search/read/draft/send` | `EMAIL_USER` + `EMAIL_PASSWORD` | IMAP/SMTP, servers guessed from the domain; **sending always needs approval** |
+| `github.read/issues/commits/repo` | `GITHUB_TOKEN` | read-only |
+| `workflow.list/execute/runs` | `N8N_BASE_URL` + `N8N_API_KEY` | trigger is webhook-based |
+| `terminal.execute` | `JARVIS_CC_ALLOW_TERMINAL=true` | admin role **and** approval, runs inside the workspace |
+
+The calendar deliberately reuses `plugins/_calendar_core.py`, so a date the
+desktop refuses is refused here too and appointments booked from either side
+land in the same store.
+
 ## Security model
 
 * Sessions: HttpOnly, SameSite=Lax cookie; `Secure` behind HTTPS; scrypt

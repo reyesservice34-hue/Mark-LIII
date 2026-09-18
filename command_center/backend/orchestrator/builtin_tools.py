@@ -333,17 +333,161 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           _obj({"url": _s("http(s) URL"), "max_chars": _i("cap, default 20000")}, ["url"]),
                           category="web", risk="low", min_role="viewer", handler=web_fetch))
 
-    # ── declared but not yet connected ───────────────────────────────────
-    for name, desc, cat in (
-        ("email.search", "Search the connected mailbox.", "communication"),
-        ("email.send", "Send an email (approval-gated).", "communication"),
-        ("calendar.read", "Read calendar events.", "productivity"),
-        ("calendar.create", "Create a calendar event.", "productivity"),
-        ("github.read", "Read a file or issue from GitHub.", "code"),
-        ("github.commit", "Commit a change to GitHub (approval-gated).", "code"),
-        ("browser.open", "Open a URL in the browser agent.", "web"),
-    ):
-        integration = {"email": "email", "calendar": "google", "github": "github", "browser": "browser"}[name.split(".")[0]]
-        reg.register(ToolSpec(name, desc, _obj({}), category=cat,
-                              risk="high" if name.endswith(("send", "commit")) else "low", handler=None,
-                              available=False, reason=f"{integration} integration not connected"))
+    # ── calendar ─────────────────────────────────────────────────────────
+    calendar = st.services["calendar"]
+    cal_ok = calendar.available()
+    cal_reason = calendar.unavailable_reason()
+
+    async def calendar_read(ctx: ToolContext, args: dict):
+        events, backend = await calendar.list(days=int(args.get("days", 7)), query=str(args.get("query", "")))
+        if not events:
+            return {"backend": backend, "events": [], "note": "no appointments in that period"}
+        return {"backend": backend, "events": [
+            {"title": e["title"], "start": e["start"], "end": e["end"], "location": e["location"],
+             "notes": e["notes"]} for e in events]}
+
+    async def calendar_create(ctx: ToolContext, args: dict):
+        event, backend, note = await calendar.create(
+            title=str(args["title"]), when=str(args["when"]), at=str(args.get("at", "")),
+            duration=args.get("duration", 60), location=str(args.get("location", "")),
+            notes=str(args.get("notes", "")))
+        ctx.emit("calendar", {"text": f"Appointment booked ({backend}): {event['title']} {event['start']}"})
+        return {"booked": True, "backend": backend, "start": event["start"], "end": event["end"],
+                "title": event["title"], "note": note}
+
+    async def calendar_move(ctx: ToolContext, args: dict):
+        event, backend = await calendar.move(str(args["query"]), str(args["when"]), str(args.get("at", "")))
+        return {"moved": True, "backend": backend, "title": event["title"], "start": event["start"]}
+
+    async def calendar_cancel(ctx: ToolContext, args: dict):
+        event, backend = await calendar.cancel(str(args["query"]))
+        return {"cancelled": True, "backend": backend, "title": event["title"], "start": event["start"]}
+
+    reg.register(ToolSpec("calendar.read", "List upcoming appointments. Uses Google Calendar when connected, "
+                          "otherwise the local calendar on this server.",
+                          _obj({"days": _i("how far ahead to look, default 7"),
+                                "query": _s("only appointments whose title contains this")}),
+                          category="productivity", risk="low", min_role="viewer", handler=calendar_read,
+                          available=cal_ok, reason=cal_reason))
+    reg.register(ToolSpec("calendar.create", "Book an appointment. Refuses dates it cannot read rather than guessing.",
+                          _obj({"title": _s("what the appointment is"),
+                                "when": _s("date, e.g. 2026-09-24, 'tomorrow', 'Montag' — may include the time"),
+                                "at": _s("time, e.g. 14:00 (optional if 'when' already has it)"),
+                                "duration": _s("minutes or e.g. '1h', default 60"),
+                                "location": _s("where"), "notes": _s("extra notes")}, ["title", "when"]),
+                          category="productivity", risk="medium", handler=calendar_create,
+                          available=cal_ok, reason=cal_reason))
+    reg.register(ToolSpec("calendar.move", "Move an existing appointment to a new date/time.",
+                          _obj({"query": _s("part of the appointment title"), "when": _s("new date"),
+                                "at": _s("new time")}, ["query", "when"]),
+                          category="productivity", risk="medium", handler=calendar_move,
+                          available=cal_ok, reason=cal_reason))
+    reg.register(ToolSpec("calendar.cancel", "Cancel an appointment. Requires approval.",
+                          _obj({"query": _s("part of the appointment title"), "reason": _s("why")},
+                               ["query", "reason"]),
+                          category="productivity", risk="high", handler=calendar_cancel,
+                          available=cal_ok, reason=cal_reason))
+
+    # ── email ────────────────────────────────────────────────────────────
+    mail = st.services["email"]
+    mail_ok = mail.configured()
+    mail_reason = mail.unavailable_reason()
+
+    async def email_search(ctx: ToolContext, args: dict):
+        q = str(args.get("query", "")).strip()
+        limit = int(args.get("limit", 10))
+        if str(args.get("unread", "")).lower() in ("1", "true", "yes"):
+            items = await mail.unread(limit)
+        elif q:
+            items = await mail.search(q, limit)
+        else:
+            items = await mail.recent(limit)
+        return items or "no matching mail"
+
+    async def email_read(ctx: ToolContext, args: dict):
+        return await mail.read(str(args["query"]))
+
+    async def email_draft(ctx: ToolContext, args: dict):
+        msg = mail.build(str(args["to"]), str(args.get("subject", "")), str(args.get("body", "")),
+                         str(args.get("cc", "")))
+        return {"drafted": True, "to": msg["To"], "subject": msg["Subject"], "body": str(args.get("body", "")),
+                "note": "Nothing was sent. Read the draft to the user and use email.send only once they agree."}
+
+    async def email_send(ctx: ToolContext, args: dict):
+        result = await mail.send(str(args["to"]), str(args.get("subject", "")), str(args.get("body", "")),
+                                 str(args.get("cc", "")))
+        ctx.emit("email", {"text": f"Mail sent to {result['to']}"})
+        return result
+
+    reg.register(ToolSpec("email.search", "Search the mailbox, or list the newest / unread mail.",
+                          _obj({"query": _s("text in subject, sender or body"), "limit": _i("max results"),
+                                "unread": _s("'true' for unread only")}),
+                          category="communication", risk="low", handler=email_search,
+                          available=mail_ok, reason=mail_reason, timeout_seconds=60))
+    reg.register(ToolSpec("email.read", "Read one mail in full, including its body.",
+                          _obj({"query": _s("text identifying the mail")}, ["query"]),
+                          category="communication", risk="low", handler=email_read,
+                          available=mail_ok, reason=mail_reason, timeout_seconds=60))
+    reg.register(ToolSpec("email.draft", "Compose a mail without sending it. Always draft before sending.",
+                          _obj({"to": _s("recipient address"), "subject": _s("subject"), "body": _s("full text"),
+                                "cc": _s("optional cc")}, ["to", "body"]),
+                          category="communication", risk="low", handler=email_draft,
+                          available=mail_ok, reason=mail_reason))
+    reg.register(ToolSpec("email.send", "Send a mail. Irreversible, so it always requires the user's approval.",
+                          _obj({"to": _s("recipient address"), "subject": _s("subject"), "body": _s("full text"),
+                                "cc": _s("optional cc"), "reason": _s("why this mail is being sent")},
+                               ["to", "body", "reason"]),
+                          category="communication", risk="high", handler=email_send,
+                          available=mail_ok, reason=mail_reason, timeout_seconds=90))
+
+    # ── github ───────────────────────────────────────────────────────────
+    gh = st.services["github"]
+    gh_ok = gh.configured()
+    gh_reason = gh.unavailable_reason()
+
+    async def github_read(ctx: ToolContext, args: dict):
+        return await gh.read_file(str(args.get("repo", "")), str(args["path"]), str(args.get("ref", "")))
+
+    async def github_issues(ctx: ToolContext, args: dict):
+        if args.get("number"):
+            return await gh.read_issue(str(args.get("repo", "")), int(args["number"]))
+        return await gh.list_issues(str(args.get("repo", "")), str(args.get("state", "open")),
+                                    int(args.get("limit", 10)))
+
+    async def github_commits(ctx: ToolContext, args: dict):
+        return await gh.list_commits(str(args.get("repo", "")), int(args.get("limit", 10)),
+                                     str(args.get("branch", "")))
+
+    async def github_repo(ctx: ToolContext, args: dict):
+        return await gh.repo_overview(str(args.get("repo", "")))
+
+    reg.register(ToolSpec("github.read", "Read a file or list a directory in a GitHub repository.",
+                          _obj({"repo": _s("owner/repo (optional if GITHUB_DEFAULT_REPO is set)"),
+                                "path": _s("path inside the repository"), "ref": _s("branch, tag or commit")},
+                               ["path"]), category="code", risk="low", min_role="viewer", handler=github_read,
+                          available=gh_ok, reason=gh_reason))
+    reg.register(ToolSpec("github.issues", "List issues and pull requests, or read one with its comments.",
+                          _obj({"repo": _s("owner/repo"), "number": _i("issue/PR number to read in full"),
+                                "state": _s("open|closed|all"), "limit": _i("max rows")}),
+                          category="code", risk="low", min_role="viewer", handler=github_issues,
+                          available=gh_ok, reason=gh_reason))
+    reg.register(ToolSpec("github.commits", "Recent commits on a repository.",
+                          _obj({"repo": _s("owner/repo"), "branch": _s("branch"), "limit": _i("max rows")}),
+                          category="code", risk="low", min_role="viewer", handler=github_commits,
+                          available=gh_ok, reason=gh_reason))
+    reg.register(ToolSpec("github.repo", "Overview of a repository: description, default branch, open issues.",
+                          _obj({"repo": _s("owner/repo")}), category="code", risk="low", min_role="viewer",
+                          handler=github_repo, available=gh_ok, reason=gh_reason))
+
+    # ── web search ───────────────────────────────────────────────────────
+    async def web_search_tool(ctx: ToolContext, args: dict):
+        from ..services.external import web_search
+        results = await web_search(str(args["query"]), int(args.get("limit", 8)), str(args.get("region", "")))
+        return results or "no results"
+
+    reg.register(ToolSpec("web.search", "Search the web and return titles, URLs and snippets. "
+                          "Use web.fetch afterwards to read a promising page in full.",
+                          _obj({"query": _s("what to search for"), "limit": _i("max results, default 8"),
+                                "region": _s("optional region code, e.g. de-de")}, ["query"]),
+                          category="web", risk="low", min_role="viewer", handler=web_search_tool,
+                          timeout_seconds=45))
