@@ -95,8 +95,19 @@ class N8nIntegration(IntegrationAdapter):
             async with httpx.AsyncClient(timeout=8.0) as c:
                 r = await c.get(f"{base}/api/v1/workflows", params={"limit": 1},
                                 headers={"X-N8N-API-KEY": os.environ["N8N_API_KEY"]})
+            # Die Zahl allein schickt niemanden zur Lösung. n8n unterscheidet
+            # zwei Fälle, die gleich aussehen: ein Schlüssel, den es nicht mehr
+            # gibt (401), und eine öffentliche API, die gar nicht eingeschaltet
+            # ist (404 auf einen Pfad, den es sonst immer gibt).
             if r.status_code == 401:
-                return {"status": "offline", "detail": "n8n rejected the API key"}
+                return {"status": "offline",
+                        "detail": "n8n weist den Schlüssel ab — abgelaufen oder widerrufen. "
+                                  "Neu erzeugen in n8n unter Settings → n8n API, dann "
+                                  "setup-keys.sh"}
+            if r.status_code == 404:
+                return {"status": "offline",
+                        "detail": "n8n antwortet, aber die öffentliche API ist dort nicht "
+                                  "eingeschaltet (404 auf /api/v1/workflows)"}
             if r.status_code >= 400:
                 return {"status": "degraded", "detail": f"n8n HTTP {r.status_code}"}
             return {"status": "healthy", "detail": "n8n API reachable"}
