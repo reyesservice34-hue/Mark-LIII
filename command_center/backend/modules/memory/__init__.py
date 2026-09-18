@@ -30,6 +30,10 @@ router = APIRouter(prefix="/api/memory", tags=["memory"])
 
 SETTING_KEY = "master_instructions"
 MAX_INSTRUCTIONS = 20_000
+# Wie viele Sätze ins Hauptgedächtnis dürfen. Die Grenze ist kein Schikane,
+# sondern Physik: Was hier steht, wird bei JEDER Anfrage mitgeschickt und
+# jedes Mal bezahlt. Zwanzig gute Sätze wirken; zweihundert ertränken sie.
+MAX_PINNED = 20
 
 
 class Instructions(BaseModel):
@@ -38,6 +42,7 @@ class Instructions(BaseModel):
 
 class Fact(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
+    pinned: bool = False
 
 
 @router.get("")
@@ -53,6 +58,8 @@ async def overview(limit: int = 200, q: str = "", state: AppState = Depends(get_
     return {
         "instructions": state.db.get_setting(SETTING_KEY, "") or "",
         "facts": rows,
+        "core": state.db.fetchall("SELECT * FROM memory WHERE pinned=1 ORDER BY created_at"),
+        "max_core": MAX_PINNED,
         "total": state.db.scalar("SELECT COUNT(*) FROM memory") or 0,
     }
 
@@ -76,12 +83,42 @@ async def set_instructions(body: Instructions, state: AppState = Depends(get_sta
 @router.post("/facts", status_code=201)
 async def add_fact(body: Fact, state: AppState = Depends(get_state),
                    principal: Principal = Depends(require_role("operator"))):
+    pinned = bool(body.pinned)
+    if pinned and (state.db.scalar("SELECT COUNT(*) FROM memory WHERE pinned=1") or 0) >= MAX_PINNED:
+        raise HTTPException(status_code=400,
+                            detail=f"Das Hauptgedächtnis fasst {MAX_PINNED} Sätze. Erst einen herausnehmen.")
     row = {"id": new_id("mem"), "text": body.text.strip(), "actor": principal.actor,
-           "conversation_id": None, "created_at": now_iso()}
+           "conversation_id": None, "created_at": now_iso(), "pinned": 1 if pinned else 0}
     state.db.insert("memory", row)
     state.log.audit(actor_type="user", actor_id=principal.actor, action="memory.add",
                     target=row["id"], status="ok")
     return {"fact": row}
+
+
+@router.post("/facts/{fact_id}/pin")
+async def pin_fact(fact_id: str, pinned: bool = True, state: AppState = Depends(get_state),
+                   principal: Principal = Depends(require_role("operator"))):
+    """Einen Satz ins Hauptgedächtnis heben — oder wieder herausnehmen.
+
+    Angeheftet heißt: Er steht in jedem Systemtext, bevor die erste Anfrage
+    beantwortet wird. Nicht durchsuchbar-wenn-er-danach-sucht, sondern immer
+    da. Genau deshalb ist die Zahl gedeckelt.
+    """
+    row = state.db.fetchone("SELECT * FROM memory WHERE id=?", (fact_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Diesen Eintrag gibt es nicht.")
+    if pinned and not row["pinned"]:
+        have = state.db.scalar("SELECT COUNT(*) FROM memory WHERE pinned=1") or 0
+        if have >= MAX_PINNED:
+            raise HTTPException(status_code=400, detail=(
+                f"Im Hauptgedächtnis ist Platz für {MAX_PINNED} Sätze, und die sind belegt. "
+                "Nimm erst einen heraus — alles, was hier steht, wird bei jeder Anfrage "
+                "mitgeschickt."))
+    state.db.update("memory", fact_id, {"pinned": 1 if pinned else 0})
+    state.log.audit(actor_type="user", actor_id=principal.actor,
+                    action="memory.pin" if pinned else "memory.unpin", target=fact_id, status="ok")
+    state.bus.publish("memory.core", {"id": fact_id, "pinned": pinned})
+    return {"fact": state.db.fetchone("SELECT * FROM memory WHERE id=?", (fact_id,))}
 
 
 @router.delete("/facts/{fact_id}")

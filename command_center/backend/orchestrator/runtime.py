@@ -88,6 +88,26 @@ def _persona_from_repo() -> str:
     return "\n\n".join(k.strip() for k in keep)
 
 
+def core_memory(state, limit: int = 20) -> str:
+    """Das Hauptgedächtnis als Text — für jeden Systemtext, jedes Mal.
+
+    Der Nutzer wollte ausdrücklich, dass er das VOR jeder Antwort und jeder
+    Handlung kennt. Ein Werkzeug, das er aufrufen könnte, erfüllt das nicht:
+    Er würde es manchmal aufrufen und manchmal nicht. Also steht es im Text,
+    bevor die erste Frage kommt, und kann gar nicht übersehen werden.
+    """
+    try:
+        rows = state.db.fetchall(
+            "SELECT text FROM memory WHERE pinned=1 ORDER BY created_at LIMIT ?", (limit,))
+    except Exception:  # noqa: BLE001
+        return ""
+    if not rows:
+        return ""
+    lines = "\n".join(f"- {r['text']}" for r in rows)
+    return ("HAUPTGEDÄCHTNIS — das hier gilt, ohne Ausnahme, in jeder Antwort und vor jeder "
+            "Handlung. Widerspricht eine Anfrage dem, sag es, statt es zu übergehen:\n" + lines)
+
+
 class ToolExecutor:
     def __init__(self, state: "AppState"):
         self.state = state
@@ -569,7 +589,8 @@ class MasterRuntime:
         # Dieselben stehenden Anweisungen wie im Chat: Eine Regel, die nur
         # getippt gilt und gesprochen nicht, wäre keine Regel.
         standing = str(self.state.db.get_setting("master_instructions", "") or "").strip()
-        return "\n\n".join(x for x in [persona, (
+        core = core_memory(self.state)
+        return "\n\n".join(x for x in [persona, core, (
             "You are on an open voice line. Speak German unless spoken to in another language.\n"
             "Answer in spoken sentences: short, no lists, no markdown, no headings, no code read "
             "out letter by letter. Two or three sentences unless more is genuinely needed.\n"
@@ -586,6 +607,9 @@ class MasterRuntime:
         parts = []
         if agent.kind == "master" and self._persona:
             parts.append(self._persona)
+        core = core_memory(st)
+        if core:
+            parts.append(core)
         parts.append(
             "OPERATING CONTEXT: You run inside the JARVIS Command Center on the user's server. The user "
             "watches a live dashboard: every tool call, task and approval you trigger is visible there. "

@@ -11,12 +11,13 @@ import { useEffect, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
-import { BookOpen, Sparkles, Trash2, Plus, Check } from "@/lib/icons";
+import { BookOpen, Sparkles, Trash2, Plus, Check, Zap, X } from "@/lib/icons";
 import { Panel, EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { relative } from "@/lib/format";
+import "@/modules/home/architecture.css";
 
-interface Fact { id: string; text: string; actor: string; created_at: string }
-interface Payload { instructions: string; facts: Fact[]; total: number }
+interface Fact { id: string; text: string; actor: string; created_at: string; pinned: number }
+interface Payload { instructions: string; facts: Fact[]; core: Fact[]; max_core: number; total: number }
 
 const BEISPIEL = `Sprich mich mit „Chef" an.
 Angebote immer mit 14 Tagen Bindefrist.
@@ -69,7 +70,13 @@ export default function MemoryPage() {
     } catch (e: any) { toast({ title: "Ging nicht", body: e?.message, tone: "err" }); }
   };
 
+  const pin = async (f: Fact, pinned: boolean) => {
+    try { await api.post(`/api/memory/facts/${f.id}/pin?pinned=${pinned}`); reload(); }
+    catch (e: any) { toast({ title: "Ging nicht", body: e?.message, tone: "err" }); }
+  };
+
   const facts = (data?.facts || []).filter((f) => !q || f.text.toLowerCase().includes(q.toLowerCase()));
+  const core = data?.core || [];
 
   if (error) return <div className="page"><ErrorState error={error} retry={reload} /></div>;
 
@@ -82,6 +89,29 @@ export default function MemoryPage() {
             hier änderbar, ohne Neustart.</p>
         </div>
       </header>
+
+      <Panel title={`Hauptgedächtnis${data ? ` · ${core.length}/${data.max_core}` : ""}`}
+        icon={<Zap size={15} />}
+        foot="Diese Sätze stehen in JEDEM Systemtext — vor jeder Antwort und vor jeder Handlung, ohne dass er etwas aufrufen muss. Deshalb ist der Platz begrenzt: Was hier steht, wird bei jeder Anfrage mitgeschickt.">
+        {loading && !data ? <div className="panel-body"><Skeleton rows={2} /></div>
+          : core.length === 0 ? (
+            <div className="panel-body small muted">
+              Noch nichts angeheftet. Unten bei „Gemerktes" auf das Blitzsymbol klicken — dann steht
+              der Satz künftig in jedem Gespräch, statt nur gefunden zu werden, wenn er danach sucht.
+            </div>
+          ) : (
+            <ul className="core-list">
+              {core.map((f) => (
+                <li key={f.id}>
+                  <span className="core-mark" aria-hidden />
+                  <span className="core-text">{f.text}</span>
+                  <button className="btn sm ghost" onClick={() => pin(f, false)}
+                    title="Aus dem Hauptgedächtnis nehmen"><X size={13} /></button>
+                </li>
+              ))}
+            </ul>
+          )}
+      </Panel>
 
       <Panel title="Stehende Anweisungen" icon={<Sparkles size={15} />}
         actions={<button className="btn sm primary" onClick={save} disabled={saving || !dirty}>
@@ -127,10 +157,17 @@ export default function MemoryPage() {
               <tbody>
                 {facts.map((f) => (
                   <tr key={f.id}>
-                    <td>{f.text}</td>
+                    <td>
+                      {f.pinned ? <span className="core-badge" title="Im Hauptgedächtnis"><Zap size={11} /></span> : null}
+                      {f.text}
+                    </td>
                     <td className="small muted">{f.actor || "—"}</td>
                     <td className="small muted">{relative(f.created_at)}</td>
-                    <td style={{ textAlign: "right" }}>
+                    <td className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+                      <button className={`btn sm ${f.pinned ? "primary" : ""}`} onClick={() => pin(f, !f.pinned)}
+                        title={f.pinned ? "Aus dem Hauptgedächtnis nehmen" : "Ins Hauptgedächtnis heben — gilt dann immer"}>
+                        <Zap size={13} />
+                      </button>
                       <button className="btn sm danger" onClick={() => delFact(f)} title="Diesen Eintrag löschen">
                         <Trash2 size={13} />
                       </button>

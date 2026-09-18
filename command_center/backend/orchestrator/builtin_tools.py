@@ -301,8 +301,19 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                                ["title"]), category="communication", risk="low", handler=notify_user))
 
     async def memory_remember(ctx: ToolContext, args: dict):
-        st.db.insert("memory", {"id": new_id("mem"), "text": str(args["text"])[:4000], "actor": ctx.principal.actor,
+        row_id = new_id("mem")
+        st.db.insert("memory", {"id": row_id, "text": str(args["text"])[:4000], "actor": ctx.principal.actor,
                                 "conversation_id": ctx.conversation_id, "created_at": now_iso()})
+        if args.get("core"):
+            # Das Hauptgedächtnis ist gedeckelt: Was hier hineinkommt, wird bei
+            # jeder Anfrage mitgeschickt. Ist kein Platz, wird das gesagt statt
+            # still einen anderen Satz zu verdrängen.
+            have = st.db.scalar("SELECT COUNT(*) FROM memory WHERE pinned=1") or 0
+            if have >= 20:
+                return ("Gemerkt — aber nicht im Hauptgedächtnis: dort sind alle 20 Plätze belegt. "
+                        "Der Nutzer kann im Dashboard unter Gedächtnis einen herausnehmen.")
+            st.db.execute("UPDATE memory SET pinned=1 WHERE id=?", (row_id,))
+            return "remembered (im Hauptgedächtnis)"
         return "remembered"
 
     async def memory_search(ctx: ToolContext, args: dict):
@@ -310,8 +321,29 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                               (f"%{args['query']}%", int(args.get("limit", 10))))
         return rows or "nothing stored matches"
 
-    reg.register(ToolSpec("memory.remember", "Store a fact or preference for later.", _obj({"text": _s("fact")}, ["text"]),
+    reg.register(ToolSpec("memory.remember",
+                          "Store a fact or preference for later. Set core=true only for things that must "
+                          "hold in every single conversation — those are put in front of you every time, "
+                          "and there is room for a handful, not a hundred.",
+                          _obj({"text": _s("fact"), "core": {"type": "boolean",
+                                "description": "put it in the main memory, present in every conversation"}},
+                               ["text"]),
                           category="memory", risk="low", handler=memory_remember))
+    async def memory_forget(ctx: ToolContext, args: dict):
+        q = str(args["query"])
+        rows = st.db.fetchall("SELECT id, text FROM memory WHERE text LIKE ? LIMIT 5", (f"%{q}%",))
+        if not rows:
+            return f"Nichts Gemerktes passt auf '{q}'.", False
+        if len(rows) > 1:
+            return ("Mehrere Einträge passen — welcher? "
+                    + " | ".join(r["text"][:80] for r in rows)), False
+        st.db.execute("DELETE FROM memory WHERE id=?", (rows[0]["id"],))
+        return f"Vergessen: {rows[0]['text'][:120]}"
+
+    reg.register(ToolSpec("memory.forget", "Delete one remembered fact. Only deletes when exactly one "
+                          "entry matches, so nothing disappears by accident.",
+                          _obj({"query": _s("text of the fact to forget")}, ["query"]),
+                          category="memory", risk="medium", handler=memory_forget))
     reg.register(ToolSpec("memory.search", "Search stored facts.", _obj({"query": _s("keyword"), "limit": _i("")}, ["query"]),
                           category="memory", risk="low", min_role="viewer", handler=memory_search))
 

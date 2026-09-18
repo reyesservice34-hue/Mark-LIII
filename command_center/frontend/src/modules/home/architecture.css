@@ -105,3 +105,16 @@
 .quick svg { color: #ff9d2e; flex: none; }
 
 @media (prefers-reduced-motion: reduce) { .deck-cell.live .dot { animation: none; } }
+
+/* ── Hauptgedächtnis ─────────────────────────────────────────────────────
+   Bewusst wie eine Tafel und nicht wie eine Tabelle: Was hier steht, gilt
+   immer, und das soll man sehen, bevor man es liest. */
+.core-list { list-style: none; margin: 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.core-list li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 9px;
+  border: 1px solid rgba(255,157,46,.28); background: rgba(255,157,46,.05); font-size: 13.5px; }
+.core-mark { width: 6px; height: 6px; border-radius: 50%; background: #ff9d2e; flex: none;
+  box-shadow: 0 0 8px rgba(255,157,46,.7); }
+.core-text { flex: 1 1 auto; min-width: 0; }
+.core-list .btn { flex: none; }
+.core-badge { display: inline-flex; align-items: center; margin-right: 6px; color: #ff9d2e;
+  vertical-align: -1px; }

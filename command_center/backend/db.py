@@ -149,9 +149,11 @@ CREATE TABLE IF NOT EXISTS logs (
 );
 CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(ts);
 CREATE INDEX IF NOT EXISTS idx_logs_source ON logs(source, level);
+-- pinned: gehört ins Hauptgedächtnis. Solche Sätze stehen in JEDEM Gespräch
+-- im Systemtext, nicht erst nach einer Suche — deshalb ist ihre Zahl begrenzt.
 CREATE TABLE IF NOT EXISTS memory (
   id TEXT PRIMARY KEY, text TEXT NOT NULL, actor TEXT NOT NULL DEFAULT '',
-  conversation_id TEXT, created_at TEXT NOT NULL
+  conversation_id TEXT, created_at TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS metrics (
@@ -281,9 +283,29 @@ class Database:
         self._migrate()
 
     # ── schema ───────────────────────────────────────────────────────────
+    # Spalten, die später dazugekommen sind. CREATE TABLE IF NOT EXISTS legt
+    # eine bestehende Tabelle nicht an, also fehlt die neue Spalte auf jedem
+    # Server, der schon lief — und der Fehler kommt erst beim ersten Zugriff.
+    ADDED_COLUMNS: dict[str, dict[str, str]] = {
+        "memory": {"pinned": "INTEGER NOT NULL DEFAULT 0"},
+    }
+
+    def _ensure_columns(self) -> None:
+        for table, columns in self.ADDED_COLUMNS.items():
+            try:
+                have = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+            except sqlite3.Error:
+                continue
+            if not have:
+                continue
+            for name, ddl in columns.items():
+                if name not in have:
+                    self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+
     def _migrate(self) -> None:
         with self._lock:
             self._conn.executescript(SCHEMA)
+            self._ensure_columns()
             row = self._conn.execute("SELECT version FROM schema_version").fetchone()
             if row is None:
                 self._conn.execute("INSERT INTO schema_version(version) VALUES (?)", (SCHEMA_VERSION,))

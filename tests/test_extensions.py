@@ -408,5 +408,43 @@ with TestClient(app) as c:
     finally:
         srv.close()
 
+    print("\n13. Hauptgedächtnis: gilt immer, ohne dass er etwas aufrufen muss")
+    r = c.post("/api/memory/facts", headers=H,
+               json={"text": "Der Firmenwagen ist ein Sprinter, Kennzeichen HH-RS 412."})
+    fid = r.json()["fact"]["id"]
+    master = state.agents.get(state.agents.master_id())
+
+    prompt = state.runtime._system_prompt(master, state.tools.available())
+    check("ein gewöhnlicher Merksatz steht NICHT im Systemtext", "Sprinter" not in prompt)
+
+    r = c.post(f"/api/memory/facts/{fid}/pin", headers=H)
+    check("anheften geht", r.status_code == 200, r.text)
+    prompt = state.runtime._system_prompt(master, state.tools.available())
+    check("angeheftet steht er im Systemtext", "Sprinter" in prompt)
+    check("und ist als unumgehbar gekennzeichnet", "HAUPTGEDÄCHTNIS" in prompt)
+    check("er gilt auch auf der Sprachleitung", "Sprinter" in state.runtime.live_instructions())
+
+    r = c.post(f"/api/memory/facts/{fid}/pin?pinned=false", headers=H)
+    check("wieder herausnehmen geht", r.status_code == 200, r.text)
+    check("dann ist er auch aus dem Systemtext raus",
+          "Sprinter" not in state.runtime._system_prompt(master, state.tools.available()))
+
+    # Die Grenze ist der Punkt: Was hier steht, kostet bei jeder Anfrage.
+    ids = []
+    for i in range(20):
+        rr = c.post("/api/memory/facts", headers=H, json={"text": f"Kernsatz {i}", "pinned": True})
+        check(f"Platz {i + 1} belegt", rr.status_code == 201, rr.text) if i in (0, 19) else None
+        ids.append(rr.json()["fact"]["id"])
+    r = c.post("/api/memory/facts", headers=H, json={"text": "einer zu viel", "pinned": True})
+    check("der 21. wird abgelehnt statt still zu verdrängen", r.status_code == 400, r.text)
+    check("mit einem Grund, der zur Lösung führt", "Hauptgedächtnis" in r.json()["detail"], r.json())
+
+    core_text = state.runtime._system_prompt(master, state.tools.available())
+    check("alle 20 stehen im Systemtext", core_text.count("Kernsatz") == 20, core_text.count("Kernsatz"))
+
+    c.delete("/api/memory/facts?confirm=ALLES", headers=H)
+    check("nach dem Leeren ist auch das Hauptgedächtnis leer",
+          "HAUPTGEDÄCHTNIS" not in state.runtime._system_prompt(master, state.tools.available()))
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)
