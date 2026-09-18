@@ -16,7 +16,8 @@ from .base import LLMProvider, ProviderInfo, ToolDef  # noqa: F401
 def _anthropic():
     from .anthropic_provider import AnthropicProvider
     return AnthropicProvider(api_key=os.environ["ANTHROPIC_API_KEY"],
-                             model=os.environ.get("JARVIS_AI_MODEL") or "claude-opus-5")
+                             model=os.environ.get("JARVIS_AI_MODEL") or "claude-opus-5",
+                             workspace_id=os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip())
 
 
 def _openai():

@@ -658,5 +658,41 @@ finally:
     for k in ("COMPOSIO_API_KEY", "COMPOSIO_USER_ID", "COMPOSIO_BASE_URL"):
         os.environ.pop(k, None)
 
+print("\n14. provider errors must name the fix, not just repeat the API")
+# A raw SDK message is honest but useless: the operator sees a 400 and cannot
+# tell which of their settings caused it. This one cost a real user a session.
+from command_center.backend.ai.anthropic_provider import _explain  # noqa: E402
+
+workspace = _explain(400, "This API key is not scoped to a workspace, so this request must include "
+                          "the anthropic-workspace-id header with the ID of the workspace to use.")
+check("workspace-scoping error names the variable and the console",
+      "ANTHROPIC_WORKSPACE_ID" in workspace and "console.anthropic.com" in workspace, workspace)
+credit = _explain(400, "Your credit balance is too low to access the Claude API.")
+check("an empty account says so plainly", "credit" in credit and "billing" in credit, credit)
+model404 = _explain(404, "model: claude-does-not-exist")
+check("an unknown model points at JARVIS_AI_MODEL", "JARVIS_AI_MODEL" in model404, model404)
+overloaded = _explain(529, "Overloaded")
+check("anything else is passed through verbatim", overloaded == "Anthropic API error 529: Overloaded",
+      overloaded)
+
+os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-not-a-real-key"
+os.environ["ANTHROPIC_WORKSPACE_ID"] = "wrkspc_test123"
+try:
+    from command_center.backend.ai import build_provider  # noqa: E402
+    prov = build_provider("anthropic")
+    sent = getattr(prov._client, "default_headers", {}) or {}   # noqa: SLF001
+    check("the workspace id is sent as a header",
+          sent.get("anthropic-workspace-id") == "wrkspc_test123", dict(sent))
+    os.environ.pop("ANTHROPIC_WORKSPACE_ID")
+    plain = build_provider("anthropic")
+    plain_headers = getattr(plain._client, "default_headers", {}) or {}   # noqa: SLF001
+    check("and left out entirely when unset", "anthropic-workspace-id" not in plain_headers,
+          dict(plain_headers))
+except ImportError:
+    check("anthropic SDK present for the header check", False, "anthropic not installed")
+finally:
+    for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID"):
+        os.environ.pop(k, None)
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

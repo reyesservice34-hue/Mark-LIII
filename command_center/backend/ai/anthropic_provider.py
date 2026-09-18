@@ -6,11 +6,40 @@ from typing import AsyncIterator
 from .base import ProviderInfo, ToolDef
 
 
+def _explain(status: int, message: str) -> str:
+    """Turn the API's own wording into something that names the fix.
+
+    Passing the raw SDK text through is honest but useless: the operator sees
+    a 400 and has no idea which of their settings caused it. Only cases whose
+    remedy is unambiguous are translated; everything else stays verbatim.
+    """
+    low = (message or "").lower()
+    if "workspace" in low and "scoped" in low:
+        return ("Anthropic refused the key: it belongs to the organisation, not to a workspace, "
+                "so every request must name one. Either set ANTHROPIC_WORKSPACE_ID in "
+                "command_center/.env, or create a new key inside a workspace at "
+                "console.anthropic.com/settings/keys.")
+    if "credit balance" in low or "insufficient" in low:
+        return ("Anthropic refused the request: the account has no credit left. "
+                "Top up at console.anthropic.com/settings/billing.")
+    if status == 404 and "model" in low:
+        return (f"Anthropic does not know that model. Check JARVIS_AI_MODEL in "
+                f"command_center/.env — {message}")
+    return f"Anthropic API error {status}: {message}"
+
+
 class AnthropicProvider:
-    def __init__(self, api_key: str, model: str = "claude-opus-5"):
+    def __init__(self, api_key: str, model: str = "claude-opus-5", workspace_id: str = ""):
         import anthropic
         self._anthropic = anthropic
-        self._client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=2)
+        # An API key created at organisation level rather than inside a
+        # workspace carries no workspace of its own, and every request is
+        # rejected with 400 until one is named. The alternative — creating the
+        # key inside a workspace — is not always the user's to make, so the
+        # header is supported here.
+        headers = {"anthropic-workspace-id": workspace_id} if workspace_id else None
+        self._client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=2,
+                                                default_headers=headers)
         self.info = ProviderInfo(id="anthropic", model=model, label=f"Anthropic · {model}")
 
     @staticmethod
@@ -62,7 +91,7 @@ class AnthropicProvider:
             yield {"type": "error", "message": f"Anthropic rate limit: {e.message}", "retryable": True}
             return
         except anthropic.APIStatusError as e:
-            yield {"type": "error", "message": f"Anthropic API error {e.status_code}: {e.message}",
+            yield {"type": "error", "message": _explain(e.status_code, e.message),
                    "retryable": e.status_code >= 500}
             return
         except anthropic.APIConnectionError as e:
