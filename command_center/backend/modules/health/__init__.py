@@ -60,9 +60,17 @@ async def health(state: AppState = Depends(get_state)):
         db_status = {"status": "offline", "detail": str(e)[:100]}
     master = state.runtime.status()
     ph = master["provider_health"].get("status", "unknown")
-    gateway = {"status": ("healthy" if master["online"] and ph in ("healthy", "unknown") else
-                          "degraded" if master["online"] else "offline"),
-               "detail": master["label"], "mode": master["mode"]}
+    # „degraded" mit dem Text „JARVIS READY" daneben ist keine Auskunft: es
+    # sagt, dass etwas klemmt, und verschweigt was. Klemmt es, steht hier,
+    # woran — das ist die einzige Stelle, an der man ohne Anmeldung nachsehen
+    # kann, und genau dort wird gesucht, wenn er nicht antwortet.
+    healthy = master["online"] and ph in ("healthy", "unknown")
+    trouble = str(master["provider_health"].get("detail") or master.get("error") or "").strip()
+    gateway = {"status": "healthy" if healthy else "degraded" if master["online"] else "offline",
+               "detail": master["label"] if healthy else (trouble[:200] or master["label"]),
+               "mode": master["mode"]}
+    if not healthy and master["provider_health"].get("status"):
+        gateway["provider"] = master["provider_health"]["status"]
     integ = state.integrations.summary()
     integrations = {"status": "healthy" if integ["degraded"] == 0 else "degraded",
                     "detail": f"{integ['connected']} connected, {integ['degraded']} with problems, "
