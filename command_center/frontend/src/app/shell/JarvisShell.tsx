@@ -10,6 +10,7 @@ import { registerCommands } from "@/app/commands/commands";
 import { ApprovalDialog } from "@/modules/approvals/ApprovalDialog";
 import { Sidebar } from "./Sidebar";
 import { TopStatusBar } from "./TopStatusBar";
+import { LiveBar } from "./LiveBar";
 
 export function JarvisShell() {
   const { modules, logout } = useAuth();
@@ -62,6 +63,7 @@ export function JarvisShell() {
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
       <TopStatusBar />
       <main className="main" id="main">
+        <LiveBar />
         {conn.state !== "online" && conn.state !== "connecting" && (
           <div className={`conn-banner ${conn.state === "offline" ? "err" : ""}`} role="status">
             {conn.state === "offline" ? "Live connection lost — data may be stale." : "Reconnecting to the live stream…"}

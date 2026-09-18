@@ -44,3 +44,24 @@
 
 .conn-banner { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 6px 12px; font-size: 12px; background: var(--warn-soft); color: var(--warn); border-bottom: 1px solid rgba(255,180,84,0.3); }
 .conn-banner.err { background: var(--err-soft); color: var(--err); border-color: rgba(255,93,108,0.3); }
+
+/* ── Die offene Leitung, sichtbar auf jeder Seite ────────────────────────
+   Sie liegt über dem Inhalt statt im Textfluss: ein Streifen, der die Seite
+   beim Öffnen der Leitung um ein paar Pixel verschiebt, lässt jeden Klick
+   danebengehen. */
+.live-bar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 10px;
+  padding: 7px 14px; font-size: 12px; background: var(--accent-soft, rgba(90,169,255,0.12));
+  color: var(--accent); border-bottom: 1px solid rgba(90,169,255,0.28);
+  backdrop-filter: blur(8px); }
+.live-bar-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 auto;
+  animation: live-bar-pulse 1.6s ease-in-out infinite; }
+.live-bar.phase-speaking .live-bar-dot { animation-duration: .55s; }
+.live-bar.phase-thinking { color: var(--warn); border-bottom-color: rgba(255,180,84,0.3); }
+.live-bar-label { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0;
+  color: inherit; font: inherit; cursor: pointer; padding: 0; white-space: nowrap; }
+.live-bar-label:hover { text-decoration: underline; }
+.live-bar-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: var(--fg-muted, inherit); opacity: .85; }
+.live-bar .btn { margin-left: auto; flex: 0 0 auto; }
+@keyframes live-bar-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (max-width: 720px) { .live-bar-text { display: none; } }

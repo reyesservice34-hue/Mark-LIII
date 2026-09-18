@@ -112,6 +112,13 @@ ask() {
 
 ask ANTHROPIC_API_KEY "Anthropic (Claude)" "console.anthropic.com/settings/keys" \
     'sk-ant-*' "ein Anthropic-Schlüssel (sk-ant-…)"
+# Ein Schlüssel, der auf Organisationsebene angelegt wurde, gehört zu keinem
+# Arbeitsbereich — Anthropic lehnt dann jede Anfrage mit 400 ab, bis einer
+# genannt wird. Ohne dieses Feld ist das nur über einen Texteditor zu beheben,
+# und der Fehler sieht aus wie ein kaputter Schlüssel.
+ask ANTHROPIC_WORKSPACE_ID "Anthropic-Arbeitsbereich (nur falls nötig)" \
+    "steht in der Konsolen-Adresse des Arbeitsbereichs, beginnt mit wrkspc_ — sonst Enter" \
+    'wrkspc_*' "eine Arbeitsbereichs-Kennung (wrkspc_…)"
 ask OPENAI_API_KEY    "OpenAI"             "platform.openai.com/api-keys" \
     'sk-*' "ein OpenAI-Schlüssel (sk-…)"
 ask GEMINI_API_KEY    "Google Gemini"      "aistudio.google.com/apikey" \

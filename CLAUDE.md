@@ -46,7 +46,7 @@ Antwortsprache: Deutsch, solange der Nutzer deutsch schreibt.
   Git. `config/api_keys.json` und `command_center/.env` sind gitignored.
 - **Bestehendes nicht kaputtmachen.** Die Desktop-App muss ohne Server weiterlaufen.
   Änderungen an `main.py` bleiben klein und optional zuschaltbar.
-- **Vor dem Commit:** `python tests/test_*.py` (alle vier), im Frontend
+- **Vor dem Commit:** `python tests/test_*.py` (alle), im Frontend
   `npx tsc --noEmit`, `npx eslint src --ext .ts,.tsx`, `npx vite build`.
 
 ## Tests laufen lassen
@@ -56,5 +56,6 @@ python tests/test_control_plane.py          # Desktop-Client-Vertrag
 python tests/test_command_center.py         # Server end-to-end
 python tests/test_command_center_tools.py   # Kalender, Mail, GitHub, Suche, Sprache
 python tests/test_command_center_teach.py   # Desktop-Fernsteuerung, Lernen
+python tests/test_live_line_ui.py           # offene Leitung im Browser (braucht node + Playwright)
 cd command_center/frontend && npx tsc --noEmit && npx eslint src --ext .ts,.tsx && npx vite build
 ```

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { Mic, Square } from "@/lib/icons";
-import { LiveLine, type LiveState } from "@/app/voice/live";
+import { type LiveState } from "@/app/voice/live";
+import { closeLine, openLine, useLive } from "@/app/voice/liveStore";
 import "./voice-console.css";
 
 const PHASE_LABEL: Record<LiveState, string> = {
@@ -33,12 +34,14 @@ interface LiveCaps {
  */
 export function VoiceConsole() {
   const [caps, setCaps] = useState<LiveCaps | null>(null);
-  const [state, setState] = useState<LiveState>("closed");
-  const [heard, setHeard] = useState("");
-  const [said, setSaid] = useState("");
-  const [tools, setTools] = useState<{ name: string; ok: boolean }[]>([]);
-  const line = useRef<LiveLine | null>(null);
+  // Zustand und Leitung liegen im Speicher der Anwendung. Diese Konsole ist
+  // nur das Fenster darauf — sie wird beim Seitenwechsel abgebaut, das
+  // Gespräch nicht.
+  const live = useLive();
+  const state: LiveState = live.phase;
+  const { heard, said, tools } = live;
   const alive = useRef(true);
+  const shown = useRef("");
 
   useEffect(() => {
     alive.current = true;
@@ -46,8 +49,18 @@ export function VoiceConsole() {
       .then((c) => alive.current && setCaps(c))
       .catch(() => alive.current && setCaps({ available: false, detail: "Der Server hat auf die Anfrage "
         + "nach der Live-Leitung nicht geantwortet.", model: "", voice: "", tools: 0 }));
-    return () => { alive.current = false; void line.current?.stop(); };
+    return () => { alive.current = false; };
   }, []);
+
+  // Fehler kommen aus dem Speicher und sollen einmal auffallen, nicht bei
+  // jedem Neuzeichnen erneut.
+  useEffect(() => {
+    if (live.error && live.error !== shown.current) {
+      shown.current = live.error;
+      toast({ title: "Live-Leitung", body: live.error, tone: "err" });
+    }
+    if (!live.error) shown.current = "";
+  }, [live.error]);
 
   // Der Browser gibt das Mikrofon nur auf sicherem Ursprung frei. Das ist
   // keine Servereinstellung — also hier benannt, statt den Nutzer rätseln zu
@@ -62,29 +75,14 @@ export function VoiceConsole() {
 
   const start = useCallback(async () => {
     if (blocked || open) return;
-    setHeard(""); setSaid(""); setTools([]);
-    const l = new LiveLine({
-      onState: (s) => alive.current && setState(s),
-      onHeard: (t) => alive.current && (setHeard(t), setSaid("")),
-      onSaid: (t) => alive.current && setSaid(t),
-      onTool: (name, ok) => alive.current && setTools((x) => [...x.slice(-4), { name, ok }]),
-      onError: (d) => toast({ title: "Live-Leitung", body: d, tone: "err" }),
-      onClose: () => alive.current && setState("closed"),
-    });
-    line.current = l;
     try {
-      await l.start();
-    } catch (e: any) {
-      setState("closed");
-      toast({ title: "Leitung nicht geöffnet", body: e?.message, tone: "err" });
+      await openLine();
+    } catch {
+      // Der Grund steht schon im Speicher und wird oben angezeigt.
     }
   }, [blocked, open]);
 
-  const stop = useCallback(async () => {
-    await line.current?.stop();
-    line.current = null;
-    setState("closed");
-  }, []);
+  const stop = useCallback(async () => { await closeLine(); }, []);
 
   return (
     <section className={`voice-console phase-${state}`} aria-label="Sprachkonsole">
@@ -112,8 +110,9 @@ export function VoiceConsole() {
             {said ? <p className="vc-answer">{said}</p>
               : !heard && (
                 <p className="vc-hint">
-                  {open ? "Sprich einfach los. Das Mikrofon bleibt offen, und du kannst ihm jederzeit "
-                        + "ins Wort fallen."
+                  {open ? "Sprich einfach los. Das Mikrofon bleibt offen, du kannst ihm jederzeit ins "
+                        + "Wort fallen, und die Leitung bleibt bestehen, auch wenn du im Dashboard "
+                        + "woanders hingehst — sie endet erst, wenn du sie schließt."
                     : "Öffne die Leitung und sprich. Er hört durchgehend zu, antwortet mit Stimme und "
                       + "greift dabei auf seine echten Werkzeuge zu."}
                 </p>
