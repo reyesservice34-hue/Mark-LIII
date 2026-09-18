@@ -31,6 +31,12 @@ class ToolContext:
     conversation_id: str | None = None
     depth: int = 0
     emit: Callable[[str, dict], None] = lambda kind, data: None
+    # Ein Werkzeug, das ein Bild besorgt — ein Bildschirmfoto des PCs, eine
+    # Seite im Browser —, gibt hier den Pfad im Arbeitsbereich ab. Die
+    # Agentenschleife hängt es an den nächsten Zug, damit das Modell es
+    # WIRKLICH sieht. Ein Pfad im Text allein nützt ihm nichts: Er kann ihn
+    # lesen, aber nicht ansehen.
+    attach: Callable[[str], None] = lambda path: None
 
 
 Handler = Callable[[ToolContext, dict], Awaitable[Any]]

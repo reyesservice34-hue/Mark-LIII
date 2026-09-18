@@ -423,10 +423,14 @@ class MasterRuntime:
             tools = [t for t in tools if t.name != "agent.delegate"]
         system = self._system_prompt(agent, tools)
         tool_defs = [t.to_def() for t in tools]
+        # Bilder, die Werkzeuge in diesem Zug besorgt haben. Nach den
+        # Werkzeugergebnissen gehen sie als eigene Nachricht an das Modell.
+        pending_images: list[str] = []
         ctx = ToolContext(state=st, principal=handle.principal, agent_id=handle.agent_id, run_id=handle.id,
                           task_id=handle.task_id, conversation_id=handle.conversation_id, depth=handle.depth,
                           emit=lambda kind, data: self._step(handle, kind, data.get("text", kind), **{
-                              k: v for k, v in data.items() if k != "text"}))
+                              k: v for k, v in data.items() if k != "text"}),
+                          attach=pending_images.append)
         turns: list[dict] = []
         text_out: list[str] = []
         last_flush = 0.0
@@ -505,10 +509,49 @@ class MasterRuntime:
             turns.append({"role": "user", "content": [
                 {**r, "content": trim(r["content"], 1500)} for r in results]})
 
+            # Sehen, nicht nur lesen: Ein Bildschirmfoto als Pfad im Text wäre
+            # für das Modell eine Zeichenkette. Als Bildblock ist es das, was
+            # der Nutzer vor sich hat.
+            if pending_images:
+                blocks = self._image_blocks(pending_images)
+                pending_images.clear()
+                if blocks:
+                    messages.append({"role": "user", "content": blocks})
+                    turns.append({"role": "user", "content": [
+                        {"type": "text", "text": "[Bild vom Werkzeug angehängt]"}]})
+
         handle._turns = turns  # type: ignore[attr-defined]
         final = "\n\n".join(text_out).strip()
         handle.text = final
         return final
+
+    def _image_blocks(self, paths: list[str]) -> list[dict]:
+        """Bilder aus dem Arbeitsbereich in Blöcke, die jeder Anbieter versteht.
+
+        Grenzen mit Absicht: höchstens drei Bilder pro Zug und 5 MB je Bild.
+        Ein Zug, der zehn Bildschirmfotos mitschleppt, sprengt das Fenster und
+        macht die Antwort schlechter statt besser.
+        """
+        out: list[dict] = []
+        root = Path(self.state.services["files"].root)
+        for rel in paths[:3]:
+            try:
+                path = (root / rel).resolve() if not Path(rel).is_absolute() else Path(rel).resolve()
+                path.relative_to(root)                      # nichts von außerhalb
+                data = path.read_bytes()
+            except (OSError, ValueError):
+                continue
+            if len(data) > 5 * 1024 * 1024:
+                continue
+            mime = mimetypes.guess_type(path.name)[0] or "image/png"
+            if not mime.startswith("image/"):
+                continue
+            out.append({"type": "image", "media_type": mime,
+                        "data": base64.b64encode(data).decode()})
+        if out:
+            out.append({"type": "text", "text": "Das ist das Bild, das dein Werkzeug geholt hat. "
+                                                "Beschreibe nur, was wirklich darauf zu sehen ist."})
+        return out
 
     # ── delegation (called by the agent.delegate tool) ───────────────────
     async def delegate(self, ctx: ToolContext, agent_id: str, instruction: str, title: str = "") -> str:

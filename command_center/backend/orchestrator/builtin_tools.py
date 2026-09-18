@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import os
 import re
 import shutil
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
@@ -874,6 +876,55 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           category="desktop", risk="high" if gate_desktop else "medium",
                           requires_approval=gate_desktop, handler=desktop_click, timeout_seconds=90))
 
+    # ── den Bildschirm des Nutzers sehen ─────────────────────────────────
+    # Der PC schickt das Bild selbst, nicht einen Pfad. Hier wird es in den
+    # Arbeitsbereich gelegt und dem Modell als Bild angehängt — sonst bliebe
+    # es eine Zeichenkette, die es lesen, aber nicht ansehen kann.
+    async def desktop_screen(ctx: ToolContext, args: dict):
+        device = desktop.resolve(str(args.get("device", "")))
+        if not any(a.get("name") == "screen_capture" for a in device["actions"]):
+            return (f"'{device['name']}' kann noch keine Bildschirmfotos schicken. Auf dem PC "
+                    f"einmal git pull und JARVIS.bat neu starten.", False)
+        cmd = await desktop.dispatch(device_id=device["id"], action="screen_capture",
+                                     params={"monitor": int(args.get("monitor", 0) or 0)},
+                                     requested_by=ctx.principal.actor, agent_id=ctx.agent_id,
+                                     task_id=ctx.task_id, run_id=ctx.run_id, timeout=60)
+        if cmd["status"] != "done":
+            return cmd["error"] or "Der PC hat kein Bild geschickt.", False
+        try:
+            payload = json.loads(cmd["result"] or "{}")
+        except ValueError:
+            return f"Der PC antwortete nicht in JSON: {str(cmd['result'])[:200]}", False
+        if payload.get("error"):
+            return str(payload["error"]), False
+        raw = payload.get("image_base64") or ""
+        if not raw:
+            return "Der PC schickte kein Bild.", False
+
+        import base64 as _b64
+        name = f"bildschirm-{device['name'].lower().replace(' ', '-')}.jpg"
+        target = Path(files.root) / "downloads" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            target.write_bytes(_b64.b64decode(raw))
+        except Exception as e:  # noqa: BLE001
+            return f"Das Bild ließ sich nicht speichern: {e.__class__.__name__}", False
+
+        ctx.attach(f"downloads/{name}")
+        ctx.emit("desktop", {"text": f"Bildschirm von {device['name']} geholt"})
+        return {"device": device["name"], "screen": f"{payload.get('width')}x{payload.get('height')}",
+                "file": f"downloads/{name}", "bytes": payload.get("bytes"),
+                "hinweis": "Das Bild hängt an diesem Zug — beschreibe nur, was wirklich darauf zu sehen ist."}
+
+    reg.register(ToolSpec("desktop.screen",
+                          "Look at the user's screen: the PC takes a screenshot and the picture is "
+                          "attached for you to actually see. Use it before clicking or typing when you "
+                          "are unsure what is on screen, and to check whether something worked.",
+                          _obj({"device": _s("which desktop"), "monitor": _i("0 = the whole screen"),
+                                "reason": _s("why you need to look")}, ["reason"]),
+                          category="desktop", risk="high" if gate_desktop else "medium",
+                          requires_approval=gate_desktop, handler=desktop_screen, timeout_seconds=120))
+
     async def desktop_whatsapp(ctx: ToolContext, args: dict):
         """Reach the user on their phone through the WhatsApp the desktop already has linked."""
         device = desktop.resolve(str(args.get("device", "")))
@@ -1246,7 +1297,11 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
 
     @_br
     async def browser_shot(ctx: ToolContext, args: dict):
-        return await browser.screenshot(str(args.get("name", "browser.png")))
+        res = await browser.screenshot(str(args.get("name", "browser.png")))
+        # Auch hier: anhängen, nicht nur ablegen. Ein Bild, das nur auf der
+        # Platte liegt, hat er nicht gesehen.
+        ctx.attach(res["path"])
+        return res
 
     @_br
     async def browser_close(ctx: ToolContext, args: dict):
@@ -1278,8 +1333,8 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                                 "reason": _s("why")}, ["field", "text", "reason"]),
                           category="web", risk="high", requires_approval=True, handler=browser_type,
                           available=br_ok, reason=br_why, timeout_seconds=90))
-    reg.register(ToolSpec("browser.screenshot", "Save a picture of the open page into the workspace, so the "
-                          "user can look at it under Files.",
+    reg.register(ToolSpec("browser.screenshot", "Take a picture of the open page — it is attached for you "
+                          "to actually look at, and saved in the workspace for the user.",
                           _obj({"name": _s("file name, default browser.png")}),
                           category="web", risk="low", handler=browser_shot,
                           available=br_ok, reason=br_why, timeout_seconds=60))

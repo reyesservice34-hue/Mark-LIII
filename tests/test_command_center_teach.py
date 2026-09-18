@@ -201,6 +201,66 @@ with TestClient(app) as c:
     check("Klicken ohne Ziel wird abgelehnt statt irgendwo zu klicken",
           out[1] is False and "description" in out[0], out)
 
+    print("\n1c. den Bildschirm sehen: das Bild kommt an, nicht nur ein Pfad")
+    import base64 as _b64
+    import json as _json
+    from pathlib import Path as _Path
+
+    # Ein Gerät, das die neue Aktion kann — das alte kann sie nicht, und genau
+    # das muss das Werkzeug sagen statt ins Leere zu schicken.
+    seher = bridge.register(name="Seh-PC", actor="mark-liii-windows", platform="Windows 11",
+                            actions=[{"name": "screen_capture", "description": "schickt ein Bild"}])
+
+    # Ein winziges, gültiges JPEG — der Inhalt ist egal, der Weg zählt.
+    PIXEL = _b64.b64decode(
+        "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a"
+        "HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA"
+        "AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==")
+
+    async def screen_roundtrip():
+        async def fake_pc():
+            for _ in range(60):
+                cmd = bridge.next_for(seher["id"])
+                if cmd:
+                    bridge.complete(cmd["id"], ok=True, result=_json.dumps({
+                        "image_base64": _b64.b64encode(PIXEL).decode(), "mime": "image/jpeg",
+                        "width": 2560, "height": 1440, "bytes": len(PIXEL)}))
+                    return cmd
+                await asyncio.sleep(0.02)
+            return None
+
+        gesehen = []
+        ctx2 = _TC(state=state, principal=_pr, agent_id="master", attach=gesehen.append)
+        out, cmd = await asyncio.gather(
+            state.tools.get("desktop.screen").handler(
+                ctx2, {"device": seher["id"], "reason": "nachsehen"}),
+            fake_pc())
+        return out, cmd, gesehen
+
+    out, cmd, gesehen = asyncio.run(screen_roundtrip())
+    check("der PC wird nach einem Bild gefragt", cmd and cmd["action"] == "screen_capture", cmd)
+    check("das Bild liegt danach im Arbeitsbereich",
+          isinstance(out, dict) and (_Path(state.services["files"].root) / out["file"]).exists(), out)
+    check("die echte Bildschirmgröße wird gemeldet",
+          isinstance(out, dict) and out["screen"] == "2560x1440", out)
+    check("und es wird dem Modell als BILD angehängt, nicht als Pfad",
+          gesehen and gesehen[0].startswith("downloads/"), gesehen)
+
+    blocks = state.runtime._image_blocks(gesehen)
+    check("daraus wird ein Bildblock, den jeder Anbieter versteht",
+          blocks and blocks[0]["type"] == "image" and blocks[0]["media_type"] == "image/jpeg", blocks[:1])
+    check("mit einem Hinweis, nichts zu erfinden",
+          any(b.get("type") == "text" and "wirklich" in b.get("text", "") for b in blocks))
+    check("und nichts von außerhalb des Arbeitsbereichs",
+          state.runtime._image_blocks(["../../etc/hostname"]) == [])
+
+    async def alter_pc():
+        return await state.tools.get("desktop.screen").handler(
+            _tc, {"device": device["id"], "reason": "nachsehen"})
+    out = asyncio.run(alter_pc())
+    check("ein PC ohne die neue Aktion bekommt gesagt, was zu tun ist",
+          out[1] is False and "git pull" in out[0], out)
+
     print("\n2. an offline desktop is said to be offline, not pretended away")
     bridge._last_poll.clear()
     offline = bridge.register(name="Schlafender-PC", actor="mark-liii-windows",
