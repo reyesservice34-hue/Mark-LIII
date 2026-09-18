@@ -77,7 +77,7 @@ fi
 
 # ── 4. Bauen und starten ─────────────────────────────────────────────────
 info "Baue das Image (beim ersten Mal dauert das ein paar Minuten) …"
-$COMPOSE -f docker-compose.command-center.yml up -d --build
+$COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d --build
 
 # ── 5. Warten, bis er antwortet ──────────────────────────────────────────
 info "Warte auf den Start …"
@@ -94,7 +94,7 @@ done
 
 if [ "${OK:-0}" != "1" ]; then
   warn "Er antwortet noch nicht auf $HEALTH."
-  warn "Log ansehen mit:  $COMPOSE -f docker-compose.command-center.yml logs -f"
+  warn "Log ansehen mit:  $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml logs -f"
   exit 1
 fi
 
@@ -132,10 +132,10 @@ info "         reverse_proxy ${BIND}:${PORT}"
 info "     }"
 info "2. AI-Schlüssel eintragen in command_center/.env (ANTHROPIC_API_KEY, OPENAI_API_KEY,"
 info "   GEMINI_API_KEY oder LOCAL_LLM_URL), dann:"
-info "     $COMPOSE -f docker-compose.command-center.yml up -d"
+info "     $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d"
 info "3. Im Dashboard unter Einstellungen ein Maschinen-Token anlegen und auf dem PC"
 info "   als JARVIS_GATEWAY_TOKEN setzen — dann steuert der Server den Desktop mit."
 bold ""
-info "Logs:    $COMPOSE -f docker-compose.command-center.yml logs -f"
-info "Stoppen: $COMPOSE -f docker-compose.command-center.yml down"
+info "Logs:    $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml logs -f"
+info "Stoppen: $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml down"
 bold ""

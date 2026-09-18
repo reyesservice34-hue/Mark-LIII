@@ -20,6 +20,13 @@ services:
       JARVIS_CC_WORKSPACE_DIR: /data/workspace
     ports:
       - "${JARVIS_CC_BIND:-127.0.0.1}:${JARVIS_CC_PORT:-8080}:8080"
+    networks:
+      - default
+      # Reaches a neighbouring stack (n8n, a database) by container name.
+      # Set JARVIS_CC_SHARED_NETWORK in command_center/.env to that stack's
+      # network; unset it falls back to the always-present default bridge,
+      # which changes nothing.
+      - shared
     volumes:
       - jarvis-cc-data:/data
       # Optional: let the Server page see and (with JARVIS_CC_ALLOW_DOCKER_ACTIONS=true) restart containers.
@@ -34,6 +41,16 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
+
+networks:
+  # Joined in addition to this stack's own network, so a container name like
+  # http://n8n:5678 resolves. It must already exist — hence "external" — and
+  # nothing is created or changed in the other stack by joining it.
+  # Find the name with:
+  #   docker inspect n8n --format '{{range $$k,$$v := .NetworkSettings.Networks}}{{$$k}} {{end}}'
+  shared:
+    external: true
+    name: ${JARVIS_CC_SHARED_NETWORK:-bridge}
 
 volumes:
   jarvis-cc-data:

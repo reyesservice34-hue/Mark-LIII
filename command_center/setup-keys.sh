@@ -139,6 +139,29 @@ case "${CHOICE// /}" in
   *) warn "Nicht verstanden — bleibt, wie es war." ;;
 esac
 
+# ── Nachbar-Container erreichbar machen ──────────────────────────────────
+# Zeigt N8N_BASE_URL auf einen Containernamen, müssen beide Container im
+# selben Docker-Netz sein, sonst löst der Name nicht auf. Das gehört in die
+# .env und nicht in ein "docker network connect": letzteres hängt am
+# laufenden Container und ist nach dem nächsten --force-recreate wieder weg.
+N8N_URL="$(current N8N_BASE_URL)"
+N8N_HOST="$(printf '%s' "$N8N_URL" | sed -n 's|^https\?://\([^:/]*\).*|\1|p')"
+if [ "$N8N_HOST" = "127.0.0.1" ] || [ "$N8N_HOST" = "localhost" ]; then
+  warn "N8N_BASE_URL zeigt auf $N8N_HOST. Aus dem Container heraus ist das er"
+  warn "selbst, nicht dein Server — n8n wird so nie erreicht. Nimm den"
+  warn "Containernamen, z. B. http://n8n:5678."
+elif [ -n "$N8N_HOST" ] && docker inspect "$N8N_HOST" >/dev/null 2>&1; then
+  NET="$(docker inspect "$N8N_HOST" \
+         --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null \
+         | awk '{print $1}')"
+  if [ -n "$NET" ]; then
+    set_value JARVIS_CC_SHARED_NETWORK "$NET"
+    info "Docker-Netz von '$N8N_HOST' eingetragen: $NET"
+  else
+    warn "Konnte das Docker-Netz von '$N8N_HOST' nicht ermitteln."
+  fi
+fi
+
 chmod 600 "$ENV_FILE"
 
 # ── neu starten ──────────────────────────────────────────────────────────
@@ -151,36 +174,24 @@ elif command -v docker-compose >/dev/null 2>&1; then
 else
   fail "docker compose fehlt — die .env ist geschrieben, starte selbst neu."
 fi
-if ! $COMPOSE -f docker-compose.command-center.yml up -d --force-recreate; then
+if ! $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d --force-recreate; then
   warn "Der Neustart ist fehlgeschlagen — die Schlüssel stehen aber schon in $ENV_FILE."
-  warn "Von Hand:  $COMPOSE -f docker-compose.command-center.yml up -d --force-recreate"
+  warn "Von Hand:  $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml up -d --force-recreate"
   exit 1
 fi
 
-# ── Container zusammenbringen ────────────────────────────────────────────
-# Zeigt N8N_BASE_URL auf einen Containernamen, müssen beide im selben Netz
-# sein, sonst löst der Name nicht auf. Das hängt nur diesen Container zusätzlich
-# ins Netz — an n8n selbst ändert sich nichts, und es ist mit
-# "docker network disconnect" jederzeit rückgängig zu machen.
-N8N_URL="$(current N8N_BASE_URL)"
-N8N_HOST="$(printf '%s' "$N8N_URL" | sed -n 's|^https\?://\([^:/]*\).*|\1|p')"
-if [ -n "$N8N_HOST" ] && [ "$N8N_HOST" != "127.0.0.1" ] && [ "$N8N_HOST" != "localhost" ] \
-   && docker inspect "$N8N_HOST" >/dev/null 2>&1; then
-  if docker exec jarvis-command-center getent hosts "$N8N_HOST" >/dev/null 2>&1; then
-    info "n8n ist unter '$N8N_HOST' schon erreichbar."
+# ── nachsehen, ob n8n jetzt wirklich antwortet ───────────────────────────
+# Behaupten reicht nicht: der Container fragt selbst nach. Jede HTTP-Antwort
+# ist gut, auch 401 — sie beweist, dass die Verbindung steht.
+if [ -n "$N8N_HOST" ] && [ "$N8N_HOST" != "127.0.0.1" ] && [ "$N8N_HOST" != "localhost" ]; then
+  CODE="$(docker exec jarvis-command-center \
+          curl -s -o /dev/null -m 8 -w '%{http_code}' "$N8N_URL" 2>/dev/null || echo 000)"
+  if [ "$CODE" != "000" ]; then
+    info "n8n antwortet aus dem Container heraus (HTTP $CODE)."
   else
-    NET="$(docker inspect "$N8N_HOST" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' \
-           2>/dev/null | awk '{print $1}')"
-    if [ -n "$NET" ] && docker network connect "$NET" jarvis-command-center 2>/dev/null; then
-      info "Mit dem Docker-Netz '$NET' verbunden, damit '$N8N_HOST' auflöst."
-    else
-      warn "Konnte nicht ins Netz von '$N8N_HOST' — n8n bleibt vorerst nicht erreichbar."
-      warn "Von Hand:  docker network connect <netz> jarvis-command-center"
-    fi
+    warn "n8n ist unter $N8N_URL noch nicht erreichbar."
+    warn "Läuft der Container? Stimmt der Port? Steht JARVIS_CC_SHARED_NETWORK richtig?"
   fi
-elif [ "$N8N_HOST" = "127.0.0.1" ] || [ "$N8N_HOST" = "localhost" ]; then
-  warn "N8N_BASE_URL zeigt auf $N8N_HOST — das ist aus dem Container heraus er selbst,"
-  warn "nicht dein Server. Nimm den Containernamen, z. B. http://n8n:5678."
 fi
 
 PORT="$(sed -n 's|^JARVIS_CC_PORT=\([^#]*\).*|\1|p' "$ENV_FILE" | tr -d '[:space:]' | head -1)"
@@ -200,7 +211,7 @@ printf '\n'
 bold ""
 if [ "${OK:-0}" != "1" ]; then
   warn "Er antwortet noch nicht auf $HEALTH."
-  warn "Log ansehen:  $COMPOSE -f docker-compose.command-center.yml logs -f"
+  warn "Log ansehen:  $COMPOSE --env-file command_center/.env -f docker-compose.command-center.yml logs -f"
   exit 1
 fi
 
