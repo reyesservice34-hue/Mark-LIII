@@ -1,0 +1,184 @@
+/*
+ * Der Feinschliff. Liegt bewusst neben base.css statt darin:
+ * base.css trägt die Struktur — was ein Panel ist, wie ein Knopf sich verhält.
+ * Hier steht, warum es teuer aussieht. Das lässt sich lesen, ändern und im
+ * Zweifel wieder entfernen, ohne die Struktur anzufassen.
+ *
+ * Drei Regeln, an denen sich alles hier ausrichtet:
+ *
+ * 1. Licht kommt von oben. Jede erhobene Fläche bekommt oben eine hauchdünne
+ *    helle Kante und unten einen weichen Schatten. Ohne das liegen alle
+ *    Kacheln in derselben Ebene, und genau das sieht billig aus.
+ * 2. Der Hintergrund ist kein Schwarz, sondern ein Raum. Ein sehr feines
+ *    Raster und zwei weite Lichthöfe geben Tiefe, auf der die Kacheln liegen.
+ * 3. Zahlen sind Zahlen. Tabellenziffern, engere Laufweite, klare Hierarchie
+ *    zwischen Wert und Beschriftung.
+ *
+ * Orange gehört dem Denken (der Kern, das Hauptgedächtnis), Blau dem Gerät
+ * und der Navigation. Diese Trennung ist keine Dekoration: Sie beantwortet
+ * auf einen Blick, ob gerade er arbeitet oder du.
+ */
+
+:root {
+  --core: #ff9d2e;
+  --core-soft: rgba(255, 157, 46, 0.12);
+  --core-line: rgba(255, 157, 46, 0.35);
+
+  /* Eine Kante, die Licht fängt — der Unterschied zwischen „Fläche" und
+     „Ding". */
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  --edge-strong: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.45), 0 12px 32px -18px rgba(0, 0, 0, 0.9);
+  --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.5), 0 26px 60px -30px rgba(0, 0, 0, 0.95);
+}
+
+/* ── der Raum hinter allem ───────────────────────────────────────────── */
+body {
+  background:
+    radial-gradient(1100px 620px at 78% -8%, rgba(90, 200, 255, 0.07), transparent 62%),
+    radial-gradient(900px 520px at 6% 104%, rgba(255, 157, 46, 0.05), transparent 60%),
+    var(--bg-0);
+  background-attachment: fixed;
+}
+
+/* Ein Raster, das man nicht bewusst sieht, aber vermisst, wenn es fehlt. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(146, 172, 204, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(146, 172, 204, 0.035) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(1200px 800px at 50% 0%, #000 8%, transparent 76%);
+}
+.shell, .page { position: relative; z-index: 1; }
+
+/* ── Kacheln ─────────────────────────────────────────────────────────── */
+.panel {
+  background:
+    linear-gradient(180deg, rgba(26, 34, 46, 0.92), rgba(12, 17, 24, 0.92));
+  border-color: var(--line-2);
+  box-shadow: var(--shadow-soft), var(--edge);
+  transition: box-shadow var(--t-med) var(--ease), border-color var(--t-med) var(--ease);
+}
+.panel:hover { box-shadow: var(--shadow-lift), var(--edge-strong); }
+
+/* Die Kopfzeile trägt das Gewicht: Symbol in einem getönten Feld, Titel in
+   Kapitälchen-Laufweite, darunter eine Linie, die nach rechts ausläuft. */
+.panel-head {
+  padding: 13px 16px;
+  border-bottom: 0;
+  position: relative;
+}
+.panel-head::after {
+  content: "";
+  position: absolute;
+  left: 16px; right: 16px; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--line-3), transparent 72%);
+}
+.panel-head h2 {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.panel-head h2 svg {
+  color: var(--accent);
+  width: 26px; height: 26px;
+  padding: 5px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px rgba(90, 200, 255, 0.18);
+}
+
+.panel-foot {
+  border-top: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.16);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  line-height: 1.5;
+}
+
+/* ── Überschriften und Zahlen ────────────────────────────────────────── */
+.page-head h1 {
+  font-size: 26px;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  line-height: 1.15;
+}
+.page-head .eyebrow { color: var(--text-4); }
+
+.stat { padding: 16px 18px; }
+.stat .value {
+  font-size: 30px;
+  letter-spacing: -0.03em;
+  font-weight: 650;
+  line-height: 1.05;
+}
+.stat .label, .label, .tiny.label {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 10.5px;
+  color: var(--text-4);
+  font-weight: 600;
+}
+.num, .stat .value, table.table td { font-variant-numeric: tabular-nums; }
+
+/* ── Knöpfe ──────────────────────────────────────────────────────────── */
+.btn { box-shadow: var(--edge); }
+.btn.primary {
+  background: linear-gradient(180deg, #56b6ff, #2b86d8);
+  box-shadow: var(--edge-strong), 0 6px 18px -8px rgba(90, 200, 255, 0.7);
+}
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { box-shadow: none; }
+
+/* ── Tabellen ────────────────────────────────────────────────────────── */
+table.table th {
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 10.5px;
+  color: var(--text-4);
+  font-weight: 600;
+}
+table.table tbody tr { transition: background var(--t-fast); }
+table.table tbody tr:hover { background: rgba(146, 172, 204, 0.045); }
+
+/* ── Navigation ──────────────────────────────────────────────────────── */
+/* Der aktive Punkt bekommt eine Markierung am Rand statt nur einer anderen
+   Farbe — man findet ihn dann auch, ohne zu lesen. */
+.sidebar .nav-item { position: relative; }
+.sidebar .nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: -8px; top: 50%;
+  width: 3px; height: 18px;
+  margin-top: -9px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  box-shadow: 0 0 12px rgba(90, 200, 255, 0.8);
+}
+
+/* ── Eingaben ────────────────────────────────────────────────────────── */
+.input, .select, .textarea {
+  background: rgba(6, 9, 14, 0.7);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+/* ── Zustandspunkte ──────────────────────────────────────────────────── */
+/* Ein Punkt, der „live" heißt, soll auch leben — aber leise. */
+.dot.live, .dot.ok { box-shadow: 0 0 8px currentColor; }
+
+@media (prefers-reduced-motion: reduce) {
+  .panel:hover { box-shadow: var(--shadow-soft), var(--edge); }
+}
+
+@media (max-width: 720px) {
+  .page-head h1 { font-size: 21px; }
+  .stat .value { font-size: 25px; }
+  body::before { background-size: 38px 38px; }
+}

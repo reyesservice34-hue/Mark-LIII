@@ -68,6 +68,36 @@ class DesktopBridge:
         row = self.db.fetchone("SELECT * FROM desktop_devices WHERE id=?", (device_id,))
         return self._device(row) if row else None
 
+    def rename(self, device_id: str, name: str) -> dict | None:
+        """Ein Gerät umbenennen.
+
+        Der Name kommt sonst vom Rechnernamen, und „DESKTOP-4K7J2L" sagt
+        niemandem, welcher Rechner das ist. Der Name ist reine Anzeige — die
+        Kennung bleibt, damit die laufende Kopplung nicht abreißt.
+        """
+        if not self.get(device_id):
+            return None
+        self.db.update("desktop_devices", device_id, {"name": name.strip()[:80] or "desktop"})
+        device = self.get(device_id)
+        self.bus.publish("desktop.device", device)
+        return device
+
+    def forget(self, device_id: str) -> bool:
+        """Ein Gerät samt seiner Aufträge entfernen.
+
+        Meldet sich derselbe Rechner später wieder, legt er sich neu an — das
+        ist gewollt: Vergessen heißt hier „aus der Liste", nicht „für immer
+        gesperrt". Wer ihn wirklich aussperren will, widerruft sein Token.
+        """
+        if not self.get(device_id):
+            return False
+        self.db.execute("DELETE FROM desktop_commands WHERE device_id=?", (device_id,))
+        self.db.execute("DELETE FROM desktop_devices WHERE id=?", (device_id,))
+        self._last_poll.pop(device_id, None)
+        self.log.info("desktop", f"Gerät {device_id} entfernt")
+        self.bus.publish("desktop.removed", {"id": device_id})
+        return True
+
     def _device(self, row: dict) -> dict:
         out = dict(row)
         out["actions"] = loads(row.get("actions"), [])

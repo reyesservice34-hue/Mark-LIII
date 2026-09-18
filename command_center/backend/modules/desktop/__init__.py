@@ -109,6 +109,79 @@ async def send_command(device_id: str, body: CommandBody, state: AppState = Depe
     return {"command": command}
 
 
+class RenameBody(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+@router.patch("/api/desktop/devices/{device_id}")
+async def rename_device(device_id: str, body: RenameBody, state: AppState = Depends(get_state),
+                        principal: Principal = Depends(require_role("operator"))):
+    device = state.services["desktop"].rename(device_id, body.name)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Dieses Gerät gibt es nicht.")
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="desktop.rename",
+                    target=device_id, status="ok", result=body.name)
+    return {"device": device}
+
+
+@router.delete("/api/desktop/devices/{device_id}")
+async def forget_device(device_id: str, state: AppState = Depends(get_state),
+                        principal: Principal = Depends(require_role("operator"))):
+    if not state.services["desktop"].forget(device_id):
+        raise HTTPException(status_code=404, detail="Dieses Gerät gibt es nicht.")
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="desktop.forget",
+                    target=device_id, status="ok")
+    return {"ok": True}
+
+
+@router.post("/api/desktop/devices/{device_id}/screen")
+async def screen(device_id: str, state: AppState = Depends(get_state),
+                 principal: Principal = Depends(require_role("operator"))):
+    """Ein Bildschirmfoto holen und im Arbeitsbereich ablegen.
+
+    Denselben Weg nimmt das Werkzeug desktop.screen. Hier ohne Modell
+    dazwischen: Du willst nachsehen, nicht fragen.
+    """
+    import base64
+    import json as _json
+    from pathlib import Path as _Path
+
+    bridge = state.services["desktop"]
+    device = bridge.get(device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Dieses Gerät gibt es nicht.")
+    if not any(a.get("name") == "screen_capture" for a in device["actions"]):
+        raise HTTPException(status_code=409, detail=(
+            "Dieser Rechner kann noch keine Bildschirmfotos schicken. Dort einmal git pull "
+            "und JARVIS neu starten."))
+    try:
+        cmd = await bridge.dispatch(device_id=device_id, action="screen_capture", params={},
+                                    requested_by=principal.actor, timeout=60)
+    except DesktopError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if cmd["status"] != "done":
+        raise HTTPException(status_code=409, detail=cmd["error"] or "Der PC hat kein Bild geschickt.")
+    try:
+        payload = _json.loads(cmd["result"] or "{}")
+    except ValueError:
+        raise HTTPException(status_code=502, detail="Der PC antwortete nicht in JSON.")
+    if payload.get("error"):
+        raise HTTPException(status_code=409, detail=str(payload["error"]))
+    raw = payload.get("image_base64") or ""
+    if not raw:
+        raise HTTPException(status_code=502, detail="Der PC schickte kein Bild.")
+
+    name = f"bildschirm-{device['name'].lower().replace(' ', '-')}.jpg"
+    files = state.services["files"]
+    target = _Path(files.root) / "downloads" / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(base64.b64decode(raw))
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="desktop.screen",
+                    target=device_id, status="ok", result=f"downloads/{name}")
+    return {"path": f"downloads/{name}", "width": payload.get("width"),
+            "height": payload.get("height"), "bytes": payload.get("bytes")}
+
+
 @router.get("/api/desktop/history")
 async def history(device_id: str = "", limit: int = 50, state: AppState = Depends(get_state),
                   _: Principal = Depends(current_principal)):
@@ -116,7 +189,7 @@ async def history(device_id: str = "", limit: int = 50, state: AppState = Depend
 
 
 MODULE = ModuleSpec(
-    id="desktop", title="Desktop", router=router, icon="monitor", path="/desktop", order=75,
-    description="Der gekoppelte PC und was er tun sollte",
-    commands=[{"id": "desktop.open", "title": "Open Desktop control", "path": "/desktop"}],
+    id="desktop", title="Geräte", router=router, icon="monitor", path="/desktop", order=75,
+    mobile_priority=30, description="Gekoppelte Rechner und was sie tun sollen",
+    commands=[{"id": "desktop.open", "title": "Geräte öffnen", "path": "/desktop"}],
 )
