@@ -18,6 +18,7 @@ import httpx
 
 from ..ai.base import trim
 from ..db import new_id, now_iso
+from ..services.composio import DASHBOARD as COMPOSIO_DASHBOARD
 from .tool_registry import ToolContext, ToolRegistry, ToolSpec
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -478,6 +479,62 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
     reg.register(ToolSpec("github.repo", "Overview of a repository: description, default branch, open issues.",
                           _obj({"repo": _s("owner/repo")}), category="code", risk="low", min_role="viewer",
                           handler=github_repo, available=gh_ok, reason=gh_reason))
+
+    # ── composio (one account, a few hundred services) ───────────────────
+    # Deliberately three tools rather than one per Composio tool: the catalogue
+    # runs to thousands, and handing a model thousands of declarations buys
+    # confusion, not capability. It discovers, then acts.
+    composio = st.services["composio"]
+    cmp_ok = composio.configured()
+    cmp_reason = composio.unavailable_reason()
+
+    async def composio_apps(ctx: ToolContext, args: dict):
+        conns = await composio.connections()
+        if not conns:
+            return (f"Composio has no app connected for user '{composio.user_id}' yet. Connect one "
+                    f"at {COMPOSIO_DASHBOARD} — the OAuth happens there, not here.", False)
+        return [{"app": c["toolkit"], "usable": c["status"] == "ACTIVE" and not c["disabled"],
+                 "status": c["status"], "connected_at": c["created_at"]} for c in conns]
+
+    async def composio_tools(ctx: ToolContext, args: dict):
+        found = await composio.tools(toolkit=str(args.get("app", "")), search=str(args.get("query", "")),
+                                     limit=int(args.get("limit", 20)))
+        if not found:
+            return "Composio has no tool matching that. Try a broader query, or composio.apps first.", False
+        live = await composio.live_toolkits()
+        return [{"tool": t["slug"], "app": t["toolkit"], "what_it_does": t["description"],
+                 "connected": (not t["needs_connection"]) or t["toolkit"] in live,
+                 "arguments": t["input_parameters"]} for t in found]
+
+    async def composio_run(ctx: ToolContext, args: dict):
+        params = args.get("arguments") or {}
+        if not isinstance(params, dict):
+            return "arguments must be a JSON object", False
+        result = await composio.execute(str(args["tool"]), arguments=params,
+                                        text=str(args.get("instruction", "")))
+        ctx.emit("composio", {"text": f"{result['toolkit']}: {result['tool']}"})
+        return result
+
+    reg.register(ToolSpec("composio.apps", "Which third-party services are connected through Composio and "
+                          "usable right now — Gmail, Slack, Notion, Linear and so on.", _obj({}),
+                          category="integrations", risk="low", min_role="viewer", handler=composio_apps,
+                          available=cmp_ok, reason=cmp_reason))
+    reg.register(ToolSpec("composio.tools", "Find a Composio tool to do something in a connected service. "
+                          "Returns each tool's slug and the arguments it takes, so composio.run can use it.",
+                          _obj({"query": _s("what you want to do, e.g. 'send an email', 'create an issue'"),
+                                "app": _s("limit to one service, e.g. gmail, slack, notion"),
+                                "limit": _i("max rows, default 20")}),
+                          category="integrations", risk="low", min_role="viewer", handler=composio_tools,
+                          available=cmp_ok, reason=cmp_reason, timeout_seconds=60))
+    reg.register(ToolSpec("composio.run", "Execute one Composio tool in a connected service. This acts in the "
+                          "user's real accounts — it sends, posts, creates and deletes for real. Find the "
+                          "slug and its arguments with composio.tools first.",
+                          _obj({"tool": _s("tool slug from composio.tools, e.g. GMAIL_SEND_EMAIL"),
+                                "arguments": {"type": "object", "description": "arguments for that tool"},
+                                "instruction": _s("plain-language alternative to arguments; not both"),
+                                "reason": _s("why this is needed")}, ["tool", "reason"]),
+                          category="integrations", risk="high", handler=composio_run,
+                          available=cmp_ok, reason=cmp_reason, timeout_seconds=120))
 
     # ── desktop (the paired PC) ──────────────────────────────────────────
     desktop = st.services["desktop"]

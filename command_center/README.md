@@ -101,6 +101,7 @@ missing credential rather than pretending.
 | `email.search/read/draft/send` | `EMAIL_USER` + `EMAIL_PASSWORD` | IMAP/SMTP, servers guessed from the domain; **sending always needs approval** |
 | `github.read/issues/commits/repo` | `GITHUB_TOKEN` | read-only |
 | `workflow.list/execute/runs` | `N8N_BASE_URL` + `N8N_API_KEY` | trigger is webhook-based |
+| `composio.apps/tools/run` | `COMPOSIO_API_KEY` | a few hundred services behind one key; `composio.run` acts in real accounts and is approval-gated |
 | `terminal.execute` | `JARVIS_CC_ALLOW_TERMINAL=true` | admin role **and** approval, runs inside the workspace |
 | `desktop.devices/open_app/run` | a paired PC | drives the desktop's own actions; `desktop.run` is approval-gated |
 | `teach.start/note/stop/learn`, `procedure.list/run` | nothing (learning needs a local AI provider) | records a demonstration and turns it into a procedure |
@@ -180,6 +181,10 @@ and offer to run it instead of improvising the same job twice.
 * Dangerous capabilities are off by default: `JARVIS_CC_ALLOW_TERMINAL`,
   `JARVIS_CC_ALLOW_DOCKER_ACTIONS`, `JARVIS_CC_ALLOW_SERVICE_RESTART`.
 * Files: only the workspace directory is reachable; deletes go to `.trash`.
+* Composio: the key stays on this server and the OAuth tokens stay at
+  Composio — neither ever reaches the browser. `composio.run` acts in real
+  accounts, so it is `high` risk and passes the approval gate, and a toolkit
+  with no live connection is refused by name instead of attempted.
 * Audit trail (`audit_events`): actor, agent, tool, target, status,
   result/error, task and run correlation. Never trimmed by log retention.
 * Security headers, no-store on API responses, secrets never serialised.

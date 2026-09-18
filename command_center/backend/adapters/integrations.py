@@ -183,6 +183,19 @@ class VoiceIntegration(IntegrationAdapter):
         return await VoiceService().health()
 
 
+class ComposioIntegration(IntegrationAdapter):
+    """One key, then every app the user connected in Composio's own dashboard.
+
+    'Configured' here means the API key is present; whether anything is
+    actually *connected* is the health check's job, because that is decided in
+    Composio, not in this server's environment.
+    """
+
+    async def check(self) -> dict:
+        from ..services.composio import ComposioService
+        return await ComposioService().health()
+
+
 class DesktopChannelIntegration(IntegrationAdapter):
     """A capability the server borrows from a paired desktop.
 
@@ -274,6 +287,10 @@ DEFAULT_ADAPTERS: list[IntegrationAdapter] = [
                      any_env=["JARVIS_CC_STT_URL", "JARVIS_CC_TTS_URL"],
                      optional_env=["JARVIS_CC_STT_MODEL", "JARVIS_CC_TTS_MODEL", "JARVIS_CC_TTS_VOICE",
                                    "JARVIS_CC_STT_LANGUAGE"], icon="mic"),
+    ComposioIntegration("composio", "Composio", "integrations",
+                        ["hosted OAuth for a few hundred services", "tool catalogue", "execute a tool"],
+                        required_env=["COMPOSIO_API_KEY"],
+                        optional_env=["COMPOSIO_USER_ID", "COMPOSIO_BASE_URL"], icon="plug"),
     DesktopChannelIntegration("whatsapp", "WhatsApp (through the paired PC)", "communication",
                               ["voice notes in your own voice", "text messages"],
                               action="whatsapp", icon="message-circle"),

@@ -37,6 +37,7 @@ from .orchestrator.tool_registry import ToolRegistry
 from .services.approvals import ApprovalService
 from .services.calendar_service import CalendarService
 from .services.chat_store import ChatStore
+from .services.composio import ComposioService
 from .services.desktop_bridge import DesktopBridge
 from .services.email_service import EmailService
 from .services.external import GitHubService
@@ -77,6 +78,7 @@ def build_state(settings: Settings | None = None) -> AppState:
         "email": EmailService(),
         "github": GitHubService(),
         "voice": VoiceService(),
+        "composio": ComposioService(),
         "desktop": DesktopBridge(db, bus, log),
         "teaching": TeachingService(db, bus, log),
     })

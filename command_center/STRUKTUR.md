@@ -70,7 +70,7 @@ Mark-LIII/
 │   │   │
 │   │   ├── orchestrator/       Der Master Agent
 │   │   │   ├── runtime.py              Denkschleife, Delegation, Approval-Gate
-│   │   │   ├── tool_registry.py        49 Werkzeuge, davon 33 ohne Zugangsdaten nutzbar
+│   │   │   ├── tool_registry.py        52 Werkzeuge, davon 33 ohne Zugangsdaten nutzbar
 │   │   │   ├── agent_registry.py       Spezialisten + ihre Gesundheit
 │   │   │   └── builtin_tools.py        Was der Server selbst kann
 │   │   │
@@ -80,6 +80,7 @@ Mark-LIII/
 │   │   │   ├── calendar_service.py     Google Calendar oder lokaler Speicher
 │   │   │   ├── email_service.py        IMAP lesen, SMTP senden
 │   │   │   ├── external.py             GitHub, Websuche
+│   │   │   ├── composio.py             Ein Schlüssel, ein paar hundert Dienste
 │   │   │   ├── voice_service.py        STT/TTS gegen offene Endpunkte
 │   │   │   ├── approvals.py            Freigaben, die wirklich blockieren
 │   │   │   ├── metrics.py              CPU, RAM, Platte, Docker, Dienste

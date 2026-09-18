@@ -529,5 +529,134 @@ missing_modules = [m for m in DEFAULT_MODULES
                    if not (ROOT / "command_center" / "backend" / "modules" / m / "__init__.py").exists()]
 check("every module in DEFAULT_MODULES exists on disk", not missing_modules, missing_modules)
 
+print("\n13. Composio — one key, but only what is really connected")
+# Composio hosts the OAuth for a few hundred services. The value of this
+# adapter is honesty about which of them are actually usable, so the tests
+# that matter are the refusals: no key, an unconnected toolkit, and a call
+# Composio itself reports as failed.
+from command_center.backend.services import composio as CS  # noqa: E402
+
+for k in ("COMPOSIO_API_KEY", "COMPOSIO_USER_ID", "COMPOSIO_BASE_URL"):
+    os.environ.pop(k, None)
+bare = CS.ComposioService()
+check("not configured without a key", not bare.configured())
+check("and names the variable", bare.unavailable_reason() == "COMPOSIO_API_KEY not set")
+check("health reports not_configured", run(bare.health())["status"] == "not_configured")
+for label, coro in (("listing apps", bare.connections()), ("executing", bare.execute("GMAIL_SEND_EMAIL", {}))):
+    try:
+        run(coro)
+        check(f"{label} refuses without a key", False)
+    except CS.ComposioError as e:
+        check(f"{label} refuses without a key", "COMPOSIO_API_KEY" in str(e), str(e))
+
+os.environ.update({"COMPOSIO_API_KEY": "cmp_test_key", "COMPOSIO_USER_ID": "reyes"})
+svc = CS.ComposioService()
+calls: list[dict] = []
+ACCOUNTS = {"items": [
+    {"id": "ca_gmail", "toolkit": {"slug": "gmail"}, "status": "ACTIVE", "is_disabled": False,
+     "created_at": "2026-09-01T10:00:00Z"},
+    {"id": "ca_slack", "toolkit": {"slug": "slack"}, "status": "EXPIRED", "is_disabled": False,
+     "created_at": "2026-08-01T10:00:00Z"},
+]}
+TOOLS = {"items": [
+    {"slug": "GMAIL_SEND_EMAIL", "name": "Send email", "toolkit": {"slug": "gmail"},
+     "description": "Send an email from the connected mailbox.", "no_auth": False,
+     "input_parameters": {"recipient_email": {"type": "string"}}},
+    {"slug": "NOTION_CREATE_PAGE", "name": "Create page", "toolkit": {"slug": "notion"},
+     "description": "Create a page.", "no_auth": False, "input_parameters": {}},
+]}
+
+
+class FakeComposioClient:
+    payload: dict = {}
+    status: int = 200
+
+    def __init__(self, *a, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def request(self, method, url, headers=None, params=None, json=None):
+        calls.append({"method": method, "url": url, "params": params, "json": json,
+                      "key": (headers or {}).get("x-api-key")})
+        body, status = FakeComposioClient.payload, FakeComposioClient.status
+        if url.endswith("/connected_accounts"):
+            body = ACCOUNTS
+        elif url.endswith("/tools"):
+            body = TOOLS
+
+        class R:
+            status_code = status
+            text = "stub"
+
+            @staticmethod
+            def json():
+                return body
+        return R()
+
+
+real_composio_client = CS.httpx.AsyncClient
+CS.httpx.AsyncClient = FakeComposioClient
+try:
+    health = run(svc.health())
+    check("healthy when something is connected", health["status"] == "healthy", health)
+    check("names only the usable app", "gmail" in health["detail"] and "slack" not in health["detail"], health)
+    check("api key sent in the x-api-key header", calls[0]["key"] == "cmp_test_key", calls[0])
+    check("connections scoped to the configured user", calls[0]["params"]["user_ids"] == "reyes", calls[0])
+
+    live = run(svc.live_toolkits())
+    check("an expired connection is not live", live == {"gmail": "ca_gmail"}, live)
+
+    found = run(svc.tools(search="send an email"))
+    check("tools mapped to slug + app + arguments",
+          found[0]["slug"] == "GMAIL_SEND_EMAIL" and found[0]["toolkit"] == "gmail"
+          and "recipient_email" in found[0]["input_parameters"], found[0])
+
+    calls.clear()
+    FakeComposioClient.payload = {"successful": True, "data": {"id": "msg_1"}, "log_id": "log_1"}
+    res = run(svc.execute("gmail_send_email", {"recipient_email": "kunde@example.de"}))
+    exec_call = calls[-1]
+    check("executes with the upper-case slug",
+          exec_call["url"].endswith("/api/v3/tools/execute/GMAIL_SEND_EMAIL"), exec_call["url"])
+    check("sends the connected account and the user",
+          exec_call["json"]["connected_account_id"] == "ca_gmail"
+          and exec_call["json"]["user_id"] == "reyes", exec_call["json"])
+    check("returns Composio's own data", res["data"] == {"id": "msg_1"} and res["toolkit"] == "gmail", res)
+
+    calls.clear()
+    try:
+        run(svc.execute("NOTION_CREATE_PAGE", {"title": "x"}))
+        check("an unconnected app is refused by name", False)
+    except CS.ComposioError as e:
+        check("an unconnected app is refused by name", "notion" in str(e) and "not connected" in str(e), str(e))
+    check("and nothing was executed", not any("execute" in c["url"] for c in calls), calls)
+
+    FakeComposioClient.payload = {"successful": False, "error": "Invalid recipient", "data": {}}
+    try:
+        run(svc.execute("GMAIL_SEND_EMAIL", {"recipient_email": "nope"}))
+        check("a failed Composio call is an error here too", False)
+    except CS.ComposioError as e:
+        check("a failed Composio call is an error here too", "Invalid recipient" in str(e), str(e))
+
+    try:
+        run(svc.execute("GMAIL_SEND_EMAIL", {"a": 1}, text="do the thing"))
+        check("arguments and text together are refused", False)
+    except CS.ComposioError as e:
+        check("arguments and text together are refused", "not both" in str(e), str(e))
+
+    FakeComposioClient.status = 401
+    bad = run(svc.health())
+    check("a rejected key reports offline, not healthy",
+          bad["status"] == "offline" and "rejected" in bad["detail"], bad)
+finally:
+    CS.httpx.AsyncClient = real_composio_client
+    FakeComposioClient.status = 200
+    for k in ("COMPOSIO_API_KEY", "COMPOSIO_USER_ID", "COMPOSIO_BASE_URL"):
+        os.environ.pop(k, None)
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)
