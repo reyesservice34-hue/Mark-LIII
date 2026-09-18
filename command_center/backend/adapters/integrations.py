@@ -183,6 +183,61 @@ class VoiceIntegration(IntegrationAdapter):
         return await VoiceService().health()
 
 
+class DesktopChannelIntegration(IntegrationAdapter):
+    """A capability the server borrows from a paired desktop.
+
+    WhatsApp is the case that matters: the working implementation is the
+    desktop's linked WhatsApp Web session, not a Meta Business account. So this
+    reports what is actually true — whether a paired PC offers that action and
+    is reachable — instead of asking for credentials nothing here would use.
+    """
+
+    def __init__(self, *args, action: str = "", db=None, **kw):
+        super().__init__(*args, **kw)
+        self.action = action
+        self.db = db
+
+    def configured(self) -> bool:
+        return bool(self._devices())
+
+    def config_state(self) -> dict:
+        return {f"desktop offers {self.action}": bool(self._devices())}
+
+    def _devices(self) -> list[dict]:
+        if self.db is None:
+            return []
+        try:
+            rows = self.db.fetchall("SELECT id, name, actions, last_seen_at FROM desktop_devices")
+        except Exception:      # a shut-down app's connection must not break a listing
+            return []
+        out = []
+        for row in rows:
+            actions = loads(row["actions"], [])
+            if any(a.get("name") == self.action for a in actions):
+                out.append({"id": row["id"], "name": row["name"], "last_seen_at": row["last_seen_at"]})
+        return out
+
+    async def check(self) -> dict:
+        devices = self._devices()
+        if not devices:
+            return {"status": "not_configured",
+                    "detail": f"no paired desktop offers '{self.action}' — pair a PC (Desktop page) and "
+                              f"link the channel there once"}
+        from datetime import datetime, timezone
+        fresh = []
+        for d in devices:
+            try:
+                seen = datetime.fromisoformat((d["last_seen_at"] or "").replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - seen).total_seconds() < 90:
+                    fresh.append(d["name"])
+            except ValueError:
+                continue
+        if fresh:
+            return {"status": "healthy", "detail": f"available through {', '.join(fresh)}"}
+        return {"status": "offline",
+                "detail": f"{devices[0]['name']} offers it but is not connected right now"}
+
+
 DEFAULT_ADAPTERS: list[IntegrationAdapter] = [
     AnthropicIntegration("anthropic", "Anthropic", "ai", ["chat", "tool use", "vision"],
                          required_env=["ANTHROPIC_API_KEY"], icon="sparkles"),
@@ -219,8 +274,9 @@ DEFAULT_ADAPTERS: list[IntegrationAdapter] = [
                      any_env=["JARVIS_CC_STT_URL", "JARVIS_CC_TTS_URL"],
                      optional_env=["JARVIS_CC_STT_MODEL", "JARVIS_CC_TTS_MODEL", "JARVIS_CC_TTS_VOICE",
                                    "JARVIS_CC_STT_LANGUAGE"], icon="mic"),
-    IntegrationAdapter("whatsapp", "WhatsApp", "communication", ["voice notes (planned)"],
-                       required_env=["WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID"], icon="message-circle"),
+    DesktopChannelIntegration("whatsapp", "WhatsApp (through the paired PC)", "communication",
+                              ["voice notes in your own voice", "text messages"],
+                              action="whatsapp", icon="message-circle"),
     IntegrationAdapter("ionos", "IONOS", "hosting", ["dns (planned)", "hosting (planned)"],
                        required_env=["IONOS_API_KEY"], icon="globe"),
 ]
@@ -236,6 +292,12 @@ class IntegrationRegistry:
             self.register(a)
 
     def register(self, adapter: IntegrationAdapter) -> None:
+        # Adapters that read the server's own state (e.g. which desktop offers
+        # which channel) get this registry's database handed to them. Always
+        # reassign: DEFAULT_ADAPTERS is module-level, so a second app in the same
+        # process would otherwise inherit the first one's closed connection.
+        if hasattr(adapter, "db"):
+            adapter.db = self.db
         self._adapters[adapter.id] = adapter
         self._health.setdefault(adapter.id, {"status": "not_configured" if not adapter.configured() else "unknown",
                                              "detail": "not checked yet", "checked_at": None})

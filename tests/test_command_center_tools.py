@@ -468,5 +468,32 @@ check("calendar agent is healthy because the local backend works",
       state.agents.public("calendar", state.tools)["health"] == "healthy")
 state.db.close()
 
+print("\n11. .env.example must survive Docker's env_file parsing")
+# Docker hands `KEY=value   # comment` to the container *including* the comment,
+# so an inline comment silently turns an empty setting into a garbage value —
+# JARVIS_CC_ROOT_PATH would have broken every route. Guard it here.
+env_example = ROOT / "command_center" / ".env.example"
+parsed, offenders = {}, []
+for raw in env_example.read_text(encoding="utf-8").splitlines():
+    stripped = raw.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    key, sep, value = raw.partition("=")
+    if not sep:
+        offenders.append(f"no '=' in: {raw!r}")
+        continue
+    parsed[key] = value
+    if "#" in value:
+        offenders.append(f"{key} carries a comment in its value: {value!r}")
+    if value != value.strip():
+        offenders.append(f"{key} has surrounding whitespace: {value!r}")
+check("every line parses as KEY=value", not offenders, offenders[:3])
+check("the file actually documents the settings", len(parsed) > 40, len(parsed))
+for required in ("JARVIS_CC_ADMIN_USER", "JARVIS_CC_ADMIN_PASSWORD", "JARVIS_CC_BIND",
+                 "JARVIS_CC_PORT", "JARVIS_CC_ROOT_PATH"):
+    check(f"{required} documented", required in parsed)
+check("no dead WhatsApp credentials are still asked for",
+      "WHATSAPP_TOKEN" not in parsed and "WHATSAPP_PHONE_ID" not in parsed, list(parsed)[:0])
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

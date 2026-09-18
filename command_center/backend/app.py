@@ -93,7 +93,29 @@ def build_state(settings: Settings | None = None) -> AppState:
     register_builtin_tools(state.tools, state)
     state.tools.snapshot(db)
     state.scheduler = Scheduler(bus, log)
+    _seed_memory(db)
     return state
+
+
+# Standing instructions the user gave once and expects to hold forever. They are
+# seeded into memory so the master agent recalls them in conversation, not only
+# through the system prompt.
+SEEDED_MEMORY = [
+    "Standing instruction from the user: think independently and think ahead, every time, "
+    "without being asked. Decide the small things yourself, avoid detours and duplicated work, "
+    "and raise what they have not asked about yet. Only ask when a mistake would be expensive "
+    "or cannot be undone.",
+    "Standing instruction from the user: never announce a plan instead of doing the work, and "
+    "never claim something was done unless a tool confirmed it.",
+]
+
+
+def _seed_memory(db: Database) -> None:
+    from .db import new_id, now_iso
+    for text in SEEDED_MEMORY:
+        if not db.fetchone("SELECT 1 FROM memory WHERE text=?", (text,)):
+            db.insert("memory", {"id": new_id("mem"), "text": text, "actor": "user",
+                                 "conversation_id": None, "created_at": now_iso()})
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

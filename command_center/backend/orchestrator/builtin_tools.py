@@ -535,6 +535,33 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           category="desktop", risk="high" if gate_desktop else "medium",
                           requires_approval=gate_desktop, handler=desktop_run, timeout_seconds=180))
 
+    async def desktop_whatsapp(ctx: ToolContext, args: dict):
+        """Reach the user on their phone through the WhatsApp the desktop already has linked."""
+        device = desktop.resolve(str(args.get("device", "")))
+        if not any(a.get("name") == "whatsapp" for a in device["actions"]):
+            return (f"The desktop '{device['name']}' has no WhatsApp channel. It is linked once by QR "
+                    f"code in the desktop's plugin settings.", False)
+        params = {"message": str(args["message"]), "action": str(args.get("mode", "voice"))}
+        if args.get("contact"):
+            params["contact"] = str(args["contact"])
+        cmd = await desktop.dispatch(device_id=device["id"], action="whatsapp", params=params,
+                                     requested_by=ctx.principal.actor, agent_id=ctx.agent_id,
+                                     task_id=ctx.task_id, run_id=ctx.run_id, timeout=180)
+        ctx.emit("whatsapp", {"text": f"WhatsApp sent via {device['name']}"})
+        return (cmd["result"] or cmd["error"] or "sent", cmd["status"] == "done")
+
+    reg.register(ToolSpec("notify.whatsapp", "Reach the user on their phone by WhatsApp, as a spoken voice "
+                          "note in your own voice or as text. Goes through the desktop's linked WhatsApp, so "
+                          "it needs that PC to be running. Use it when something matters and they are away "
+                          "from the machine.",
+                          _obj({"message": _s("the finished message, written to be heard: short sentences, "
+                                              "first person, no lists, no markdown"),
+                                "mode": _s("voice (default) or text"),
+                                "contact": _s("recipient as named in WhatsApp; omit for the configured one"),
+                                "device": _s("which desktop")}, ["message"]),
+                          category="communication", risk="medium", handler=desktop_whatsapp,
+                          timeout_seconds=200))
+
     # ── teach mode ───────────────────────────────────────────────────────
     teaching = st.services["teaching"]
 

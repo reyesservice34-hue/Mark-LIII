@@ -71,6 +71,7 @@ class DesktopRunner:
                            (cfg.get("desktop_blocked_actions") or DEFAULT_BLOCKED))
         self._log = logger
         self._registry = registry
+        self._plugin_registry = None
         self._device_id = self._load_device_id()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -98,7 +99,11 @@ class DesktopRunner:
         except Exception:
             pass    # remembering the id is a convenience; re-registering also works
 
-    # ── the action registry this PC exposes ──────────────────────────────
+    # ── what this PC exposes: its actions *and* its plugins ──────────────
+    # Both matter. The things the user most wants reached from outside —
+    # WhatsApp, the calendar, the mailbox — are plugins, not actions, so a
+    # runner that only knew actions could never send a WhatsApp message even
+    # though the working implementation sits right here.
     def _actions(self):
         if self._registry is None:
             sys.path.insert(0, str(BASE_DIR))
@@ -108,12 +113,29 @@ class DesktopRunner:
                 logger=lambda m: self._log(f"[DesktopRunner] {m}"))
         return self._registry
 
+    def _plugins(self):
+        if self._plugin_registry is None:
+            sys.path.insert(0, str(BASE_DIR))
+            try:
+                from core.plugin_loader import discover_plugins
+                self._plugin_registry = discover_plugins(
+                    plugins_dir=BASE_DIR / "plugins",
+                    core_tool_names=self._actions().names(),
+                    logger=lambda m: self._log(f"[DesktopRunner] {m}"))
+            except Exception as e:  # noqa: BLE001 — a broken plugin never costs us the actions
+                self._log(f"[DesktopRunner] Plugins unavailable: {e}")
+                self._plugin_registry = _NoPlugins()
+        return self._plugin_registry
+
     def declarations(self) -> list[dict]:
-        out = []
-        for decl in self._actions().get_tool_declarations():
-            if decl["name"] in self.blocked:
+        out, seen = [], set()
+        for decl in [*self._actions().get_tool_declarations(),
+                     *self._plugins().get_tool_declarations()]:
+            name = decl["name"]
+            if name in self.blocked or name in seen:
                 continue
-            out.append({"name": decl["name"], "description": decl.get("description", "")[:400],
+            seen.add(name)
+            out.append({"name": name, "description": decl.get("description", "")[:400],
                         "parameters": decl.get("parameters", {})})
         return out
 
@@ -194,10 +216,14 @@ class DesktopRunner:
             ok, result = False, f"'{action}' is not available for remote control on this machine."
         else:
             try:
-                result = self._actions().run(action, params, ctx={}) or "Done."
+                if self._plugins().has(action):
+                    result = self._plugins().run(action, params) or "Done."
+                else:
+                    result = self._actions().run(action, params, ctx={}) or "Done."
                 lowered = result.lower()
-                ok = not (lowered.startswith("action '") and "not available" in lowered) \
-                    and not lowered.startswith(f"tool '{action}' failed")
+                ok = not (lowered.startswith(("action '", "plugin '")) and "not available" in lowered) \
+                    and not lowered.startswith((f"tool '{action}' failed", f"the '{action}' plugin")) \
+                    and not lowered.startswith(f"plugin '{action}' failed")
             except Exception as e:  # noqa: BLE001 — the server must hear about it either way
                 ok, result = False, f"{e.__class__.__name__}: {e}"
         try:
@@ -228,6 +254,22 @@ class DesktopRunner:
 
     def _sleep(self, seconds: float) -> None:
         self._stop.wait(seconds)
+
+
+class _NoPlugins:
+    """Stand-in when plugin discovery fails, so the actions still work."""
+
+    @staticmethod
+    def get_tool_declarations() -> list[dict]:
+        return []
+
+    @staticmethod
+    def has(_name: str) -> bool:
+        return False
+
+    @staticmethod
+    def run(name: str, _parameters: dict) -> str:
+        return f"Plugin '{name}' is not available."
 
 
 def start_if_configured(logger: Callable[[str], None] = print) -> DesktopRunner | None:
