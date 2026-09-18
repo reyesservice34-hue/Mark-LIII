@@ -365,6 +365,27 @@ with TestClient(app) as c:
     check("a session without a key is told why, not left hanging",
           "jarvis.unavailable" in said and "OPENAI_API_KEY" in said, said[:120])
 
+    # Der Sprachclient am PC weist sich mit dem Maschinen-Token aus, nicht mit
+    # einem Cookie. Ginge das nicht, müsste er im Browser laufen — genau das,
+    # was der Nutzer nicht wollte.
+    mt = c.post("/api/auth/tokens", json={"name": "voice-pc", "role": "operator",
+                                          "actor": "voice-pc"}, headers=H)
+    if mt.status_code in (200, 201):
+        secret = mt.json()["secret"]          # "token" ist der Datensatz, nicht das Geheimnis
+        machine = TestClient(app)
+        got = ""
+        try:
+            with machine.websocket_connect("/api/voice/live",
+                                           headers={"X-Jarvis-Token": secret}) as sock:
+                got = sock.receive_text()
+        except Exception as e:  # noqa: BLE001
+            got = f"{e.__class__.__name__}: {e}"
+        check("a machine token may open the live line",
+              "jarvis.unavailable" in got and "OPENAI_API_KEY" in got, got[:100])
+    else:
+        check("a machine token may open the live line", False,
+              f"token endpoint said {mt.status_code}")
+
     live_prompt = state.runtime.live_instructions().lower()
     check("the persona for the open line forbids markdown out loud", "no markdown" in live_prompt)
     check("and it may not claim unconfirmed work", "never claim" in live_prompt)

@@ -34,11 +34,13 @@ async def live_capabilities(state: AppState = Depends(get_state),
 @router.websocket("/api/voice/live")
 async def live(ws: WebSocket):
     state: AppState = ws.app.state.jarvis
-    # The cookie is on the handshake like any other request, so the same
-    # resolver decides who this is. An unauthenticated socket is closed before
-    # a single byte of audio moves.
+    # Der Handshake trägt dieselben Merkmale wie jede andere Anfrage, also
+    # entscheidet derselbe Resolver. Ein Browser kommt über sein Cookie, ein
+    # Rechner über X-Jarvis-Token — beides ist recht, denn die Rolle
+    # entscheidet, nicht die Art des Nachweises. Ohne Nachweis wird geschlossen,
+    # bevor ein einziges Byte Audio fließt.
     principal = resolve_principal(ws, state)  # type: ignore[arg-type]
-    if principal is None or principal.kind != "user":
+    if principal is None:
         await ws.close(code=4401)
         return
     from ...auth import ROLE_RANK
