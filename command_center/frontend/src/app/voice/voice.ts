@@ -20,6 +20,8 @@ export interface VoiceBackend {
   available: boolean;
   reason: string;
   canSpeak: boolean;
+  /** Why speaking is unavailable — the server's own wording, not a guess. */
+  speakReason: string;
   /** Start recording; resolves with the transcript once stop() is called. */
   listen(onState?: (state: "recording" | "transcribing") => void): Promise<string>;
   stop(): void;
@@ -30,7 +32,10 @@ class UnavailableBackend implements VoiceBackend {
   id = "none";
   available = false;
   canSpeak = false;
-  constructor(public reason: string) {}
+  speakReason: string;
+  constructor(public reason: string, speakReason = "") {
+    this.speakReason = speakReason || reason;
+  }
   async listen(): Promise<string> { throw new Error(this.reason); }
   stop() { /* nothing to stop */ }
   async speak() { throw new Error(this.reason); }
@@ -41,12 +46,14 @@ class ServerVoiceBackend implements VoiceBackend {
   available = true;
   reason = "";
   canSpeak: boolean;
+  speakReason: string;
   private recorder: MediaRecorder | null = null;
   private stream: MediaStream | null = null;
   private audio: HTMLAudioElement | null = null;
 
   constructor(caps: VoiceCapabilities) {
     this.canSpeak = caps.text_to_speech.available;
+    this.speakReason = caps.text_to_speech.available ? "" : caps.text_to_speech.detail;
   }
 
   private static mimeType(): string {
@@ -134,7 +141,7 @@ export function resolveVoiceBackend(): Promise<VoiceBackend> {
     cached = api.get<VoiceCapabilities>("/api/voice/capabilities")
       .then((caps) => (caps.speech_to_text.available
         ? new ServerVoiceBackend(caps)
-        : new UnavailableBackend(caps.speech_to_text.detail)))
+        : new UnavailableBackend(caps.speech_to_text.detail, caps.text_to_speech.detail)))
       .catch(() => new UnavailableBackend("voice capabilities could not be loaded"));
   }
   return cached;

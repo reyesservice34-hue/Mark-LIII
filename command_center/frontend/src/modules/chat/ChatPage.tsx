@@ -14,6 +14,9 @@ import { ChatComposer } from "./ChatComposer";
 import { ExecutionPanel } from "./ExecutionPanel";
 import type { Attachment, Conversation, Message, RunState } from "./types";
 import "./chat.css";
+import { requestMic, speakReply, speechMode } from "@/app/voice/spoken";
+import { SpeechToggle } from "@/app/voice/SpeechToggle";
+import { resolveVoiceBackend } from "@/app/voice/voice";
 
 const LABELS: Record<string, string> = { planning: "ANALYZING REQUEST", executing: "TASK IN PROGRESS", waiting: "AWAITING APPROVAL", completed: "TASK COMPLETED", failed: "TASK FAILED", cancelled: "STOPPED" };
 
@@ -61,7 +64,24 @@ export default function ChatPage() {
 
   // ── live updates that can arrive outside our own stream (desktop, other tabs) ──
   useEvent("message.created", (ev) => { if (ev.data.conversation_id === conversationId) setMessages((ms) => ms.some((m) => m.id === ev.data.id) ? ms : [...ms, ev.data]); }, [conversationId]);
-  useEvent("message.updated", (ev) => { if (ev.data.conversation_id === conversationId) setMessages((ms) => ms.map((m) => m.id === ev.data.id ? { ...ev.data, content: ev.data.status === "streaming" && m.content.length > ev.data.content.length ? m.content : ev.data.content } : m)); }, [conversationId]);
+  // ── gesprochene Antworten ────────────────────────────────────────────
+  // Eine fertige Antwort wird vorgelesen, sobald der Modus das vorsieht; im
+  // Freihandmodus geht danach das Mikrofon von selbst wieder an. Jede Antwort
+  // wird höchstens einmal gesprochen, auch wenn dasselbe Ereignis zweimal
+  // ankommt (Stream und Event-Bus liefern beide).
+  const spokenIds = useRef<Set<string>>(new Set());
+  const speakIfWanted = useCallback((m: { id: string; role: string; status: string; content: string }) => {
+    if (m.role !== "assistant" || m.status !== "complete") return;
+    if (speechMode.get() === "off" || spokenIds.current.has(m.id)) return;
+    spokenIds.current.add(m.id);
+    resolveVoiceBackend().then(async (backend) => {
+      const spoke = await speakReply(backend, m.content,
+        (reason) => toast({ title: "Vorlesen fehlgeschlagen", body: reason, tone: "err" }));
+      if (spoke && speechMode.get() === "handsfree") requestMic();
+    });
+  }, []);
+
+  useEvent("message.updated", (ev) => { if (ev.data.conversation_id === conversationId) { setMessages((ms) => ms.map((m) => m.id === ev.data.id ? { ...ev.data, content: ev.data.status === "streaming" && m.content.length > ev.data.content.length ? m.content : ev.data.content } : m)); speakIfWanted(ev.data); } }, [conversationId, speakIfWanted]);
   useEvent("chat.delta", (ev) => { if (ev.data.conversation_id === conversationId && !stopRef.current) applyDelta(ev.data.message_id, ev.data.text); }, [conversationId]);
   useEvent("run.activity", (ev) => { if (ev.data.conversation_id === conversationId) addStep(ev.data.run_id || ev.data.parent_run_id, ev.data); }, [conversationId]);
   useEvent("run.status", (ev) => { if (ev.data.conversation_id === conversationId) setRunStatus(ev.data.id, ev.data.status, ev.data.label); }, [conversationId]);
@@ -91,11 +111,11 @@ export default function ChatPage() {
       case "chat.delta": applyDelta(d.message_id, d.text); break;
       case "run.activity": addStep(d.run_id || d.parent_run_id, d); break;
       case "run.status": setRunStatus(d.id, d.status, d.label); break;
-      case "message.updated": setMessages((ms) => ms.map((m) => m.id === d.id ? { ...d, content: d.status === "streaming" && m.content.length > d.content.length ? m.content : d.content } : m)); break;
+      case "message.updated": setMessages((ms) => ms.map((m) => m.id === d.id ? { ...d, content: d.status === "streaming" && m.content.length > d.content.length ? m.content : d.content } : m)); speakIfWanted(d); break;
       case "run.finished": setRunStatus(d.id, d.status, LABELS[d.status]); break;
       default: break;
     }
-  }, []);
+  }, [speakIfWanted]);
 
   const send = async (text: string, attachments: Attachment[], agentId?: string) => {
     if (!conversationId) return;
@@ -161,7 +181,8 @@ export default function ChatPage() {
           <div className="row">
             {runActive && <span className="state-line" style={{ padding: 0 }}><span className="dot info live" />{run?.label}</span>}
             {!runActive && !busy && <span className="state-line" style={{ padding: 0, color: masterOffline ? "var(--err)" : "var(--text-3)" }}>{masterOffline ? "MASTER AGENT OFFLINE" : "JARVIS READY"}</span>}
-            <button className={`btn icon sm ${panelOpen ? "" : "ghost"}`} onClick={() => setPanelOpen((v) => !v)} title="Execution panel" aria-label="Toggle execution panel"><Activity /></button>
+            <SpeechToggle />
+            <button className={`btn icon sm ${panelOpen ? "" : "ghost"}`} onClick={() => setPanelOpen((v) => !v)} title="Ausführung anzeigen" aria-label="Ausführungsbereich umschalten"><Activity /></button>
           </div>
         </div>
         {loadErr && <div style={{ padding: 12 }}><ErrorState error={loadErr} /></div>}
