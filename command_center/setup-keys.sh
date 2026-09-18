@@ -248,12 +248,24 @@ SERVER_IP="${SERVER_IP:-DEINE-SERVER-IP}"
 
 bold ""
 bold "  Dashboard ansehen"
-info "Der Server hört nur auf ${BIND} — von außen ist absichtlich nichts offen."
-info "Am schnellsten siehst du es über einen SSH-Tunnel. Auf deinem PC, in PowerShell:"
+if [ "$BIND" = "0.0.0.0" ]; then
+  # Nicht beschönigen: bei 0.0.0.0 ist der Port offen, und ohne Proxy läuft
+  # die Anmeldung unverschlüsselt über das Netz.
+  info "Im Browser:  http://${SERVER_IP}:${PORT}"
+  info ""
+  warn "JARVIS_CC_BIND steht auf 0.0.0.0 — der Port ist offen, sofern die Firewall"
+  warn "ihn durchlässt, und die Anmeldung läuft unverschlüsselt. Als Zwischenlösung"
+  warn "in Ordnung; dauerhaft gehört ein Reverse Proxy mit Zertifikat davor und"
+  warn "JARVIS_CC_BIND zurück auf 127.0.0.1."
+else
+  info "Der Server hört nur auf ${BIND}, von außen kommt niemand direkt dran."
+  info "Am schnellsten siehst du ihn über einen SSH-Tunnel — auf DEINEM PC, in PowerShell,"
+  info "nicht in diesem Fenster hier:"
+  info ""
+  info "    ssh -L ${PORT}:127.0.0.1:${PORT} ${USER:-root}@${SERVER_IP}"
+  info ""
+  info "Das Fenster offen lassen, dann im Browser:  http://localhost:${PORT}"
+fi
 info ""
-info "    ssh -L ${PORT}:127.0.0.1:${PORT} ${USER:-root}@${SERVER_IP}"
-info ""
-info "Das Fenster offen lassen, dann im Browser:  http://localhost:${PORT}"
-info ""
-info "Dauerhaft über eine Domain: A-Record auf ${SERVER_IP}, dann Reverse Proxy auf ${BIND}:${PORT}."
+info "Dauerhaft über eine Domain: A-Record auf ${SERVER_IP}, dann Reverse Proxy auf 127.0.0.1:${PORT}."
 bold ""
