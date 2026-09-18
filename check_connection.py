@@ -41,7 +41,23 @@ def main() -> int:
     if not token:
         bad("Maschinen-Token", "fehlt — python install_desktop.py")
         return 1
-    ok("Maschinen-Token", f"{len(token)} Zeichen, beginnt mit {token[:6]}…")
+    # Ein echtes Token ist "jcc_" + 48 Zeichen. Wer stattdessen 64 Hex-Zeichen
+    # hat, hat den Hash aus der Datenbank erwischt — der ist absichtlich nicht
+    # umkehrbar, also hilft kein Nachschlagen, nur ein neues Token. Das gleich
+    # hier zu sagen spart eine Runde gegen den Server.
+    import re as _re
+    if not token.startswith("jcc_"):
+        looks_hash = bool(_re.fullmatch(r"[0-9a-f]{64}", token))
+        bad("Maschinen-Token", f"{len(token)} Zeichen, beginnt mit {token[:6]}… — das ist kein Token")
+        print("      Ein Token sieht so aus:  jcc_XXXXXXXX…  (52 Zeichen)")
+        if looks_hash:
+            print("      Deines sind 64 Hex-Zeichen — das ist der gespeicherte HASH, nicht das")
+            print("      Token. Der Hash lässt sich nicht zurückrechnen; es braucht ein neues.")
+        print("      Im Dashboard: Einstellungen → Machine tokens → Create token.")
+        print("      Der Wert wird EINMAL angezeigt, direkt nach dem Erstellen.")
+        print("      Dann:  python install_desktop.py")
+        return 1
+    ok("Maschinen-Token", f"{len(token)} Zeichen, beginnt mit {token[:8]}…")
 
     # 2. Ist der Server überhaupt da?
     try:

@@ -120,8 +120,24 @@ def main() -> int:
 
     url = ask("Adresse des Servers", "z. B. https://jarvis.jarvis-reyes.de",
               cfg.get("jarvis_gateway_url", ""))
-    token = ask("Maschinen-Token", "aus dem Dashboard, wird nur einmal angezeigt",
+    token = ask("Maschinen-Token", "beginnt mit jcc_ — wird nur einmal angezeigt",
                 cfg.get("jarvis_gateway_token", ""), secret=True)
+    # Die Tabelle im Dashboard zeigt auch Kennungen und Hashes. Wer den falschen
+    # Wert erwischt, sieht das sonst erst beim ersten Verbindungsversuch, und
+    # dann sagt der Server nur „unbekannt".
+    if token and not token.startswith("jcc_"):
+        import re
+        say()
+        say("  Das ist kein Maschinen-Token. Ein Token sieht so aus: jcc_XXXXXXXX… (52 Zeichen).")
+        if re.fullmatch(r"[0-9a-f]{64}", token):
+            say("  Deines sind 64 Hex-Zeichen — das ist der gespeicherte Hash, nicht das Token.")
+            say("  Der Hash lässt sich nicht zurückrechnen, es braucht ein neues Token.")
+        say("  Im Dashboard: Einstellungen → Machine tokens → Create token.")
+        say("  Der Wert erscheint EINMAL, direkt nach dem Erstellen — den kopieren.")
+        say()
+        again = ask("Maschinen-Token", "beginnt mit jcc_", "", secret=True)
+        if again:
+            token = again
     name = ask("Name dieses Rechners", "frei wählbar, z. B. Buero-PC",
                cfg.get("desktop_device_name", platform.node() or "desktop"))
 
