@@ -162,6 +162,40 @@ class MetricsService:
         return out
 
     # ── docker ───────────────────────────────────────────────────────────
+    def _docker_hint(self, sock: str) -> str:
+        """Warum der Socket nicht antwortet — in einem Satz, der zur Lösung führt.
+
+        „docker engine unreachable: ConnectError" hat drei völlig verschiedene
+        Ursachen, und jede braucht einen anderen Handgriff. Die Datei selbst
+        weiß, welche es ist: Gibt es sie nicht, ist sie nicht eingehängt. Gibt
+        es sie und wir dürfen nicht lesen, fehlt die Gruppe. Dürfen wir lesen
+        und es kommt trotzdem nichts, läuft der Dienst nicht.
+        """
+        import grp
+        import stat as _stat
+
+        path = Path(sock)
+        if not path.exists():
+            return (f"Der Docker-Socket ist im Container nicht vorhanden ({sock}). In "
+                    "docker-compose.command-center.yml muss /var/run/docker.sock eingehängt sein.")
+        try:
+            st = path.stat()
+        except OSError as e:
+            return f"Der Docker-Socket ist nicht lesbar ({e.__class__.__name__})."
+        if not os.access(sock, os.R_OK | os.W_OK):
+            gid = st.st_gid
+            try:
+                name = grp.getgrgid(gid).gr_name
+            except (KeyError, OverflowError):
+                name = "?"
+            return (f"Der Socket ist da, aber dieser Container darf ihn nicht benutzen. Er gehört "
+                    f"der Gruppe {gid} ({name}), der Container läuft in {os.getgroups()}. "
+                    f"Setze JARVIS_CC_DOCKER_GID={gid} in command_center/.env und starte neu.")
+        if not _stat.S_ISSOCK(st.st_mode):
+            return f"{sock} ist kein Socket, sondern eine gewöhnliche Datei."
+        return ("Der Socket ist erreichbar, aber der Docker-Dienst antwortet nicht. Läuft er? "
+                "systemctl status docker")
+
     def _docker_client(self) -> httpx.AsyncClient | None:
         host = os.environ.get("DOCKER_HOST", "")
         if host.startswith("tcp://") or host.startswith("http://"):
@@ -175,8 +209,7 @@ class MetricsService:
     async def docker_containers(self, with_stats: bool = True) -> dict:
         client = self._docker_client()
         if client is None:
-            self._docker_state = {"status": "not_configured",
-                                  "detail": f"docker socket not mounted ({self.docker_socket})"}
+            self._docker_state = {"status": "not_configured", "detail": self._docker_hint(self.docker_socket)}
             return {"status": self._docker_state["status"], "detail": self._docker_state["detail"],
                     "containers": []}
         try:
@@ -205,8 +238,12 @@ class MetricsService:
                 self._docker_state = {"status": "healthy", "detail": f"{len(containers)} containers"}
                 return {"status": "healthy", "detail": self._docker_state["detail"], "containers": containers}
         except Exception as e:  # noqa: BLE001
-            self._docker_state = {"status": "offline", "detail": f"docker engine unreachable: {e.__class__.__name__}"}
-            return {"status": "offline", "detail": self._docker_state["detail"], "containers": []}
+            host = os.environ.get("DOCKER_HOST", "")
+            sock = host.replace("unix://", "") if host.startswith("unix://") else self.docker_socket
+            detail = (f"Docker über {host} nicht erreichbar ({e.__class__.__name__})."
+                      if host.startswith(("tcp://", "http://")) else self._docker_hint(sock))
+            self._docker_state = {"status": "offline", "detail": detail}
+            return {"status": "offline", "detail": detail, "containers": []}
 
     @staticmethod
     async def _container_stats(client: httpx.AsyncClient, cid: str) -> dict:

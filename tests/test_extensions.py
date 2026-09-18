@@ -374,5 +374,39 @@ with TestClient(app) as c:
     r = c.post("/api/calendar", headers=H, json={"title": "Ohne Uhrzeit", "when": tag})
     check("ohne Uhrzeit wird nicht geraten, sondern nachgefragt", r.status_code == 400, r.text)
 
+    print("\n12. Docker: der Grund steht da, nicht nur „unreachable\"")
+    import tempfile as _tf
+    from pathlib import Path as _P
+    metrics = state.services["metrics"]
+
+    hint = metrics._docker_hint("/tmp/gibt-es-sicher-nicht.sock")
+    check("fehlender Socket wird als fehlender Socket benannt",
+          "nicht vorhanden" in hint and "docker-compose" in hint, hint)
+
+    plain = _P(_tf.mkdtemp()) / "keine.sock"
+    plain.write_text("x")
+    check("eine gewöhnliche Datei an der Stelle fällt auf",
+          "kein Socket" in metrics._docker_hint(str(plain)), metrics._docker_hint(str(plain)))
+
+    # Ein echter Socket, den wir nicht lesen dürfen: Das ist der Fall, der beim
+    # Nutzer auftrat, und der einzige, der eine Gruppen-ID nennen muss.
+    import socket as _sock
+    sdir = _P(_tf.mkdtemp())
+    spath = sdir / "docker.sock"
+    srv = _sock.socket(_sock.AF_UNIX, _sock.SOCK_STREAM)
+    srv.bind(str(spath))
+    try:
+        os.chmod(spath, 0o000)
+        hint = metrics._docker_hint(str(spath))
+        if os.access(spath, os.R_OK | os.W_OK):
+            # Als root ist alles lesbar — dann greift der Fall nicht, und das
+            # ehrlich zu sagen ist besser, als einen grünen Haken zu setzen.
+            print("       (als root nicht prüfbar: Rechte greifen nicht)")
+        else:
+            check("fehlende Rechte nennen die Gruppen-ID und die Variable",
+                  "JARVIS_CC_DOCKER_GID" in hint and "Gruppe" in hint, hint)
+    finally:
+        srv.close()
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)
