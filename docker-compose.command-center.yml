@@ -40,6 +40,11 @@ services:
       # network; unset it falls back to the always-present default bridge,
       # which changes nothing.
       - shared
+    # Damit ein Dienst, der auf dem Host selbst lauscht (Ollama, LM Studio,
+    # eine Datenbank), unter host.docker.internal erreichbar ist. Unter Linux
+    # gibt es diesen Namen sonst nicht — man müsste die Bridge-IP raten.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - jarvis-cc-data:/data
       # Optional: let the Server page see and (with JARVIS_CC_ALLOW_DOCKER_ACTIONS=true) restart containers.
