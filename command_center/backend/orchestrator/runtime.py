@@ -88,7 +88,7 @@ def _persona_from_repo() -> str:
     return "\n\n".join(k.strip() for k in keep)
 
 
-def core_memory(state, limit: int = 20) -> str:
+def core_memory(state, limit: int = 0) -> str:
     """Das Hauptgedächtnis als Text — für jeden Systemtext, jedes Mal.
 
     Der Nutzer wollte ausdrücklich, dass er das VOR jeder Antwort und jeder
@@ -96,6 +96,12 @@ def core_memory(state, limit: int = 20) -> str:
     Er würde es manchmal aufrufen und manchmal nicht. Also steht es im Text,
     bevor die erste Frage kommt, und kann gar nicht übersehen werden.
     """
+    if not limit:
+        # Die Obergrenze steht an einer Stelle: im Modul, das sie durchsetzt.
+        # Sie hier noch einmal hinzuschreiben hieße, sie beim nächsten Ändern
+        # zu vergessen — und dann fehlten Sätze, die der Nutzer eingetragen hat.
+        from ..modules.memory import MAX_PINNED
+        limit = MAX_PINNED
     try:
         rows = state.db.fetchall(
             "SELECT text FROM memory WHERE pinned=1 ORDER BY created_at LIMIT ?", (limit,))

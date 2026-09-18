@@ -430,17 +430,29 @@ with TestClient(app) as c:
           "Sprinter" not in state.runtime._system_prompt(master, state.tools.available()))
 
     # Die Grenze ist der Punkt: Was hier steht, kostet bei jeder Anfrage.
+    from command_center.backend.modules.memory import MAX_PINNED
+    check("das Hauptgedächtnis fasst 30 Sätze", MAX_PINNED == 30, MAX_PINNED)
     ids = []
-    for i in range(20):
+    for i in range(MAX_PINNED):
         rr = c.post("/api/memory/facts", headers=H, json={"text": f"Kernsatz {i}", "pinned": True})
-        check(f"Platz {i + 1} belegt", rr.status_code == 201, rr.text) if i in (0, 19) else None
+        check(f"Platz {i + 1} belegt", rr.status_code == 201, rr.text) if i in (0, MAX_PINNED - 1) else None
         ids.append(rr.json()["fact"]["id"])
     r = c.post("/api/memory/facts", headers=H, json={"text": "einer zu viel", "pinned": True})
-    check("der 21. wird abgelehnt statt still zu verdrängen", r.status_code == 400, r.text)
+    check("einer über der Grenze wird abgelehnt statt still zu verdrängen", r.status_code == 400, r.text)
     check("mit einem Grund, der zur Lösung führt", "Hauptgedächtnis" in r.json()["detail"], r.json())
 
     core_text = state.runtime._system_prompt(master, state.tools.available())
-    check("alle 20 stehen im Systemtext", core_text.count("Kernsatz") == 20, core_text.count("Kernsatz"))
+    check(f"alle {MAX_PINNED} stehen im Systemtext",
+          core_text.count("Kernsatz") == MAX_PINNED, core_text.count("Kernsatz"))
+
+    # Bearbeiten: der Satz behält seinen Platz und wirkt sofort.
+    r = c.patch(f"/api/memory/facts/{ids[0]}", headers=H, json={"text": "Kernsatz 0, aber korrigiert"})
+    check("bearbeiten geht", r.status_code == 200, r.text)
+    check("der Eintrag bleibt im Hauptgedächtnis", r.json()["fact"]["pinned"] == 1, r.json()["fact"])
+    neu_text = state.runtime._system_prompt(master, state.tools.available())
+    check("und der neue Wortlaut steht sofort im Systemtext", "aber korrigiert" in neu_text)
+    r = c.patch(f"/api/memory/facts/{ids[0]}", headers=H, json={"text": "   "})
+    check("ein leerer Satz wird abgelehnt", r.status_code == 400, r.text)
 
     c.delete("/api/memory/facts?confirm=ALLES", headers=H)
     check("nach dem Leeren ist auch das Hauptgedächtnis leer",

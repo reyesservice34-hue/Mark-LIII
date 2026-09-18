@@ -30,10 +30,10 @@ router = APIRouter(prefix="/api/memory", tags=["memory"])
 
 SETTING_KEY = "master_instructions"
 MAX_INSTRUCTIONS = 20_000
-# Wie viele Sätze ins Hauptgedächtnis dürfen. Die Grenze ist kein Schikane,
+# Wie viele Sätze ins Hauptgedächtnis dürfen. Die Grenze ist keine Schikane,
 # sondern Physik: Was hier steht, wird bei JEDER Anfrage mitgeschickt und
-# jedes Mal bezahlt. Zwanzig gute Sätze wirken; zweihundert ertränken sie.
-MAX_PINNED = 20
+# jedes Mal bezahlt. Dreißig gute Sätze wirken; dreihundert ertränken sie.
+MAX_PINNED = 30
 
 
 class Instructions(BaseModel):
@@ -93,6 +93,27 @@ async def add_fact(body: Fact, state: AppState = Depends(get_state),
     state.log.audit(actor_type="user", actor_id=principal.actor, action="memory.add",
                     target=row["id"], status="ok")
     return {"fact": row}
+
+
+@router.patch("/facts/{fact_id}")
+async def edit_fact(fact_id: str, body: Fact, state: AppState = Depends(get_state),
+                    principal: Principal = Depends(require_role("operator"))):
+    """Den Wortlaut ändern, ohne den Eintrag zu verlieren.
+
+    Löschen und neu anlegen wäre der Umweg — und im Hauptgedächtnis kostet er
+    den Platz, den man danach wieder suchen muss.
+    """
+    row = state.db.fetchone("SELECT * FROM memory WHERE id=?", (fact_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Diesen Eintrag gibt es nicht.")
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Ein leerer Satz merkt nichts.")
+    state.db.update("memory", fact_id, {"text": text})
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="memory.edit",
+                    target=fact_id, status="ok")
+    state.bus.publish("memory.core", {"id": fact_id, "edited": True})
+    return {"fact": state.db.fetchone("SELECT * FROM memory WHERE id=?", (fact_id,))}
 
 
 @router.post("/facts/{fact_id}/pin")

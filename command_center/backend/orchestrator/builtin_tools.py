@@ -308,9 +308,10 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
             # Das Hauptgedächtnis ist gedeckelt: Was hier hineinkommt, wird bei
             # jeder Anfrage mitgeschickt. Ist kein Platz, wird das gesagt statt
             # still einen anderen Satz zu verdrängen.
+            from ..modules.memory import MAX_PINNED
             have = st.db.scalar("SELECT COUNT(*) FROM memory WHERE pinned=1") or 0
-            if have >= 20:
-                return ("Gemerkt — aber nicht im Hauptgedächtnis: dort sind alle 20 Plätze belegt. "
+            if have >= MAX_PINNED:
+                return (f"Gemerkt — aber nicht im Hauptgedächtnis: dort sind alle {MAX_PINNED} Plätze belegt. "
                         "Der Nutzer kann im Dashboard unter Gedächtnis einen herausnehmen.")
             st.db.execute("UPDATE memory SET pinned=1 WHERE id=?", (row_id,))
             return "remembered (im Hauptgedächtnis)"

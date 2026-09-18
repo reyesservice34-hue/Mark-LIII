@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
-import { BookOpen, Sparkles, Trash2, Plus, Check, Zap, X } from "@/lib/icons";
+import { BookOpen, Sparkles, Trash2, Plus, Check, Zap, X, Pencil } from "@/lib/icons";
 import { Panel, EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { relative } from "@/lib/format";
 import "@/modules/home/architecture.css";
@@ -32,6 +32,8 @@ export default function MemoryPage() {
   const [neu, setNeu] = useState("");
   const [kern, setKern] = useState("");
   const [q, setQ] = useState("");
+  // Welcher Eintrag gerade bearbeitet wird, und mit welchem Wortlaut.
+  const [edit, setEdit] = useState<{ id: string; text: string } | null>(null);
 
   // Den Serverstand übernehmen, solange niemand tippt — sonst überschreibt
   // ein Hintergrund-Neuladen die halbfertige Eingabe.
@@ -88,6 +90,36 @@ export default function MemoryPage() {
     catch (e: any) { toast({ title: "Ging nicht", body: e?.message, tone: "err" }); }
   };
 
+  const saveEdit = async () => {
+    if (!edit || !edit.text.trim()) return;
+    try {
+      await api.patch(`/api/memory/facts/${edit.id}`, { text: edit.text.trim() });
+      setEdit(null);
+      reload();
+    } catch (e: any) { toast({ title: "Ging nicht", body: e?.message, tone: "err" }); }
+  };
+
+  /** Ein Eintrag, der sich auf Klick in ein Eingabefeld verwandelt. Löschen
+   *  und neu anlegen wäre der Umweg — und im Hauptgedächtnis kostet er den
+   *  Platz, den man danach wieder suchen muss. */
+  const editable = (f: Fact, className = "") => (
+    edit?.id === f.id ? (
+      <span className="row" style={{ gap: 6, width: "100%" }}>
+        <input className="input sm" autoFocus value={edit.text} style={{ flex: 1 }}
+          onChange={(e) => setEdit({ id: f.id, text: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void saveEdit();
+            if (e.key === "Escape") setEdit(null);
+          }} />
+        <button className="btn sm primary" onClick={saveEdit}><Check size={13} /></button>
+        <button className="btn sm ghost" onClick={() => setEdit(null)}><X size={13} /></button>
+      </span>
+    ) : (
+      <span className={className} onDoubleClick={() => setEdit({ id: f.id, text: f.text })}
+        title="Doppelklick zum Bearbeiten">{f.text}</span>
+    )
+  );
+
   const facts = (data?.facts || []).filter((f) => !q || f.text.toLowerCase().includes(q.toLowerCase()));
   const core = data?.core || [];
 
@@ -133,9 +165,15 @@ export default function MemoryPage() {
               {core.map((f) => (
                 <li key={f.id}>
                   <span className="core-mark" aria-hidden />
-                  <span className="core-text">{f.text}</span>
-                  <button className="btn sm ghost" onClick={() => pin(f, false)}
-                    title="Aus dem Hauptgedächtnis nehmen"><X size={13} /></button>
+                  {editable(f, "core-text")}
+                  {edit?.id !== f.id && (
+                    <>
+                      <button className="btn sm ghost" onClick={() => setEdit({ id: f.id, text: f.text })}
+                        title="Bearbeiten"><Pencil size={13} /></button>
+                      <button className="btn sm ghost" onClick={() => pin(f, false)}
+                        title="Aus dem Hauptgedächtnis nehmen"><X size={13} /></button>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
@@ -188,11 +226,13 @@ export default function MemoryPage() {
                   <tr key={f.id}>
                     <td>
                       {f.pinned ? <span className="core-badge" title="Im Hauptgedächtnis"><Zap size={11} /></span> : null}
-                      {f.text}
+                      {editable(f)}
                     </td>
                     <td className="small muted">{f.actor || "—"}</td>
                     <td className="small muted">{relative(f.created_at)}</td>
                     <td className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+                      <button className="btn sm" onClick={() => setEdit({ id: f.id, text: f.text })}
+                        title="Bearbeiten"><Pencil size={13} /></button>
                       <button className={`btn sm ${f.pinned ? "primary" : ""}`} onClick={() => pin(f, !f.pinned)}
                         title={f.pinned ? "Aus dem Hauptgedächtnis nehmen" : "Ins Hauptgedächtnis heben — gilt dann immer"}>
                         <Zap size={13} />
