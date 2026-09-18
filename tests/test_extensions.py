@@ -234,5 +234,52 @@ with TestClient(app) as c:
     check("die Werkzeugebene zählt wirklich", str(inv["tools"]["usable"]) in tools_layer["detail"],
           tools_layer["detail"])
 
+    print("\n8. Quelltext holen: was erlaubt ist und was nicht")
+    from command_center.backend.services.repos import RepoError, RepoService, check_url, git_available
+
+    for bad, why in [("git@github.com:x/y.git", "SSH"),
+                     ("file:///etc/passwd", "lokale Datei"),
+                     ("http://127.0.0.1:5678/repo.git", "eigener Rechner"),
+                     ("http://192.168.1.10/x.git", "eigenes Netz"),
+                     ("https://user:geheim@github.com/x/y.git", "Zugangsdaten in der Adresse")]:
+        try:
+            check_url(bad)
+            check(f"abgelehnt: {why}", False, bad)
+        except RepoError:
+            check(f"abgelehnt: {why}", True)
+        except Exception as e:  # noqa: BLE001
+            check(f"abgelehnt: {why}", False, repr(e))
+
+    check("eine öffentliche Adresse geht durch",
+          check_url("https://github.com/anthropics/claude-code") .startswith("https://github.com/"))
+
+    clone_tool = state.tools.get("repo.clone")
+    check("repo.clone ist da", clone_tool is not None)
+    check("und fragt vor dem Klonen nach", clone_tool is not None and clone_tool.needs_approval())
+    check("verfügbar genau dann, wenn git da ist",
+          clone_tool is not None and clone_tool.available == git_available(),
+          f"available={clone_tool.available if clone_tool else None}, git={git_available()}")
+    if clone_tool is not None and not clone_tool.available:
+        check("und sagt sonst, was fehlt", "git" in clone_tool.reason, clone_tool.reason)
+
+    dl = state.tools.get("web.download")
+    check("web.download fragt auch nach", dl is not None and dl.needs_approval())
+
+    svc = RepoService(state.services["files"], state.log)
+    try:
+        asyncio.run(svc.download("http://127.0.0.1:8080/etwas.json", "etwas.json"))
+        check("herunterladen aus dem eigenen Netz wird verweigert", False)
+    except RepoError as e:
+        check("herunterladen aus dem eigenen Netz wird verweigert", "Netz dieses Servers" in str(e), str(e))
+
+    try:
+        asyncio.run(svc.clone("https://github.com/x/y", "../raus"))
+        check("Ordnernamen mit .. werden abgelehnt", False)
+    except RepoError:
+        check("Ordnernamen mit .. werden abgelehnt", True)
+
+    check("nichts davon liegt außerhalb des Arbeitsbereichs",
+          str(svc.root).startswith(str(state.services["files"].root)), str(svc.root))
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

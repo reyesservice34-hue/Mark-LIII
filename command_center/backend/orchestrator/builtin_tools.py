@@ -974,3 +974,72 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           "devices exist. Look here before claiming you can or cannot do something.",
                           _obj({}), category="self", risk="low", min_role="viewer",
                           handler=system_inventory))
+
+    # ── Quelltext holen: klonen und laden ────────────────────────────────
+    # Alles landet im Arbeitsbereich, also greifen darauf sofort die
+    # filesystem.*-Werkzeuge. Klonen braucht eine Genehmigung: Es holt fremden
+    # Quelltext auf deinen Server, und das ist nichts, was nebenbei passiert.
+    from ..services.repos import RepoError, RepoService, git_available
+    repos = RepoService(files, st.log)
+    git_ok = git_available()
+    git_reason = "" if git_ok else "git ist im Server-Image nicht installiert"
+
+    async def repo_clone(ctx: ToolContext, args: dict):
+        try:
+            res = await repos.clone(str(args["url"]), str(args.get("name", "")),
+                                    branch=str(args.get("branch", "")))
+        except RepoError as e:
+            return str(e), False
+        ctx.emit("repo", {"text": f"geklont: {res['path']}"})
+        return {**res, "hinweis": "Lesbar mit filesystem.list und filesystem.read unter diesem Pfad."}
+
+    async def repo_list(ctx: ToolContext, args: dict):
+        items = repos.list()
+        return items or "Es ist noch kein Repository geklont."
+
+    async def repo_pull(ctx: ToolContext, args: dict):
+        try:
+            return await repos.pull(str(args["name"]))
+        except RepoError as e:
+            return str(e), False
+
+    async def repo_remove(ctx: ToolContext, args: dict):
+        try:
+            gone = repos.remove(str(args["name"]))
+        except RepoError as e:
+            return str(e), False
+        return {"removed": gone} if gone else (f"'{args['name']}' gibt es nicht.", False)
+
+    async def web_download(ctx: ToolContext, args: dict):
+        try:
+            return await repos.download(str(args["url"]), str(args.get("name", "")))
+        except RepoError as e:
+            return str(e), False
+
+    reg.register(ToolSpec("repo.clone",
+                          "Clone a public git repository into the workspace so you can read it. "
+                          "http(s) only, shallow, and never executed — reading is filesystem.read.",
+                          _obj({"url": _s("https URL of the repository"),
+                                "name": _s("folder name, defaults to the repository name"),
+                                "branch": _s("branch, defaults to the default branch"),
+                                "reason": _s("why this is needed")}, ["url", "reason"]),
+                          category="code", risk="high", requires_approval=True, handler=repo_clone,
+                          available=git_ok, reason=git_reason, timeout_seconds=360))
+    reg.register(ToolSpec("repo.list", "Which repositories are cloned into the workspace.", _obj({}),
+                          category="code", risk="low", min_role="viewer", handler=repo_list))
+    reg.register(ToolSpec("repo.pull", "Fetch the latest commits of a cloned repository.",
+                          _obj({"name": _s("folder name from repo.list")}, ["name"]),
+                          category="code", risk="medium", handler=repo_pull,
+                          available=git_ok, reason=git_reason, timeout_seconds=180))
+    reg.register(ToolSpec("repo.remove", "Delete a cloned repository from the workspace.",
+                          _obj({"name": _s("folder name from repo.list"),
+                                "reason": _s("why")}, ["name", "reason"]),
+                          category="code", risk="high", requires_approval=True, handler=repo_remove))
+    reg.register(ToolSpec("web.download",
+                          "Download one file from a link into the workspace (downloads/). "
+                          "Addresses inside this server's own network are refused.",
+                          _obj({"url": _s("https URL of the file"),
+                                "name": _s("file name, defaults to the one in the URL"),
+                                "reason": _s("why this is needed")}, ["url", "reason"]),
+                          category="web", risk="high", requires_approval=True, handler=web_download,
+                          timeout_seconds=120))

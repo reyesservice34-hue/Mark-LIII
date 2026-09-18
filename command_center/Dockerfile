@@ -19,7 +19,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
     JARVIS_CC_DATA_DIR=/data JARVIS_CC_WORKSPACE_DIR=/data/workspace \
     JARVIS_CC_STATIC_DIR=/app/command_center/backend/static JARVIS_CC_PORT=8080
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends curl tini && rm -rf /var/lib/apt/lists/* \
+# git gehört dazu, seit er Repositories in den Arbeitsbereich klonen kann.
+# Ohne das meldet repo.clone ehrlich, dass es fehlt — aber dann fehlt es eben.
+RUN apt-get update && apt-get install -y --no-install-recommends curl tini git && rm -rf /var/lib/apt/lists/* \
     && groupadd -r jarvis && useradd -r -g jarvis -d /app -s /usr/sbin/nologin jarvis
 COPY command_center/requirements.txt /app/command_center/requirements.txt
 RUN pip install -r /app/command_center/requirements.txt
