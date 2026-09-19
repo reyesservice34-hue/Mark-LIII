@@ -54,8 +54,39 @@ VOICE_HINT = (
     "sie spricht. Wenn du ein Werkzeug brauchst, benutze es wie im Chat, sag vorher in einem kurzen Satz, was du "
     "tust, und danach knapp, was dabei herauskam. Lange Texte (E-Mail-Entwürfe, Berichte) legst du ab und "
     "nennst nur das Wesentliche; zeig sie im Dashboard. Was eine Freigabe braucht, fragst du kurz laut: der Master "
-    "kann mit „ja“ oder „nein“ antworten."
+    "kann mit „ja“ oder „nein“ antworten. Der Text des Masters kommt aus der Spracherkennung und kann nuscheln oder "
+    "falsch erkannte Wörter enthalten: deute ihn sinngemäß (Namen und Begriffe aus dem Gedächtnis), führe aber nur aus, "
+    "was sicher gemeint ist; ist etwas Wichtiges unklar, frag in einem kurzen Satz nach, statt zu raten. "
+    "Dir stehen im Sprachmodus zuerst die häufigsten Werkzeuge zur Verfügung; brauchst du weitere (zum Beispiel "
+    "Server, Dateien, Desktop, Code, Automatisierung), lade sie mit tools.load nach."
 )
+
+# Sprachmodus: nicht alle 100 Werkzeuge bei jeder Frage mitschicken (das kostet bei jedem Zug Sekunden). Ein
+# kleiner Grundstock plus die Gruppen, die zur Frage passen; alles Übrige lädt der Agent mit tools.load nach.
+_VOICE_CORE = ("memory.", "think.", "tools.", "task.", "approval.", "notify.user", "dashboard.", "conversation.")
+_VOICE_ALWAYS = ("calendar", "email", "web")
+_VOICE_GROUPS: dict[str, tuple[tuple[str, ...], str]] = {
+    "calendar": (("calendar.",), r"termin|kalender|verschieb|erinner|frei|zeit|morgen|heute|woche|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|kollision|uhr"),
+    "email": (("email.",), r"mail|nachricht|postfach|entwurf|antwort|schreib|schick|sende|rechnung|angebot|kunde"),
+    "web": (("web.", "browser."), r"such|google|web|internet|seite|link|nachschlag|aktuell|wetter|preis|recherch"),
+    "server": (("server.", "docker.", "logs.", "system.", "terminal.", "integration."), r"server|docker|container|log|neustart|speicher|platte|cpu|arbeitsspeicher|status|system|dienst|integration"),
+    "files": (("filesystem.", "document.", "knowledge."), r"datei|ordner|dokument|pdf|notiz|wissen"),
+    "desktop": (("desktop.",), r"pc|rechner|desktop|bildschirm|öffne|starte|programm|klick|tipp|schließ|maus"),
+    "code": (("github.", "repo.", "source.", "self."), r"github|repo|code|verbesser|erweiter|fähigkeit|änder dich|update"),
+    "automation": (("workflow.", "mcp.", "composio."), r"workflow|n8n|automat|verbind|composio"),
+    "learning": (("skill.", "procedure.", "teach."), r"lern|zeig dir|prozedur|skill|beibring"),
+    "whatsapp": (("notify.whatsapp",), r"whatsapp"),
+    "agents": (("agent.",), r"delegier|spezialist|agent"),
+}
+VOICE_GROUP_NAMES = ", ".join(_VOICE_GROUPS)
+
+
+def voice_tools(all_tools: list, goal: str, loaded: set) -> list:
+    keep: list[str] = list(_VOICE_CORE)
+    for name, (prefixes, pat) in _VOICE_GROUPS.items():
+        if name in _VOICE_ALWAYS or name in loaded or re.search(pat, goal or "", re.I):
+            keep.extend(prefixes)
+    return [t for t in all_tools if any(t.name.startswith(k) for k in keep)]
 
 
 # Schnell zuerst, gründlich wenn es nötig ist: Standard ist das schnelle Modell. Auf das stärkere (Sonnet 5)
@@ -99,7 +130,8 @@ class RunHandle:
     started_at: str = field(default_factory=now_iso)
     text: str = ""
     voice: bool = False          # Antwort wird vorgelesen (Live-Konsole)
-    deep: bool = False           # stärkeres Modell (Sonnet 5) statt des schnellen
+    deep: bool = False           # stärkeres Modell statt des schnellen
+    loaded: set = field(default_factory=set)   # Sprachmodus: zusätzlich geladene Werkzeuggruppen
 
     def public(self) -> dict:
         return {"id": self.id, "agent_id": self.agent_id, "conversation_id": self.conversation_id,
@@ -514,9 +546,10 @@ class MasterRuntime:
         assert self.provider is not None
         if self.fast_provider is not None and not handle.deep and needs_deep(goal):
             handle.deep = True
-        tools = st.tools.for_agent(agent.tools, handle.principal.role)
+        tools_all = st.tools.for_agent(agent.tools, handle.principal.role)
         if handle.depth >= self.settings.max_delegation_depth:
-            tools = [t for t in tools if t.name != "agent.delegate"]
+            tools_all = [t for t in tools_all if t.name != "agent.delegate"]
+        tools = voice_tools(tools_all, goal, handle.loaded) if handle.voice else tools_all
         system = self._system_prompt(agent, tools)
         if handle.voice:
             system += VOICE_HINT
@@ -557,6 +590,8 @@ class MasterRuntime:
             stop_reason = "end_turn"
             segment: list[str] = []
             provider = self.provider_for(handle)
+            if handle.voice and steps > 1:
+                tool_defs = [t.to_def() for t in voice_tools(tools_all, goal, handle.loaded)] if tool_defs else tool_defs
             async for ev in provider.stream(system=system, messages=messages, tools=tool_defs):
                 if handle.cancel.is_set():
                     raise asyncio.CancelledError()

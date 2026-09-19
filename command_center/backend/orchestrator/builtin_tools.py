@@ -249,6 +249,22 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           _obj({"reason": _s("kurz: warum die Aufgabe knifflig ist")}),
                           category="meta", risk="low", min_role="viewer", handler=think_deeper))
 
+    async def tools_load(ctx: ToolContext, args: dict):
+        from .runtime import _VOICE_GROUPS, VOICE_GROUP_NAMES
+        run = st.runtime.get_run(ctx.run_id or "") if st.runtime else None
+        want = {str(g).strip().lower() for g in (args.get("groups") or [])}
+        ok = sorted(g for g in want if g in _VOICE_GROUPS)
+        if run is not None:
+            run.loaded |= set(ok)
+        return {"loaded": ok, "unknown": sorted(want - set(ok)), "available_groups": VOICE_GROUP_NAMES,
+                "note": "Die Werkzeuge dieser Gruppen stehen ab dem nächsten Schritt bereit."}
+
+    reg.register(ToolSpec("tools.load", "Lädt weitere Werkzeuggruppen nach (Sprachmodus zeigt zuerst nur die häufigsten). "
+                          "Gruppen: calendar, email, web, server, files, desktop, code, automation, learning, whatsapp, agents.",
+                          _obj({"groups": {"type": "array", "items": {"type": "string"}, "description": "Gruppennamen"}},
+                               ["groups"]),
+                          category="meta", risk="low", min_role="viewer", handler=tools_load))
+
     # ── agents ───────────────────────────────────────────────────────────
     async def agent_delegate(ctx: ToolContext, args: dict):
         return await st.runtime.delegate(ctx, str(args["agent_id"]), str(args["instruction"]),

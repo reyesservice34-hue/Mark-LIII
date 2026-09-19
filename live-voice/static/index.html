@@ -51,7 +51,7 @@
   <div id="timing" style="font-size:12px;color:#5f6f85;min-height:16px"></div>
   <div id="learned" style="font-size:12px;color:#5fbf8f;min-height:16px"></div>
   <div id="err"></div>
-  <label style="font-size:12px;color:#7f8fa6;cursor:pointer"><input type="checkbox" id="cleanToggle" checked> Sprache glätten (Nuscheln korrigieren)</label>
+  <label style="font-size:12px;color:#7f8fa6;cursor:pointer"><input type="checkbox" id="cleanToggle"> Sprache vorher glätten (langsamer, +1 s)</label>
   <button id="toggle">Gespräch beginnen</button>
 
 <script>
@@ -66,7 +66,7 @@ const learnedEl = document.getElementById('learned');
 const toggleBtn = document.getElementById('toggle');
 const heardEl = document.getElementById('heard');
 const cleanToggle = document.getElementById('cleanToggle');
-try { cleanToggle.checked = localStorage.getItem('jarvis_clean') !== '0'; } catch (e) {}
+try { cleanToggle.checked = localStorage.getItem('jarvis_clean') === '1'; } catch (e) {}
 cleanToggle.addEventListener('change', () => { try { localStorage.setItem('jarvis_clean', cleanToggle.checked ? '1' : '0'); } catch (e) {} });
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -180,6 +180,7 @@ function fireText() {
   acceptResults = false; busy = true;
   setState('thinking'); statusEl.textContent = 'Einen Moment, Master …'; errEl.textContent = '';
   if (pendingApproval) { answerApproval(text).then(ok => { if (ok) { busy = false; acceptResults = true; setState('listening'); } else if (agentOK) runAgent(text, tPause); }); return; }
+  reflex(text).then(ans => { if (ans) { sayReflex(text, ans); return; }
   polish(text).then(c => {
     heardEl.textContent = c.changed ? 'Verstanden: ' + c.text : '';
     if (c.unclear && c.question) {                       // wirklich unklar: erst nachfragen, nichts ausführen
@@ -194,7 +195,7 @@ function fireText() {
     const form = new FormData();
     form.append('text', c.text); form.append('history', JSON.stringify(history)); form.append('memory', memoryText);
     runTurn('api/turn_text', form, tPause);
-  });
+  }); });
 }
 
 /* ── Lautstärke-Überwachung: Unterbrechen (und Aufnahme im Ausweichmodus) ─ */
@@ -257,7 +258,7 @@ async function runTurn(url, form, pauseMs) {
     if (tAudio || !fillers.length || !running) return;
     let i; do { i = Math.floor(Math.random() * fillers.length); } while (fillers.length > 1 && i === lastFiller);
     lastFiller = i; audioQueue.unshift(fillers[i]); playNext();
-  }, 900);
+  }, 700);
   try {
     const r = await fetch(url, { method: 'POST', body: form, signal: abortCtl.signal });
     const reader = r.body.getReader(), dec = new TextDecoder();
@@ -335,6 +336,52 @@ async function answerApproval(text) {
   return true;
 }
 
+
+/* ── Reflexe: die häufigsten Fragen beantwortet Jarvis sofort, ohne Denkpause (Uhrzeit, Datum, Kalender, Server) ─ */
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+function uhr(d) { const m = d.getMinutes(); return d.getHours() + (m ? ' Uhr ' + m : ' Uhr'); }
+async function reflex(t) {
+  const q = t.toLowerCase().replace(/[?!.,]/g, ' ');
+  try {
+    if (/\b(wie sp(ä|ae)t|wie viel uhr|wieviel uhr|uhrzeit)\b/.test(q)) return 'Es ist ' + uhr(new Date()) + ', Master.';
+    if (/\b(welcher tag|welches datum|den wievielten|welchen tag)\b/.test(q))
+      return 'Heute ist ' + new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }) + ', Master.';
+    const cal = q.match(/\b(termine?|kalender)\b/) && q.match(/\b(heute|morgen)\b/) && !/\b(anlegen|eintragen|verschieb|l(ö|oe)sch|absag|neu|mach|erstell|buch)/.test(q);
+    if (cal) {
+      const morgen = /\bmorgen\b/.test(q), a = new Date(); a.setHours(0, 0, 0, 0); if (morgen) a.setDate(a.getDate() + 1);
+      const b = new Date(a); b.setDate(b.getDate() + 1);
+      const r = await fetch('/api/calendar?start=' + ymd(a) + 'T00:00:00&end=' + ymd(b) + 'T00:00:00', { credentials: 'same-origin' });
+      if (!r.ok) return null;
+      const d = await r.json(); if (!d.available) return null;
+      const ev = (d.events || []).slice().sort((x, y) => new Date(x.start) - new Date(y.start));
+      const tag = morgen ? 'Morgen' : 'Heute';
+      if (!ev.length) return tag + ' steht nichts im Kalender, Master.';
+      let out = tag + (ev.length === 1 ? ' hast du einen Termin: ' : ' hast du ' + ev.length + ' Termine: ')
+        + ev.slice(0, 5).map(e => 'um ' + uhr(new Date(e.start)) + ' ' + e.title).join(', ') + '.';
+      if (ev.length > 5) out += ' Dazu noch ' + (ev.length - 5) + ' weitere.';
+      for (let i = 0; i < ev.length - 1; i++)
+        if (new Date(ev[i + 1].start) < new Date(ev[i].end)) { out += ' Achtung, Master: ' + ev[i].title + ' und ' + ev[i + 1].title + ' überschneiden sich.'; break; }
+      return out;
+    }
+    if (/\b(serverstatus|status vom server|wie geht.s dem server|l(ä|ae)uft der server|server status)\b/.test(q)) {
+      const r = await fetch('/api/status', { credentials: 'same-origin' }); if (!r.ok) return null;
+      const s = (await r.json()).server; if (!s) return null;
+      const p = v => Math.round(v <= 1 ? v * 100 : v);
+      return (s.connected ? 'Dem Server geht es gut' : 'Achtung, Master: der Server meldet sich nicht') + '. Prozessor ' + p(s.cpu) + ' Prozent, Arbeitsspeicher ' + p(s.ram) + ' Prozent, Platte ' + p(s.disk) + ' Prozent.';
+    }
+  } catch (e) {}
+  return null;
+}
+function sayReflex(text, answer) {
+  transcriptEl.textContent = 'Sie: ' + text; replyEl.textContent = answer; heardText = text; heardEl.textContent = '';
+  audioQueue = []; sayChain = Promise.resolve(); answer.split(/(?<=[.!?])\s+/).forEach(x => sayQueued(x));
+  timingEl.textContent = 'Sofortantwort (ohne Denkpause)';
+  history.push({ role: 'user', content: text }); history.push({ role: 'assistant', content: answer });
+  sessionStorage.setItem('jarvis_history', JSON.stringify(history.slice(-20)));
+  sayChain.then(finishIfSilent);
+}
+
 // Zwischen Erkennung und Jarvis: nuscheln, verschluckte Wörter und falsch erkannte Namen glätten (kostenlos, ~0,5 s).
 async function polish(text) {
   if (!cleanToggle.checked || text.split(/\s+/).length < 3) return { text, changed: false, unclear: false, question: '' };
@@ -366,7 +413,7 @@ async function runAgent(text, pauseMs, shown) {
   clearTimeout(fillerTimer);
   fillerTimer = setTimeout(() => { if (tAudio || !fillers.length || !running) return;
     let i; do { i = Math.floor(Math.random() * fillers.length); } while (fillers.length > 1 && i === lastFiller);
-    lastFiller = i; audioQueue.unshift(fillers[i]); playNext(); }, 900);
+    lastFiller = i; audioQueue.unshift(fillers[i]); playNext(); }, 700);
   try {
     const conv = await ensureConv();
     const r = await fetch('/api/chat/conversations/' + conv + '/messages', { method: 'POST', credentials: 'same-origin', signal: abortCtl.signal,

@@ -179,7 +179,7 @@ async def _stream_reply(client: httpx.AsyncClient, history: list[dict], text: st
                 "POST", "https://openrouter.ai/api/v1/chat/completions",
                 headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
                 json={"model": model, "max_tokens": 220, "stream": True, "messages": messages},
-                timeout=httpx.Timeout(30, read=12),
+                timeout=httpx.Timeout(20, read=6),
             ) as r:
                 if r.status_code >= 400:
                     continue  # Limit oder Überlast: nächstes kostenloses Modell
