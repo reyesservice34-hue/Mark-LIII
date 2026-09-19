@@ -468,8 +468,18 @@ class IntegrationRegistry:
             "any_env": adapter.any_env, "optional_env": adapter.optional_env,
         }
 
+    # Was der Betrieb nicht braucht, bleibt im Hintergrund lauffähig, steht aber nicht in der Liste:
+    # bezahlte Direktzugänge (Denken läuft über OpenRouter), die ungenutzte Fernsteuerung, IONOS ohne
+    # Funktion und die Google-Calendar-Karte (der Kalender läuft über die n8n-Brücke).
+    HIDDEN_DEFAULT = "anthropic,openai,gemini,control_plane,google_calendar,ionos"
+
+    def hidden(self) -> set[str]:
+        raw = os.environ.get("JARVIS_CC_HIDDEN_INTEGRATIONS", self.HIDDEN_DEFAULT)
+        return {x.strip() for x in raw.split(",") if x.strip()}
+
     def list(self) -> list[dict]:
-        return [self.public(a) for a in self._adapters.values()]
+        hide = self.hidden()
+        return [self.public(a) for a in self._adapters.values() if a.id not in hide]
 
     def summary(self) -> dict:
         items = self.list()
