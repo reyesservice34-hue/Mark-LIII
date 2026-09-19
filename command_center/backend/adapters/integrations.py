@@ -9,7 +9,11 @@ mocked: an integration with no credentials is reported as NOT CONNECTED.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
+import json
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -19,6 +23,43 @@ from ..db import Database, dumps, loads, now_iso
 from ..events import EventBus
 
 STATUSES = ("healthy", "degraded", "offline", "not_configured", "unknown")
+
+
+def jwt_claims(token: str) -> dict:
+    """Die Angaben aus einem JWT lesen, ohne ihn zu prüfen oder zu verwenden.
+
+    Ein n8n-Schlüssel IST ein JWT. Sein Mittelteil ist unverschlüsselt — er
+    trägt das Ablaufdatum und den Aussteller. Das ist kein Geheimnis, und es
+    entscheidet eine Frage, die sonst nur zu raten wäre: Ein 401 heißt nicht
+    von selbst „abgelaufen". Läuft der Schlüssel erst nächstes Jahr ab und
+    wird trotzdem abgelehnt, dann gehört er einer ANDEREN Instanz — und wer
+    ihn dann neu erzeugt, erzeugt ihn zum zweiten Mal an der falschen Stelle.
+
+    Nie wird der Schlüssel selbst zurückgegeben, nur was über ihn aussagbar
+    ist. Ein Wert, der kein JWT ist, ergibt ein leeres Ergebnis.
+    """
+    teile = token.split(".")
+    if len(teile) != 3:
+        return {}
+    mitte = teile[1]
+    mitte += "=" * (-len(mitte) % 4)          # base64url ohne Polster
+    try:
+        return json.loads(base64.urlsafe_b64decode(mitte))
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        return {}
+
+
+def key_verdict(token: str) -> str:
+    """Ein Satz darüber, was der Schlüssel selbst über sich sagt — oder ''."""
+    exp = jwt_claims(token).get("exp")
+    if not isinstance(exp, (int, float)):
+        return ""
+    if exp < time.time():
+        tag = time.strftime("%d.%m.%Y", time.localtime(exp))
+        return f"Der Schlüssel ist am {tag} abgelaufen."
+    tag = time.strftime("%d.%m.%Y", time.localtime(exp))
+    return (f"Der Schlüssel läuft erst am {tag} ab, ist also NICHT abgelaufen — "
+            f"er gehört zu einer anderen n8n-Instanz oder wurde widerrufen.")
 
 
 @dataclass
@@ -87,6 +128,36 @@ class LocalLLMIntegration(IntegrationAdapter):
 
 
 class N8nIntegration(IntegrationAdapter):
+    db: Database | None = None
+
+    def _andere_instanz(self, base: str) -> str:
+        """Zeigt ein eingetragener MCP-Server auf ein ANDERES n8n als hier?
+
+        Der Fall, der sonst stundenlang kostet: Der Schlüssel stammt aus der
+        n8n-Cloud, aber N8N_BASE_URL zeigt auf einen Container nebenan. Beide
+        antworten, beide heißen n8n — und der Cloud-Schlüssel wird vom
+        Container abgelehnt, weil er ihn nicht ausgestellt hat. Das sieht aus
+        wie ein toter Schlüssel und ist eine falsche Adresse.
+        """
+        if self.db is None:
+            return ""
+        try:
+            rows = self.db.fetchall("SELECT url FROM mcp_servers WHERE enabled=1")
+        except Exception:  # noqa: BLE001 — Diagnose darf nie die Prüfung stürzen lassen
+            return ""
+        hier = httpx.URL(base).host if base else ""
+        for row in rows:
+            url = str(row["url"] or "")
+            if "n8n" not in url.lower():
+                continue
+            dort = httpx.URL(url).host
+            if dort and dort != hier:
+                return (f" Achtung: Ein eingetragener MCP-Server zeigt auf {dort}, "
+                        f"N8N_BASE_URL aber auf {hier or base}. Ein n8n-Schlüssel gilt nur "
+                        f"bei der Instanz, die ihn ausgestellt hat — steht der Schlüssel "
+                        f"von {dort} in der .env, muss dort auch N8N_BASE_URL hinzeigen.")
+        return ""
+
     async def check(self) -> dict:
         if not self.configured():
             return {"status": "not_configured", "detail": "N8N_BASE_URL / N8N_API_KEY not set"}
@@ -100,10 +171,18 @@ class N8nIntegration(IntegrationAdapter):
             # gibt (401), und eine öffentliche API, die gar nicht eingeschaltet
             # ist (404 auf einen Pfad, den es sonst immer gibt).
             if r.status_code == 401:
+                # „Neu erzeugen" ist nur dann der richtige Rat, wenn der
+                # Schlüssel wirklich hinüber ist. Er sagt selbst, ob er das
+                # ist — und wenn nicht, schickt derselbe Satz den Nutzer
+                # zum zweiten Mal an die falsche Stelle.
+                urteil = key_verdict(os.environ["N8N_API_KEY"])
+                rat = ("Neu erzeugen in n8n unter Settings → n8n API, dann setup-keys.sh"
+                       if "abgelaufen." in urteil or not urteil
+                       else "Zuerst prüfen, ob N8N_BASE_URL auf die Instanz zeigt, "
+                            "bei der der Schlüssel erzeugt wurde.")
                 return {"status": "offline",
-                        "detail": "n8n weist den Schlüssel ab — abgelaufen oder widerrufen. "
-                                  "Neu erzeugen in n8n unter Settings → n8n API, dann "
-                                  "setup-keys.sh"}
+                        "detail": (f"n8n unter {base} weist den Schlüssel ab (401). "
+                                   f"{urteil} {rat}{self._andere_instanz(base)}").strip()}
             if r.status_code == 404:
                 return {"status": "offline",
                         "detail": "n8n antwortet, aber die öffentliche API ist dort nicht "

@@ -874,5 +874,92 @@ check("mitsamt dem __init__, sonst ist plugins kein Paket",
 from command_center.backend.services.calendar_service import CORE_AVAILABLE
 check("und er lässt sich wirklich importieren", CORE_AVAILABLE)
 
+print("\n19. Ein 401 von n8n heißt nicht von selbst 'abgelaufen'")
+# Auf der laufenden Instanz stand n8n auf OFFLINE mit dem Rat, den Schlüssel
+# neu zu erzeugen. Der Schlüssel war aber in Ordnung — er gehörte zur
+# n8n-Cloud, während N8N_BASE_URL auf einen Container nebenan zeigte. Beide
+# heißen n8n, beide antworten, und ein n8n-Schlüssel gilt nur bei der
+# Instanz, die ihn ausgestellt hat. Der alte Rat schickte zum zweiten Mal
+# an dieselbe falsche Stelle.
+import base64 as _b64x
+import json as _jsonx
+import time as _timex
+
+from command_center.backend.adapters.integrations import (
+    IntegrationRegistry, jwt_claims, key_verdict)
+from command_center.backend.db import now_iso as _now_iso
+from command_center.backend.events import EventBus as _Bus
+
+
+def _jwt(exp_offset_days: int) -> str:
+    payload = {"exp": int(_timex.time()) + 86400 * exp_offset_days}
+    seg = _b64x.urlsafe_b64encode(_jsonx.dumps(payload).encode()).decode().rstrip("=")
+    return f"header.{seg}.signature"
+
+
+check("ein abgelaufener Schlüssel wird als abgelaufen benannt",
+      "abgelaufen." in key_verdict(_jwt(-30)), key_verdict(_jwt(-30)))
+check("ein gültiger Schlüssel widerspricht dem 'abgelaufen'",
+      "NICHT abgelaufen" in key_verdict(_jwt(+300)), key_verdict(_jwt(+300)))
+check("was kein JWT ist, wird nicht gedeutet", key_verdict("irgendein-string") == "")
+check("und ergibt keine Angaben", jwt_claims("zu.wenig") == {})
+check("der Schlüssel selbst steht nirgends im Urteil",
+      _jwt(+300).split(".")[1] not in key_verdict(_jwt(+300)))
+
+_alt_base, _alt_key = os.environ.get("N8N_BASE_URL"), os.environ.get("N8N_API_KEY")
+os.environ["N8N_BASE_URL"] = "http://n8n:5678"
+os.environ["N8N_API_KEY"] = _jwt(+300)
+
+
+class Fake401:
+    def __init__(self, *a, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def get(self, url, headers=None, params=None):
+        return FakeResponse({"message": "unauthorized"}, status=401)
+
+
+_n8n_state = build_state()
+_reg = IntegrationRegistry(_n8n_state.db, _Bus())
+_n8n = _reg.get("n8n")
+check("der n8n-Adapter bekommt die Datenbank, sonst kann er nichts vergleichen",
+      _n8n.db is not None)
+
+_n8n_state.db.execute(
+    "INSERT INTO mcp_servers (id,slug,name,url,token,enabled,requires_approval,created_at)"
+    " VALUES (?,?,?,?,?,?,?,?)",
+    ["mcp-n8n-test", "n8ncloud", "n8n Cloud",
+     "https://beispiel.app.n8n.cloud/mcp-server/http", "", 1, 0, _now_iso()])
+
+import command_center.backend.adapters.integrations as _INT
+_int_client = _INT.httpx.AsyncClient
+_INT.httpx.AsyncClient = Fake401
+try:
+    detail = run(_n8n.check())["detail"]
+finally:
+    _INT.httpx.AsyncClient = _int_client
+    for k, v in (("N8N_BASE_URL", _alt_base), ("N8N_API_KEY", _alt_key)):
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
+check("die Meldung nennt die Adresse, die abgelehnt hat", "http://n8n:5678" in detail, detail)
+check("sie behauptet nicht, der Schlüssel sei abgelaufen",
+      "NICHT abgelaufen" in detail, detail)
+check("sie rät nicht zum Neuerzeugen, wenn der Schlüssel gilt",
+      "Neu erzeugen" not in detail, detail)
+check("sie nennt die andere Instanz beim Namen",
+      "beispiel.app.n8n.cloud" in detail, detail)
+check("und sagt, dass ein Schlüssel nur bei seiner eigenen Instanz gilt",
+      "ausgestellt hat" in detail, detail)
+check("der Schlüssel steht nicht in der Meldung", os.environ.get("N8N_API_KEY", "x") not in detail)
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)
