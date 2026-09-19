@@ -171,8 +171,106 @@ async def clear_facts(confirm: str = "", state: AppState = Depends(get_state),
     return {"removed": n}
 
 
+# ── Wissensspeicher ──────────────────────────────────────────────────────
+# Der dritte Platz im Gedächtnis, und der einzige, der lange Texte verträgt:
+# Das Hauptgedächtnis fasst 30 Sätze, weil es bei JEDER Anfrage mitreist. Ein
+# Handbuch über diese Anlage passt da nicht hinein und gehört trotzdem zu dem,
+# was er wissen muss. Hier liegt es — im Systemtext steht nur der Titel, den
+# vollen Text holt er sich mit knowledge.open.
+class KnowledgeBody(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(max_length=200_000)
+    summary: str = Field(default="", max_length=300)
+    slug: str = Field(default="", max_length=60)
+
+
+@router.get("/knowledge")
+async def list_knowledge(state: AppState = Depends(get_state),
+                         _: Principal = Depends(current_principal)):
+    kb = state.services["knowledge"]
+    return {"documents": kb.all(), "catalogue": kb.catalogue()}
+
+
+@router.get("/knowledge/{slug}")
+async def read_knowledge(slug: str, state: AppState = Depends(get_state),
+                         _: Principal = Depends(current_principal)):
+    doc = state.services["knowledge"].get(slug)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Gibt es nicht")
+    return {"document": {"slug": doc["slug"], "title": doc["title"],
+                         "summary": doc["summary"], "content": doc["content"],
+                         "enabled": bool(doc["enabled"]), "uses": doc["uses"],
+                         "updated_at": doc["updated_at"]}}
+
+
+@router.post("/knowledge", status_code=201)
+async def save_knowledge(body: KnowledgeBody, state: AppState = Depends(get_state),
+                         principal: Principal = Depends(require_role("operator"))):
+    from ...services.knowledge import KnowledgeError
+    try:
+        doc = state.services["knowledge"].save(
+            title=body.title, content=body.content, summary=body.summary,
+            slug=body.slug, actor=principal.actor)
+    except KnowledgeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="knowledge.save",
+                    target=doc["slug"], status="ok")
+    return {"document": doc}
+
+
+@router.patch("/knowledge/{slug}")
+async def toggle_knowledge(slug: str, enabled: bool, state: AppState = Depends(get_state),
+                           principal: Principal = Depends(require_role("operator"))):
+    doc = state.services["knowledge"].set_enabled(slug, enabled)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Gibt es nicht")
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="knowledge.toggle",
+                    target=slug, status="ok", meta={"enabled": enabled})
+    return {"document": doc}
+
+
+@router.delete("/knowledge/{slug}")
+async def delete_knowledge(slug: str, state: AppState = Depends(get_state),
+                           principal: Principal = Depends(require_role("operator"))):
+    if not state.services["knowledge"].remove(slug):
+        raise HTTPException(status_code=404, detail="Gibt es nicht")
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="knowledge.delete",
+                    target=slug, status="ok")
+    return {"ok": True}
+
+
+def _startup(state: AppState) -> None:
+    """Das mitgelieferte Hauptgedächtnis einmalig einspielen.
+
+    Ohne das stünde der Wissensspeicher beim ersten Start leer da, während die
+    Datei im Abbild liegt und niemand sie sieht — genau der Zustand, den sie
+    beheben sollte. Eingespielt wird nur, was noch nicht da ist: Wer den Text
+    im Dashboard bearbeitet, bekommt ihn beim nächsten Neustart nicht wieder
+    überschrieben.
+    """
+    from pathlib import Path
+
+    kb = state.services.get("knowledge")
+    if kb is None or kb.get("jarvis-hauptgedaechtnis"):
+        return
+    for kandidat in (Path("/app/.claude/HAUPTGEDAECHTNIS.md"),
+                     Path(__file__).resolve().parents[4] / ".claude" / "HAUPTGEDAECHTNIS.md"):
+        if not kandidat.is_file():
+            continue
+        try:
+            kb.save(slug="jarvis-hauptgedaechtnis", title="JARVIS Hauptgedächtnis",
+                    summary="Aufbau dieser Anlage: Server, Dienste, Geräte, Entscheidungen "
+                            "und offene Punkte. Hier nachsehen statt raten.",
+                    content=kandidat.read_text(encoding="utf-8"), actor="system")
+            state.log.info("memory", f"Hauptgedächtnis eingespielt aus {kandidat}")
+        except Exception as e:  # noqa: BLE001 — ein Startfehler hier darf den Server nicht aufhalten
+            state.log.warn("memory", f"Hauptgedächtnis nicht einspielbar: {e}")
+        return
+
+
 MODULE = ModuleSpec(
     id="memory", title="Gedächtnis", router=router, icon="book-open", path="/memory", order=64,
-    min_role="operator", description="Anweisungen und Gemerktes",
+    min_role="operator", description="Anweisungen, Gemerktes und Wissensspeicher",
     commands=[{"id": "memory.open", "title": "Gedächtnis öffnen", "path": "/memory"}],
+    on_startup=_startup,
 )

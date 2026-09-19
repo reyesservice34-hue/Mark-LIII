@@ -509,6 +509,74 @@ with TestClient(app) as c:
           isinstance(out, tuple) and out[1] is False and "Netz dieses Servers" in out[0], out)
     del sess
 
+    print("\n15b. Wissensspeicher: was zu lang fürs Hauptgedächtnis ist")
+    # Der Anlass: Das Hauptgedächtnis lag als Datei im Repository — und war damit
+    # für ihn unsichtbar. Er liest keine Datei, die niemand in seinen Systemtext
+    # stellt. In die 30 Sätze des Hauptgedächtnisses passt sie auch nicht.
+    from command_center.backend.services.knowledge import KnowledgeError, KnowledgeBase
+
+    kb = state.services["knowledge"]
+    check("beim Start ist das mitgelieferte Hauptgedächtnis schon da",
+          kb.get("jarvis-hauptgedaechtnis") is not None)
+
+    lang = "# Aufbau\n\n" + ("Eine Zeile ueber diese Anlage.\n" * 400)
+    doc = kb.save(title="Testwissen", content=lang, summary="Wofuer das da ist", actor="test")
+    check("ein langes Dokument laesst sich ablegen", doc["lines"] > 400, doc)
+
+    kat = kb.catalogue()
+    check("im Systemtext steht der Titel", "Testwissen" in kat, kat[:200])
+    check("und der Zweck", "Wofuer das da ist" in kat, kat[:200])
+    check("aber NICHT der Inhalt — sonst waere nichts gewonnen",
+          "Eine Zeile ueber diese Anlage" not in kat)
+    check("der Katalog bleibt kurz, auch bei langen Dokumenten", len(kat) < 1500, len(kat))
+
+    voll = kb.open("testwissen")
+    check("aufgeschlagen kommt der ganze Text", "Eine Zeile ueber diese Anlage" in voll["content"])
+    check("und das Aufschlagen wird gezaehlt",
+          next(d for d in kb.all() if d["slug"] == "testwissen")["uses"] == 1)
+
+    treffer = kb.search("Eine Zeile")
+    check("suchen findet die Fundstelle", treffer and treffer[0]["slug"] == "testwissen", treffer)
+    check("und gibt nur die Umgebung, nicht das ganze Dokument",
+          treffer and len(treffer[0]["excerpt"]) <= 500, len(treffer[0]["excerpt"]) if treffer else 0)
+
+    kb.set_enabled("testwissen", False)
+    check("abgeschaltet steht es nicht mehr im Systemtext", "Testwissen" not in kb.catalogue())
+    try:
+        kb.open("testwissen")
+        check("und laesst sich nicht aufschlagen", False)
+    except KnowledgeError:
+        check("und laesst sich nicht aufschlagen", True)
+    kb.set_enabled("testwissen", True)
+
+    try:
+        kb.save(title="Zu viel", content="x" * 200_001)
+        check("ein uferloser Text wird abgelehnt", False)
+    except KnowledgeError as e:
+        check("ein uferloser Text wird abgelehnt", "aufteilen" in str(e), str(e)[:80])
+    try:
+        kb.save(title="", content="egal")
+        check("ohne Titel geht es nicht", False)
+    except KnowledgeError:
+        check("ohne Titel geht es nicht", True)
+
+    ohne = kb.save(title="Ohne Zweck", content="## Die erste sinnvolle Zeile\n\nMehr Text.")
+    check("fehlt der Zweck, nimmt er die erste sinnvolle Zeile",
+          ohne["summary"] == "Die erste sinnvolle Zeile", ohne)
+
+    for name in ("knowledge.list", "knowledge.open", "knowledge.search"):
+        t = state.tools.get(name)
+        check(f"{name} gibt es", t is not None)
+        if t:
+            check(f"{name} fragt nicht nach Freigabe", t.needs_approval() is False)
+
+    out = asyncio.run(state.tools.get("knowledge.open").handler(tc, {"name": "gibtsnicht"}))
+    check("ein unbekanntes Dokument wird benannt, nicht erfunden",
+          isinstance(out, tuple) and out[1] is False and "gibt es nicht" in out[0], out)
+
+    check("geloescht ist geloescht", kb.remove("testwissen") and kb.get("testwissen") is None)
+
+
 print("\n16. Ein fremdes Schema legt nicht die ganze Anfrage lahm")
 # Der Fehler von der laufenden Instanz, wörtlich:
 #   tools.33.custom.input_schema: input_schema does not support oneOf,
