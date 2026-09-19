@@ -48,3 +48,4 @@ desktop.ini
 logs/
 downloads/
 screenshots/
+graphify-out/                 # generated knowledge graph (plugins/graphify.py)
