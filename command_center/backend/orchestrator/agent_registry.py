@@ -217,6 +217,63 @@ class AgentRegistry:
         self._persist(spec)
         return spec
 
+    def unregister(self, agent_id: str) -> bool:
+        """Einen selbst angelegten Agenten entfernen — eingebaute nie.
+
+        Ein Spezialist, der aus einer Vorführung entstanden ist, darf auch
+        wieder verschwinden: Ein falsch gelernter Agent, den man nicht
+        loswird, arbeitet sonst still weiter. Die eingebauten bleiben, denn
+        ohne den Master antwortet gar nichts mehr — das wäre kein Löschen,
+        sondern ein Abschalten des Systems über einen Umweg.
+        """
+        spec = self._specs.get(agent_id)
+        if spec is None:
+            return False
+        if spec.source == "built-in" or spec.kind == "master":
+            raise ValueError(
+                f"'{spec.name}' gehört zum Kern und lässt sich nicht entfernen. "
+                f"Abschalten geht: das lässt ihn bestehen, ohne dass er arbeitet.")
+        self._specs.pop(agent_id, None)
+        self._state.pop(agent_id, None)
+        self.db.execute("DELETE FROM agents WHERE id=?", [agent_id])
+        # Ein gelernter Agent steht in ZWEI Tabellen: hier und in
+        # learned_agents, von wo aus er beim Start wieder registriert wird.
+        # Nur eine davon zu leeren hieße: er ist weg, bis jemand neu startet.
+        self.db.execute("DELETE FROM learned_agents WHERE id=?", [agent_id])
+        return True
+
+    def update(self, agent_id: str, **felder) -> AgentSpec:
+        """Name, Beschreibung, Anweisungen, Werkzeuge eines Agenten ändern.
+
+        Die Anweisungen sind das Interessante daran: Ein aus einer Vorführung
+        gelernter Spezialist hat gelegentlich einen Satz drin, der so nicht
+        gemeint war. Ihn deswegen wegzuwerfen und neu vorzuführen, wäre
+        Arbeit für einen Halbsatz.
+        """
+        spec = self._specs.get(agent_id)
+        if spec is None:
+            raise ValueError(f"Agent '{agent_id}' gibt es nicht.")
+        erlaubt = ("name", "description", "instructions", "tools", "model", "provider", "icon")
+        for k, v in felder.items():
+            if v is not None and k in erlaubt and hasattr(spec, k):
+                setattr(spec, k, v)
+        self._persist(spec)
+        # Die agents-Tabelle kennt weder instructions noch icon — ein gelernter
+        # Agent lebt in learned_agents und wird von dort beim Start geladen.
+        # Ohne diesen Schritt wäre eine geänderte Anweisung nach dem nächsten
+        # Neustart wieder die alte, ohne dass es jemandem auffällt.
+        gelernt = self.db.fetchone("SELECT * FROM learned_agents WHERE id=?", (agent_id,))
+        if gelernt:
+            # Wer ihn wann angelegt hat, bleibt stehen — das ist Herkunft,
+            # keine Einstellung.
+            self.db.upsert("learned_agents", {
+                **dict(gelernt),
+                "name": spec.name, "role": spec.role, "description": spec.description,
+                "instructions": spec.instructions, "capabilities": dumps(spec.capabilities),
+                "tools": dumps(spec.tools), "icon": spec.icon,
+                "enabled": 1 if spec.enabled else 0})
+        return spec
+
     def _persist(self, spec: AgentSpec) -> None:
         state = self._state.get(spec.id) or AgentState()
         self.db.upsert("agents", {

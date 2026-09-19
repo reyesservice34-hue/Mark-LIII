@@ -6,7 +6,10 @@ already uses for /v1/commands, so pairing is one token, not two.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import os
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from ...auth import Principal
@@ -192,6 +195,88 @@ async def screen(device_id: str, state: AppState = Depends(get_state),
 async def history(device_id: str = "", limit: int = 50, state: AppState = Depends(get_state),
                   _: Principal = Depends(current_principal)):
     return {"history": state.services["desktop"].history(device_id, limit)}
+
+
+# ── einen Rechner ankoppeln ──────────────────────────────────────────────
+# Ein Gerät trägt sich nicht von Hand in eine Liste ein: Es meldet sich
+# selbst, sobald auf ihm etwas läuft, das ein gültiges Token hat. „Gerät
+# hinzufügen" heißt deshalb: ein Token erzeugen und den Weg zeigen, wie es
+# auf den Rechner kommt. Genau das tut das hier — in einer Zeile zum
+# Kopieren, statt in sechs Schritten zum Danebengehen.
+class PairBody(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    system: str = "windows"
+
+
+@router.post("/api/desktop/pair", status_code=201)
+async def pair_device(body: PairBody, request: Request, state: AppState = Depends(get_state),
+                      principal: Principal = Depends(require_role("admin"))):
+    """Ein Token erzeugen und den fertigen Installationsbefehl zurückgeben."""
+    from ...services.installer import one_liner
+
+    actor = "desktop-" + "".join(
+        c if c.isalnum() else "-" for c in body.name.lower()).strip("-")[:40]
+    try:
+        row, raw = state.auth.create_api_token(
+            name=f"Rechner {body.name}", actor=actor, role="operator",
+            created_by=principal.actor)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="desktop.pair",
+                    target=actor, status="ok", meta={"token_id": row["id"], "device": body.name})
+    base = _server_url(request)
+    system = "windows" if body.system not in ("linux", "macos") else body.system
+    return {"device_name": body.name, "token_id": row["id"], "actor": actor,
+            "server_url": base, "system": system,
+            "command": one_liner(base, raw, system),
+            # Das Token steht im Befehl. Es wird HIER einmal gezeigt und nie
+            # wieder — gespeichert ist nur sein Hash.
+            "note": "Das Token steht im Befehl und wird nur dieses eine Mal gezeigt."}
+
+
+def _server_url(request: Request) -> str:
+    """Die Adresse, unter der dieser Server von außen erreichbar ist.
+
+    Hinter einem Reverse Proxy ist das nicht die eigene Bindeadresse — der
+    Rechner des Nutzers käme an 127.0.0.1:8080 nie heran. Also das, was der
+    Proxy weitergibt, und nur ersatzweise das, was die Anfrage selbst sagt.
+    """
+    aus_env = os.environ.get("JARVIS_CC_PUBLIC_URL", "").strip()
+    if aus_env:
+        return aus_env.rstrip("/")
+    proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
+    if host:
+        return f"{proto or 'https'}://{host}".rstrip("/")
+    return str(request.base_url).rstrip("/")
+
+
+# Die Skripte selbst. Sie werden mit dem Token in der Adresse abgerufen — das
+# ist zugleich der Nachweis, dass sie geholt werden darf: Wer kein gültiges
+# Token hat, bekommt kein Skript. Das Skript enthält nichts, was nicht schon
+# im Befehl stünde, den der Nutzer ohnehin in der Hand hat.
+def _token_geprueft(state: AppState, token: str) -> None:
+    if not token or state.auth.resolve_api_token(token) is None:
+        raise HTTPException(status_code=401, detail="Ohne gültiges Gerätetoken gibt es kein Skript.")
+
+
+@router.get("/api/desktop/install.ps1")
+async def install_powershell(request: Request, token: str = "", name: str = "",
+                             state: AppState = Depends(get_state)):
+    from ...services.installer import powershell
+    _token_geprueft(state, token)
+    return PlainTextResponse(powershell(_server_url(request), token, name),
+                             media_type="text/plain; charset=utf-8")
+
+
+@router.get("/api/desktop/install.sh")
+async def install_shell(request: Request, token: str = "", name: str = "",
+                        state: AppState = Depends(get_state)):
+    from ...services.installer import shell
+    _token_geprueft(state, token)
+    return PlainTextResponse(shell(_server_url(request), token, name),
+                             media_type="text/plain; charset=utf-8")
 
 
 MODULE = ModuleSpec(

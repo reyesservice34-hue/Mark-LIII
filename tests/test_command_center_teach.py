@@ -391,6 +391,46 @@ with TestClient(app) as c:
     check("the dashboard sees the devices",
           len(c.get("/api/desktop/devices").json()["devices"]) >= 3)
 
+    print("\n3b. Einen Rechner ankoppeln: ein Befehl zum Kopieren")
+    # Ein Gerät trägt sich nicht selbst in eine Liste ein — es meldet sich,
+    # sobald auf ihm etwas mit gültigem Token läuft. „Hinzufügen" heißt also:
+    # Token erzeugen und den Weg zeigen. Vorher waren das sechs Schritte von
+    # Hand; wer bei Schritt vier aufhörte, hatte nichts, das läuft.
+    r = c.post("/api/desktop/pair", json={"name": "YAM-DESKTOP"}, headers=H)
+    check("ein Rechner lässt sich ankoppeln", r.status_code == 201, r.text)
+    paar = r.json()
+    check("der Befehl enthält die Adresse dieses Servers",
+          "/api/desktop/install.ps1" in paar["command"], paar["command"])
+    check("und ein frisches Token", "token=jcc_" in paar["command"])
+    check("der Gerätename steht dabei", paar["device_name"] == "YAM-DESKTOP", paar)
+
+    # Das Token aus dem Befehl holen — der Nutzer kopiert ja genau das.
+    roh = paar["command"].split("token=")[1].split()[0].split("|")[0].strip()
+
+    r = c.get(f"/api/desktop/install.ps1?token={roh}&name=YAM-DESKTOP")
+    check("mit gültigem Token gibt es das Skript", r.status_code == 200, r.status_code)
+    skript = r.text
+    check("es trägt Adresse und Token schon ein",
+          f'$Token  = "{roh}"' in skript and "$Server = " in skript, skript[:200])
+    check("es prüft, ob Python da ist, statt es vorauszusetzen",
+          "Python fehlt" in skript)
+    check("es installiert Python NICHT selbst — das gehört dem Menschen davor",
+          "python.org/downloads" in skript and "winget install" not in skript)
+    check("es legt eine vorhandene Installation beiseite statt sie zu überschreiben",
+          "beiseite gelegt" in skript)
+    check("es prüft am Ende, ob der Server wirklich antwortet",
+          "/api/health" in skript)
+
+    r = c.get("/api/desktop/install.ps1?token=jcc_erfunden")
+    check("ohne gültiges Token gibt es kein Skript", r.status_code == 401, r.status_code)
+    r = c.get("/api/desktop/install.ps1")
+    check("und ohne Token erst recht nicht", r.status_code == 401, r.status_code)
+
+    r = c.get(f"/api/desktop/install.sh?token={roh}")
+    check("für Linux und Mac gibt es dasselbe als Shell-Skript",
+          r.status_code == 200 and "#!/usr/bin/env bash" in r.text, r.status_code)
+
+
     print("\n4. JARVIS drives the PC through tools, and the risky one is gated")
     fake = ScriptedProvider()
     state.runtime.provider = fake
@@ -535,6 +575,10 @@ with TestClient(app) as c:
     check("a viewer cannot start a recording",
           v.post("/api/teach/recordings", json={"title": "x"}, headers=vh).status_code == 403)
     check("but may look at what was learned", v.get("/api/teach/procedures").status_code == 200)
+    # Ankoppeln erzeugt ein Token mit Operator-Rechten. Wer das darf, holt sich
+    # damit Rechte, die er selbst nicht hat — deshalb nur Administratoren.
+    check("ein Zuschauer darf keinen Rechner ankoppeln",
+          v.post("/api/desktop/pair", json={"name": "Fremder"}, headers=vh).status_code == 403)
 
     print("\n8. Selbsterweiterung — schreiben ist harmlos, freigeben nicht")
     # Der Wert steckt in den Ablehnungen, nicht im Erfolgsfall: ein Agent, der
