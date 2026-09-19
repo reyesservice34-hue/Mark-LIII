@@ -320,6 +320,68 @@ async def extract(user: str = Form(...), assistant: str = Form(""), memory: str 
     return {"facts": [], "conflicts": [], "advice": []}
 
 
+_CLEAN_PROMPT = (
+    "Du bereinigst gesprochene Befehle für den Assistenten JARVIS. Der Sprecher ist Jan Paul (Inhaber eines Handwerks- "
+    "und Innenausbaubetriebs) und nuschelt manchmal; die Spracherkennung macht Fehler. Schreibe den erkannten Text so um, "
+    "wie er es vermutlich sagen wollte, damit JARVIS den Befehl genau ausführen kann:\n"
+    "- falsch erkannte Wörter korrigieren, besonders Namen, Orte, Firmen und Fachwörter, anhand von Gedächtnis und Gespräch\n"
+    "- Füllwörter, Stottern und Wiederholungen entfernen, abgebrochene Sätze zu einem klaren Satz oder Befehl formen\n"
+    "- Bezüge wie „er“, „das“, „dort“ nur auflösen, wenn das Gespräch es eindeutig hergibt\n"
+    "- Ton und Absicht des Sprechers behalten (Frage bleibt Frage, Befehl bleibt Befehl)\n"
+    "Streng verboten: etwas erfinden. Keine neuen Zahlen, Beträge, Uhrzeiten, Namen, Termine oder zusätzliche Aufgaben. "
+    "Ist etwas Wichtiges wirklich unklar oder mehrdeutig (welcher Kunde, welche Uhrzeit, welche Mail) und würde eine falsche "
+    "Vermutung Schaden anrichten, setze \"unclear\" auf true und formuliere in \"question\" EINE kurze, freundliche Rückfrage. "
+    "Ändere nur, was nötig ist. Ist der Text schon klar und verständlich, gib ihn Wort für Wort unverändert zurück; "
+    "Umformulieren ohne Grund ist verboten. Antworte ausschließlich als JSON: "
+    "{\"text\": \"...\", \"unclear\": false, \"question\": \"\"}"
+)
+
+
+@app.post("/api/clean")
+async def clean(text: str = Form(...), history: str = Form("[]"), memory: str = Form("")) -> dict:
+    """Erkannten Text glätten, bevor er an Jarvis geht. Schnell und kostenlos; bei Fehler kommt der Originaltext zurück."""
+    orig = text.strip()[:600]
+    keep = {"text": orig, "changed": False, "unclear": False, "question": ""}
+    if not OPENROUTER_API_KEY or len(orig.split()) < 3:
+        return keep
+    try:
+        hist = _hist(history)[-4:]
+    except Exception:  # noqa: BLE001
+        hist = []
+    ctx = "\n".join(("Nutzer: " if m["role"] == "user" else "Jarvis: ") + str(m["content"])[:200] for m in hist)
+    prompt = (f"{_CLEAN_PROMPT}\n\nWas Jarvis über den Sprecher weiß:\n{memory[:1800]}\n\nLetzter Gesprächsverlauf:\n{ctx}\n\n"
+              f"Erkannter Text: {orig}")
+    for model in _clean_models():
+        try:
+            r = await _HTTP.post("https://openrouter.ai/api/v1/chat/completions",
+                                 headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
+                                 json={"model": model, "max_tokens": 220, "temperature": 0,
+                                       "messages": [{"role": "user", "content": prompt}]}, timeout=4)
+            if r.status_code >= 400:
+                continue
+            raw = r.json()["choices"][0]["message"].get("content") or ""
+            m = re.search(r"\{.*\}", raw, re.S)
+            obj = json.loads(m.group(0)) if m else {}
+            out = str(obj.get("text") or "").strip()
+            if not out:
+                continue
+            # Sicherung gegen Erfindungen: Zahlen im Ergebnis müssen im Original vorkommen (oder ausgeschrieben sein).
+            nums_new = set(re.findall(r"\d+", out)) - set(re.findall(r"\d+", orig))
+            if nums_new and not re.search(r"\d", orig):
+                continue
+            q = str(obj.get("question") or "").strip()
+            return {"text": out, "changed": out.lower().rstrip(".!? ") != orig.lower().rstrip(".!? "),
+                    "unclear": bool(obj.get("unclear")) and bool(q), "question": q}
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, AttributeError):
+            continue
+    return keep
+
+
+def _clean_models() -> list[str]:
+    ms = [FAST_MODEL, "nex-agi/nex-n2.5-pro:free", "google/gemma-4-26b-a4b-it:free"]
+    return [m for i, m in enumerate(ms) if m and m not in ms[:i] and (ALLOW_PAID or m.endswith(":free"))]
+
+
 @app.post("/api/say")
 async def say(text: str = Form(...)) -> dict:
     """Jarvis spricht von sich aus (z. B. eine Meldung vom Herzschlag)."""

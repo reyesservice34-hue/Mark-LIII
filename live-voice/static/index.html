@@ -36,6 +36,7 @@
   html.embedded body { justify-content: center; gap: 10px; padding: 8px; }
   html.embedded h1 { display: none; }
   html.embedded #orb { display: none; }
+  html.embedded #heard { font-size: 12px; }
   html.embedded #reply { font-size: 15px; min-height: 40px; }
   html.embedded #transcript { min-height: 20px; }
 </style>
@@ -45,10 +46,12 @@
   <div id="orb"></div>
   <div id="status">Auf „Gespräch beginnen“ tippen und Mikrofon erlauben.</div>
   <div id="transcript"></div>
+  <div id="heard" style="font-size:12px;color:#7fa7d6;min-height:16px"></div>
   <div id="reply"></div>
   <div id="timing" style="font-size:12px;color:#5f6f85;min-height:16px"></div>
   <div id="learned" style="font-size:12px;color:#5fbf8f;min-height:16px"></div>
   <div id="err"></div>
+  <label style="font-size:12px;color:#7f8fa6;cursor:pointer"><input type="checkbox" id="cleanToggle" checked> Sprache glätten (Nuscheln korrigieren)</label>
   <button id="toggle">Gespräch beginnen</button>
 
 <script>
@@ -61,6 +64,10 @@ const errEl = document.getElementById('err');
 const timingEl = document.getElementById('timing');
 const learnedEl = document.getElementById('learned');
 const toggleBtn = document.getElementById('toggle');
+const heardEl = document.getElementById('heard');
+const cleanToggle = document.getElementById('cleanToggle');
+try { cleanToggle.checked = localStorage.getItem('jarvis_clean') !== '0'; } catch (e) {}
+cleanToggle.addEventListener('change', () => { try { localStorage.setItem('jarvis_clean', cleanToggle.checked ? '1' : '0'); } catch (e) {} });
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const useSR = !!SR;                 // Chrome/Edge: Erkennung im Browser, kein Server-Whisper nötig
@@ -173,10 +180,21 @@ function fireText() {
   acceptResults = false; busy = true;
   setState('thinking'); statusEl.textContent = 'Einen Moment, Master …'; errEl.textContent = '';
   if (pendingApproval) { answerApproval(text).then(ok => { if (ok) { busy = false; acceptResults = true; setState('listening'); } else if (agentOK) runAgent(text, tPause); }); return; }
-  if (agentOK) { runAgent(text, tPause); return; }
-  const form = new FormData();
-  form.append('text', text); form.append('history', JSON.stringify(history)); form.append('memory', memoryText);
-  runTurn('api/turn_text', form, tPause);
+  polish(text).then(c => {
+    heardEl.textContent = c.changed ? 'Verstanden: ' + c.text : '';
+    if (c.unclear && c.question) {                       // wirklich unklar: erst nachfragen, nichts ausführen
+      transcriptEl.textContent = 'Sie: ' + text; replyEl.textContent = c.question; heardText = text;
+      audioQueue = []; sayChain = Promise.resolve(); sayQueued(c.question);
+      history.push({ role: 'user', content: text }); history.push({ role: 'assistant', content: c.question });
+      sessionStorage.setItem('jarvis_history', JSON.stringify(history.slice(-20)));
+      sayChain.then(finishIfSilent); return;
+    }
+    const sendText = c.changed ? c.text + '\n(Erkannt wurde: „' + text + '“)' : text;
+    if (agentOK) { runAgent(sendText, tPause, c.text); return; }
+    const form = new FormData();
+    form.append('text', c.text); form.append('history', JSON.stringify(history)); form.append('memory', memoryText);
+    runTurn('api/turn_text', form, tPause);
+  });
 }
 
 /* ── Lautstärke-Überwachung: Unterbrechen (und Aufnahme im Ausweichmodus) ─ */
@@ -317,9 +335,20 @@ async function answerApproval(text) {
   return true;
 }
 
-async function runAgent(text, pauseMs) {
+// Zwischen Erkennung und Jarvis: nuscheln, verschluckte Wörter und falsch erkannte Namen glätten (kostenlos, ~0,5 s).
+async function polish(text) {
+  if (!cleanToggle.checked || text.split(/\s+/).length < 3) return { text, changed: false, unclear: false, question: '' };
+  try {
+    const f = new FormData(); f.append('text', text); f.append('history', JSON.stringify(history.slice(-4))); f.append('memory', memoryText);
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 2500);
+    const r = await fetch('api/clean', { method: 'POST', body: f, signal: ctl.signal }); clearTimeout(t);
+    return await r.json();
+  } catch (e) { return { text, changed: false, unclear: false, question: '' }; }
+}
+
+async function runAgent(text, pauseMs, shown) {
   abortCtl = new AbortController(); audioQueue = []; sayChain = Promise.resolve();
-  heardText = text; transcriptEl.textContent = 'Sie: ' + text; replyEl.textContent = '';
+  shown = shown || text; heardText = shown; transcriptEl.textContent = 'Sie: ' + shown; replyEl.textContent = '';
   const tSent = performance.now(); let tAudio = 0, spoken = '', pending = '', sentAny = false, firstOut = false;
   const speak = (t) => {
     t = t.trim(); if (!t) return; sentAny = true; spoken += (spoken ? ' ' : '') + t; replyEl.textContent = spoken;
@@ -372,7 +401,7 @@ async function runAgent(text, pauseMs) {
     await sayChain;
     if (!sentAny) speak('Erledigt, Master.');
     learn(heardText, spoken);
-    history.push({ role: 'user', content: text }); history.push({ role: 'assistant', content: spoken });
+    history.push({ role: 'user', content: shown }); history.push({ role: 'assistant', content: spoken });
     sessionStorage.setItem('jarvis_history', JSON.stringify(history.slice(-20)));
   } catch (e) {
     clearTimeout(fillerTimer); agentRun = '';
