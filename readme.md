@@ -46,6 +46,7 @@ It's not just an assistant — it's an extension of your digital life.
 | 🌅 Morning Briefing | On first boot: greets you, reads the time, recaps yesterday, and fetches live news |
 | 🔔 Proactive 2.0 | Time-aware, context-aware check-ins — knows the time of day, your projects, and what you've been discussing |
 | 🗓️ Session Memory | Summarises each conversation and mentions it naturally next morning — consumed after use, never repeats |
+| 📅 Calendar | Creates, lists, moves and cancels real appointments in your **Google Calendar** by default (one-time connect from ⚙ → PLUGIN SETTINGS) — refuses rather than silently booking a local file nobody looks at. A local `.ics` calendar is still there for offline use if you explicitly choose it |
 | 👁️‍🗨️ Background Monitoring | User-configured topic watching — checks for new headlines once a day and alerts naturally |
 | 📊 Hardware Monitoring | Continuous CPU, RAM, GPU and temperature telemetry with localized voice alerts |
 | 🌤️ Weather Report | Live weather data for your city, personalized from memory |
@@ -195,7 +196,7 @@ It is held in memory only, deliberately: writing it to disk would make a fresh l
 | **LII** | Voice picker · live theming · reactive HUD · recallable memory · undo · real confirmation · audio device picker · session continuity |
 | **LIII** | Wake word · Gemini 3.1 Flash Live · instant acknowledgment · self-describing action/plugin architecture |
 | *shared* | The last five above also shipped to LIII, LIV and LV at the same time — moving up a Mark never loses them |
-| **LIV+** | Plugin files: email · quiz mode · calendar · home assistant · 3D-printer · and more |
+| **LIV+** | Plugin files: email · quiz mode · home assistant · 3D-printer · and more |
 
 ---
 
@@ -236,6 +237,7 @@ Mark LIII/
 ├── setup.py                  # OS-aware installer (skips wrong-OS dependencies)
 ├── plugins/
 │   ├── _template.py          # Copy this to write a new plugin — one file, drop in, done
+│   ├── calendar.py           # Appointments — Google Calendar by default, local .ics as an explicit fallback
 │   └── ...                   # Drop-in skills (each self-describes via a PLUGIN dict + run())
 ├── actions/                  # Bundled skills — each self-describes via a TOOL dict + handler
 │   ├── web_search.py         # Gemini + DDG parallel search (news, research, price, compare)
