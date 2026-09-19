@@ -555,5 +555,110 @@ check("und die Liste für den Anbieter ist als Ganze sauber",
       all(not any(k in t.to_def().input_schema for k in ("oneOf", "allOf", "anyOf"))
           for t in state.tools.all()))
 
+
+print("\n17. Am eigenen Quelltext arbeiten — mit Git als Rückfahrkarte")
+# Der Anlass: Die Fehler, die diesen Server lahmlegten (ein Schema, das der
+# Anbieter ablehnt; eine Datei, die das Dockerfile nicht kopierte), lagen
+# alle im Quelltext. filesystem.* konnte keinen davon beheben — der
+# Arbeitsbereich liegt unter /data, der Quelltext nicht.
+import subprocess as _sp
+
+from command_center.backend.services.source import (
+    SourceError, SourceService, VERBOTEN, source_dir, unavailable_reason)
+
+# Ohne die Variable: vorhanden, aber ehrlich abgeschaltet.
+_vorher = os.environ.pop("JARVIS_CC_SOURCE_DIR", None)
+check("ohne Variable gibt es kein Quelltextverzeichnis", source_dir() is None)
+check("und der Grund nennt die Variable", "JARVIS_CC_SOURCE_DIR" in unavailable_reason())
+
+# Ein echtes kleines Git-Verzeichnis, damit nichts gestellt ist.
+_repo = Path(tempfile.mkdtemp()) / "quelle"
+(_repo / "command_center" / "backend").mkdir(parents=True)
+(_repo / "command_center" / "backend" / "app.py").write_text("print('alt')\n", encoding="utf-8")
+(_repo / ".env").write_text("GEHEIM=nichtanfassen\n", encoding="utf-8")
+for _c in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=T",
+                                           "commit", "-q", "-m", "erster"]):
+    _sp.run(["git", *_c], cwd=_repo, check=True, capture_output=True)
+
+os.environ["JARVIS_CC_SOURCE_DIR"] = str(_repo)
+_q = SourceService()
+check("mit Variable ist es eingeschaltet", _q.available() and unavailable_reason() == "")
+
+_gelesen = asyncio.run(_q.read("command_center/backend/app.py"))
+check("eine Quelltextdatei lässt sich lesen", _gelesen["content"] == "print('alt')\n", _gelesen)
+
+# Die Grenzen, auf die man sich verlassen muss.
+for _boes in ("../../etc/passwd", "/etc/passwd", ".env", ".git/config", "data/jarvis.db"):
+    try:
+        asyncio.run(_q.read(_boes))
+        check(f"{_boes} wird abgelehnt", False)
+    except SourceError as e:
+        check(f"{_boes} wird abgelehnt", True)
+check("die .env steht auf der Sperrliste", ".env" in VERBOTEN)
+
+try:
+    asyncio.run(_q.write(".env", "GEHEIM=gestohlen\n", "test"))
+    check("auch Schreiben in die .env wird abgelehnt", False)
+except SourceError:
+    check("auch Schreiben in die .env wird abgelehnt", True)
+check("und die .env ist unverändert",
+      (_repo / ".env").read_text(encoding="utf-8") == "GEHEIM=nichtanfassen\n")
+
+# Schreiben: die Datei ändert sich UND es entsteht ein Commit.
+_res = asyncio.run(_q.write("command_center/backend/app.py", "print('neu')\n",
+                            "Der Anbieter lehnte das alte Verhalten ab"))
+check("die Datei ist geändert",
+      (_repo / "command_center/backend/app.py").read_text(encoding="utf-8") == "print('neu')\n")
+check("es gibt einen Commit dazu", bool(_res["commit"]), _res)
+check("die Antwort sagt, dass es erst nach einem Neustart wirkt",
+      "Neustart" in _res["note"], _res["note"])
+_log = _sp.run(["git", "log", "-1", "--pretty=%an|%s|%b"], cwd=_repo,
+               capture_output=True, text=True).stdout
+check("JARVIS steht als Autor darin", _log.startswith("JARVIS|"), _log)
+check("und die Begründung steht in der Nachricht", "lehnte das alte Verhalten ab" in _log, _log)
+
+# Eine Änderung von Hand wird nicht überfahren.
+(_repo / "command_center/backend/app.py").write_text("print('von hand')\n", encoding="utf-8")
+try:
+    asyncio.run(_q.write("command_center/backend/app.py", "print('egal')\n", "test"))
+    check("ungesicherte Handarbeit wird nicht überschrieben", False)
+except SourceError as e:
+    check("ungesicherte Handarbeit wird nicht überschrieben", "von Hand" in str(e), str(e))
+check("und sie ist noch da",
+      (_repo / "command_center/backend/app.py").read_text(encoding="utf-8") == "print('von hand')\n")
+_sp.run(["git", "checkout", "--", "."], cwd=_repo, check=True, capture_output=True)
+
+# Zurücknehmen ist ein revert, kein Raten.
+_zurueck = asyncio.run(_q.revert(_res["commit"]))
+check("zurückgenommen wird als eigener Commit", bool(_zurueck["commit"]), _zurueck)
+check("und der alte Inhalt ist wieder da",
+      (_repo / "command_center/backend/app.py").read_text(encoding="utf-8") == "print('alt')\n")
+
+_hist = asyncio.run(_q.history("command_center/backend/app.py"))
+check("die Historie zeigt beide Schritte", len(_hist["commits"]) >= 3, _hist)
+
+# Ohne Begründung nicht — sie ist die Commit-Nachricht.
+try:
+    asyncio.run(_q.write("neu.py", "x = 1\n", "  "))
+    check("ohne Begründung wird nicht geschrieben", False)
+except SourceError:
+    check("ohne Begründung wird nicht geschrieben", True)
+
+# Und die Einstufung: Schreiben am eigenen Quelltext ist das Heikelste hier.
+for _name in ("source.write", "source.delete"):
+    _t = state.tools.get(_name)
+    check(f"{_name} gibt es", _t is not None)
+    if _t:
+        check(f"{_name} ist critical", _t.risk == "critical", _t.risk)
+        check(f"{_name} fragt immer vorher", _t.needs_approval())
+        check(f"{_name} bleibt Administratoren vorbehalten", _t.min_role == "admin", _t.min_role)
+check("source.read fragt nicht nach", state.tools.get("source.read").needs_approval() is False)
+check("source.revert fragt nach", state.tools.get("source.revert").needs_approval())
+
+if _vorher is None:
+    os.environ.pop("JARVIS_CC_SOURCE_DIR", None)
+else:
+    os.environ["JARVIS_CC_SOURCE_DIR"] = _vorher
+
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

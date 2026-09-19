@@ -1241,6 +1241,120 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           category="web", risk="high", requires_approval=True, handler=web_download,
                           timeout_seconds=120))
 
+    # ── am eigenen Quelltext arbeiten ─────────────────────────────────────
+    # Die Fehler, die diesen Server zuletzt lahmgelegt haben, lagen alle im
+    # Quelltext: ein Schema, das der Anbieter ablehnt; eine Datei, die das
+    # Dockerfile nicht ins Abbild kopierte. Mit filesystem.* war keiner davon
+    # zu beheben — der Arbeitsbereich liegt unter /data, der Quelltext nicht.
+    #
+    # Also hier, auf dem Git-Arbeitsverzeichnis, und ausschließlich über Git:
+    # jede Änderung ein Commit, jede Rücknahme ein revert. Was er getan hat,
+    # steht in `git log`, auch für jemanden, der ihm nicht glaubt.
+    from ..services.source import SourceError, SourceService, unavailable_reason as src_reason
+    quelle = SourceService()
+    src_ok = quelle.available()
+    src_why = src_reason()
+
+    async def source_read(ctx: ToolContext, args: dict):
+        try:
+            return await quelle.read(str(args["path"]))
+        except SourceError as e:
+            return str(e), False
+
+    async def source_list(ctx: ToolContext, args: dict):
+        try:
+            return await quelle.list(str(args.get("path", "")))
+        except SourceError as e:
+            return str(e), False
+
+    async def source_history(ctx: ToolContext, args: dict):
+        try:
+            return await quelle.history(str(args.get("path", "")), int(args.get("limit", 15)))
+        except SourceError as e:
+            return str(e), False
+
+    async def source_diff(ctx: ToolContext, args: dict):
+        try:
+            return await quelle.diff(str(args.get("commit", "")))
+        except SourceError as e:
+            return str(e), False
+
+    async def source_write(ctx: ToolContext, args: dict):
+        try:
+            res = await quelle.write(str(args["path"]), str(args["content"]), str(args["reason"]))
+        except SourceError as e:
+            return str(e), False
+        ctx.emit("source", {"text": f"{res['path']} geändert ({res['commit']})"})
+        return res
+
+    async def source_delete(ctx: ToolContext, args: dict):
+        try:
+            res = await quelle.delete(str(args["path"]), str(args["reason"]))
+        except SourceError as e:
+            return str(e), False
+        ctx.emit("source", {"text": f"{res['path']} entfernt ({res['commit']})"})
+        return res
+
+    async def source_revert(ctx: ToolContext, args: dict):
+        try:
+            res = await quelle.revert(str(args["commit"]))
+        except SourceError as e:
+            return str(e), False
+        ctx.emit("source", {"text": f"zurückgenommen: {res['reverted']}"})
+        return res
+
+    reg.register(ToolSpec("source.read", "Read one file of this server's own source code.",
+                          _obj({"path": _s("path relative to the repository root")}, ["path"]),
+                          category="code", risk="low", handler=source_read,
+                          available=src_ok, reason=src_why))
+    reg.register(ToolSpec("source.list",
+                          "List the source files git tracks, optionally under one folder.",
+                          _obj({"path": _s("folder, empty for the whole repository")}),
+                          category="code", risk="low", handler=source_list,
+                          available=src_ok, reason=src_why))
+    reg.register(ToolSpec("source.history",
+                          "Recent commits — for the whole repository or one file.",
+                          _obj({"path": _s("file, empty for the whole repository"),
+                                "limit": {"type": "integer", "description": "how many, max 50"}}),
+                          category="code", risk="low", handler=source_history,
+                          available=src_ok, reason=src_why))
+    reg.register(ToolSpec("source.diff",
+                          "Show a change: a commit by its id, or what is uncommitted right now.",
+                          _obj({"commit": _s("commit id, empty for the working tree")}),
+                          category="code", risk="low", handler=source_diff,
+                          available=src_ok, reason=src_why))
+    # Schreiben und Löschen am eigenen Quelltext ist das Heikelste, was dieser
+    # Server kann: Wer ihn ändert, ändert, was der Server als Nächstes tut.
+    # Deshalb `critical` und immer eine Freigabe — ein Mensch sieht den
+    # Unterschied, bevor er Teil des Systems wird.
+    reg.register(ToolSpec("source.write",
+                          "Create or rewrite a file of this server's own source code. "
+                          "The change is committed to git immediately and takes effect only "
+                          "after a restart or a rebuild. Requires approval.",
+                          _obj({"path": _s("path relative to the repository root"),
+                                "content": _s("the complete new content of the file"),
+                                "reason": _s("why — this becomes the commit message")},
+                               ["path", "content", "reason"]),
+                          category="code", risk="critical", requires_approval=True,
+                          min_role="admin", handler=source_write,
+                          available=src_ok, reason=src_why, timeout_seconds=60))
+    reg.register(ToolSpec("source.delete",
+                          "Delete a file from this server's own source code, committed to git. "
+                          "Requires approval.",
+                          _obj({"path": _s("path relative to the repository root"),
+                                "reason": _s("why — this becomes the commit message")},
+                               ["path", "reason"]),
+                          category="code", risk="critical", requires_approval=True,
+                          min_role="admin", handler=source_delete,
+                          available=src_ok, reason=src_why, timeout_seconds=60))
+    reg.register(ToolSpec("source.revert",
+                          "Undo an earlier change by its commit id — as a new commit, so the "
+                          "history stays readable. Requires approval.",
+                          _obj({"commit": _s("commit id from source.history")}, ["commit"]),
+                          category="code", risk="high", requires_approval=True,
+                          min_role="admin", handler=source_revert,
+                          available=src_ok, reason=src_why, timeout_seconds=60))
+
     # ── seine Umgebung: das Dashboard, das der Nutzer vor sich hat ────────
     # Er soll nicht nur handeln, sondern auch sehen, was der Nutzer sieht:
     # was auf Freigabe wartet, was gemeldet wurde, worüber schon gesprochen

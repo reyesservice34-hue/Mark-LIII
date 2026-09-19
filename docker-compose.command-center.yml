@@ -53,6 +53,12 @@ services:
       # Optional: let the Server page see and (with JARVIS_CC_ALLOW_DOCKER_ACTIONS=true) restart containers.
       # Read-only mount still allows list/stats/logs; restarts need :rw. Remove the line to disable docker entirely.
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Am eigenen Quelltext arbeiten (source.*). Das Verzeichnis ist dasselbe,
+      # aus dem gebaut wird, also wirkt eine Änderung beim nächsten Bauen —
+      # anders als im Abbild, wo sie verschwände. Ohne JARVIS_CC_SOURCE_DIR in
+      # der .env sind die Werkzeuge aus und sagen das auch; der Mount allein
+      # schaltet nichts frei. Zum Abschalten die Zeile entfernen.
+      - ${JARVIS_CC_SOURCE_MOUNT:-.}:/repo
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
       interval: 30s
