@@ -13,6 +13,7 @@ import { VoiceConsole } from "./VoiceConsole";
 import { ArchitectureView } from "./ArchitectureView";
 import { CoreDeck } from "./CoreDeck";
 import { HeartbeatTile } from "./HeartbeatTile";
+import { BrainCore } from "./BrainCore";
 
 export default function HomePage() {
   const nav = useNavigate();
@@ -40,7 +41,11 @@ export default function HomePage() {
       </div>
       <ErrorState error={status.error} retry={() => status.reload(false)} />
 
-      <VoiceConsole />
+      <section className="hero-core" aria-label="JARVIS Kern">
+        <div className="holo" aria-hidden="true"><i/><i/><i/></div>
+        <BrainCore thinking={!!master?.active_runs?.length} />
+        <VoiceConsole />
+      </section>
 
       <ArchitectureView />
 

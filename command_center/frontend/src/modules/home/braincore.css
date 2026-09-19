@@ -1,0 +1,25 @@
+/* Kern der Startseite: Gehirn links, Live-Konsole daneben. Orange bleibt dem Denken vorbehalten,
+   alles andere behält seine Farben. */
+.hero-core { position: relative; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr); align-items: stretch;
+  border: 1px solid var(--line-2); border-radius: 22px; overflow: hidden;
+  background: radial-gradient(700px 360px at 30% 50%, rgba(255, 138, 31, 0.10), transparent 62%), linear-gradient(180deg, var(--bg-2), var(--bg-0)); }
+.hero-core::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse at 30% 50%, #000 10%, transparent 70%); mask-image: radial-gradient(ellipse at 30% 50%, #000 10%, transparent 70%); }
+.brain-core { position: relative; display: block; width: 100%; height: 380px; }
+.hero-core .voice-console, .hero-core .vc-embed-wrap { position: relative; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: transparent; min-height: 0; padding: 0; display: block; }
+.hero-core .vc-embed { height: 100%; min-height: 380px; }
+@media (max-width: 1000px) {
+  .hero-core { grid-template-columns: 1fr; }
+  .hero-core .voice-console, .hero-core .vc-embed-wrap { border-left: 0; border-top: 1px solid var(--line); }
+  .hero-core .vc-embed { min-height: 250px; height: 250px; }
+  .brain-core { height: 320px; }
+}
+
+/* Goldene Hologramm-Ringe um das Gehirn (Eigenentwurf, nur der Kern trägt Orange/Gold) */
+.hero-core .holo { position: absolute; left: 0; top: 0; width: 60%; height: 380px; pointer-events: none; display: grid; place-items: center; }
+.hero-core .holo i { position: absolute; border-radius: 50%; border: 1px solid rgba(255, 176, 64, .28); }
+.hero-core .holo i:nth-child(1) { width: 330px; height: 330px; border-style: dashed; animation: spin 40s linear infinite; }
+.hero-core .holo i:nth-child(2) { width: 370px; height: 370px; border-color: rgba(255, 176, 64, .14); animation: spin 60s linear infinite reverse; }
+.hero-core .holo i:nth-child(3) { width: 250px; height: 250px; border-color: rgba(255, 210, 120, .18); }
+@media (max-width: 1000px) { .hero-core .holo { width: 100%; height: 320px; } .hero-core .holo i { transform: scale(.85); } }

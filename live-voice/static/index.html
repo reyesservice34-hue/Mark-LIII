@@ -35,7 +35,7 @@
   html.embedded, html.embedded body { background: transparent; min-height: 0; height: 100%; }
   html.embedded body { justify-content: center; gap: 10px; padding: 8px; }
   html.embedded h1 { display: none; }
-  html.embedded #orb { width: 96px; height: 96px; }
+  html.embedded #orb { display: none; }
   html.embedded #reply { font-size: 15px; min-height: 40px; }
   html.embedded #transcript { min-height: 20px; }
 </style>
@@ -79,6 +79,23 @@ let memoryText = '', csrfToken = '', heardText = '';
 let acceptResults = true, lastText = '', lastChange = 0, busy = false, quietTimer = null;
 
 function setState(s) { orb.className = s; }
+let outAnalyser = null;
+function ensureOut() {
+  if (!audioCtx || audioCtx.state === 'closed') return null;
+  if (!outAnalyser) { outAnalyser = audioCtx.createAnalyser(); outAnalyser.fftSize = 512; outAnalyser.connect(audioCtx.destination); }
+  return outAnalyser;
+}
+// Zustand und Lautstärke an das Dashboard melden (Gehirn pulsiert mit der Stimme)
+setInterval(() => {
+  if (window.parent === window) return;
+  const st = orb.className || 'idle'; let level = 0;
+  try {
+    if (st === 'speaking' && outAnalyser) { const b = new Float32Array(outAnalyser.fftSize); outAnalyser.getFloatTimeDomainData(b); let s = 0; for (let i = 0; i < b.length; i++) s += b[i] * b[i]; level = Math.min(1, Math.sqrt(s / b.length) * 7); }
+    else if (st === 'listening' && analyser) level = Math.min(1, rms() * 9);
+    else if (st === 'thinking') level = .5;
+  } catch (e) {}
+  window.parent.postMessage({ jarvis: 'live', state: running ? st : 'idle', level }, location.origin);
+}, 50);
 function idleText() { return 'Ich höre zu, Master.'; }
 
 async function start() {
@@ -257,6 +274,7 @@ async function runTurn(url, form, pauseMs) {
 function playNext() {
   if (currentAudio || audioQueue.length === 0) return;
   currentAudio = new Audio(audioQueue.shift());
+  try { const oa = ensureOut(); if (oa && audioCtx.state === 'running') audioCtx.createMediaElementSource(currentAudio).connect(oa); } catch (e) {}
   setState('speaking'); statusEl.textContent = 'Jarvis spricht …';
   currentAudio.onended = () => { currentAudio = null; if (audioQueue.length) playNext(); else finishIfSilent(); };
   currentAudio.play().catch(() => {});

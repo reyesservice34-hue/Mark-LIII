@@ -1,0 +1,27 @@
+/* Modernisierung: gleiche Farben, weichere Formen, schwebende Leisten, mehr Luft. */
+:root { --r-md: 12px; --r-lg: 18px; --r-xl: 24px; }
+.shell { padding: 12px 12px 0 12px; gap: 0 12px; }
+.shell > .sidebar { border: 1px solid var(--line-2); border-radius: 22px; margin-bottom: 12px; overflow: hidden;
+  box-shadow: var(--shadow-2); }
+.shell > .topbar { border: 1px solid var(--line-2); border-radius: 18px; margin-bottom: 12px; box-shadow: var(--shadow-1); }
+.shell > .main { padding: 8px 12px 32px; }
+.brand, .sidebar-foot { border-color: var(--line); }
+.nav-item { border-radius: 999px; padding: 9px 14px; }
+.nav-item.active::before { display: none; }
+.nav-item.active { box-shadow: inset 0 0 18px rgba(90,200,255,0.10), 0 0 18px -6px rgba(90,200,255,0.5); }
+.panel { border-radius: 20px; backdrop-filter: blur(10px); transition: transform var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease), border-color var(--t-med); }
+.panel:hover { transform: translateY(-2px); border-color: var(--line-3); }
+.btn, button.btn { border-radius: 999px; }
+input, select, textarea { border-radius: 12px; }
+.page { gap: 20px; }
+.page > * { animation: rise 420ms var(--ease) both; }
+.page > *:nth-child(2) { animation-delay: 60ms; } .page > *:nth-child(3) { animation-delay: 120ms; }
+.page > *:nth-child(4) { animation-delay: 180ms; } .page > *:nth-child(n+5) { animation-delay: 240ms; }
+table th, table td { padding-top: 11px; padding-bottom: 11px; }
+@media (max-width: 720px) {
+  .shell { padding: 8px 8px 0; }
+  .shell > .topbar { border-radius: 14px; margin-bottom: 8px; }
+  .shell > .main { padding: 4px 4px 24px; }
+  .mobile-nav { border-radius: 18px 18px 0 0; }
+}
+@media (hover: none) { .panel:hover { transform: none; } }
