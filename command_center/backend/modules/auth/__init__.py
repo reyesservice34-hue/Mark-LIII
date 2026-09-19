@@ -135,6 +135,20 @@ async def patch_user(user_id: str, body: UserPatch, state: AppState = Depends(ge
     return {"user": user}
 
 
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: str, state: AppState = Depends(get_state),
+                      principal: Principal = Depends(require_role("admin"))):
+    if user_id == principal.id:
+        raise HTTPException(status_code=400, detail="Du kannst dich nicht selbst löschen.")
+    user = state.auth.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    state.auth.delete_user(user_id)
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="user.delete", target=user["username"],
+                    status="ok", meta={"role": user["role"]})
+    return {"ok": True}
+
+
 # ── machine tokens (admin) ───────────────────────────────────────────────
 @router.get("/tokens")
 async def list_tokens(state: AppState = Depends(get_state), _: Principal = Depends(require_role("admin"))):
@@ -155,11 +169,15 @@ async def create_token(body: TokenCreate, state: AppState = Depends(get_state),
 
 
 @router.delete("/tokens/{token_id}")
-async def revoke_token(token_id: str, state: AppState = Depends(get_state),
+async def revoke_token(token_id: str, purge: bool = False, state: AppState = Depends(get_state),
                        principal: Principal = Depends(require_role("admin"))):
+    """Sperren (bleibt in der Liste, als gesperrt) — oder mit purge=true endgültig löschen."""
     if not state.auth.revoke_api_token(token_id):
         raise HTTPException(status_code=404, detail="Token not found")
-    state.log.audit(actor_type="user", actor_id=principal.actor, action="token.revoke", target=token_id, status="ok")
+    if purge:
+        state.auth.purge_api_token(token_id)
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="token.purge" if purge else "token.revoke",
+                    target=token_id, status="ok")
     return {"ok": True}
 
 

@@ -23,6 +23,8 @@
   --accent-2: #2d8fe6;
   --accent-soft: rgba(90, 200, 255, 0.12);
   --accent-glow: 0 0 0 1px rgba(90, 200, 255, 0.35), 0 0 24px rgba(90, 200, 255, 0.18);
+  --accent-glow-lg: 0 0 0 1px rgba(90, 200, 255, 0.4), 0 0 4px rgba(90, 200, 255, 0.5), 0 0 48px rgba(90, 200, 255, 0.22);
+  --hud: "Rajdhani", var(--sans);
 
   --ok: #3ddc97;
   --ok-soft: rgba(61, 220, 151, 0.12);

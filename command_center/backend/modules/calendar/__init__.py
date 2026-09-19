@@ -28,6 +28,17 @@ class EventCreate(BaseModel):
     duration: str | int = 60
     location: str = ""
     notes: str = ""
+    category: str = ""                                  # tour | ich | privat
+
+
+class EventUpdate(BaseModel):
+    title: str | None = None
+    when: str | None = None
+    at: str | None = None
+    duration: str | int | None = None
+    location: str | None = None
+    notes: str | None = None
+    category: str | None = None
 
 
 class EventMove(BaseModel):
@@ -37,14 +48,17 @@ class EventMove(BaseModel):
 
 
 @router.get("")
-async def list_events(days: int = 14, q: str = "", state: AppState = Depends(get_state),
-                      _: Principal = Depends(current_principal)):
+async def list_events(days: int = 14, q: str = "", start: str = "", end: str = "",
+                      state: AppState = Depends(get_state), _: Principal = Depends(current_principal)):
     cal = state.services["calendar"]
     if not cal.available():
         return {"available": False, "detail": cal.unavailable_reason(), "backend": "",
                 "events": [], "days": days}
     try:
-        events, backend = await cal.list(days=max(1, min(days, 90)), query=q)
+        if start and end:                                   # Kalenderansicht: beliebiger Zeitraum
+            events, backend = await cal.range(start, end, query=q)
+        else:
+            events, backend = await cal.list(days=max(1, min(days, 90)), query=q)
     except Exception as e:  # noqa: BLE001
         return {"available": False, "detail": f"{e.__class__.__name__}: {e}", "backend": "",
                 "events": [], "days": days}
@@ -63,13 +77,39 @@ async def create_event(body: EventCreate, state: AppState = Depends(get_state),
     try:
         event, backend, note = await cal.create(title=body.title, when=body.when, at=body.at,
                                                 duration=body.duration, location=body.location,
-                                                notes=body.notes)
+                                                notes=body.notes, category=body.category)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(e))
     state.log.audit(actor_type="user", actor_id=principal.actor, action="calendar.create",
                     target=body.title, status="ok", meta={"backend": backend})
     state.bus.publish("calendar.changed", {"action": "create", "title": body.title})
     return {"event": event, "backend": backend, "note": note}
+
+
+@router.put("/{uid}")
+async def update_event(uid: str, body: EventUpdate, state: AppState = Depends(get_state),
+                       principal: Principal = Depends(require_role("operator"))):
+    try:
+        event = state.services["calendar"].update(uid, **body.model_dump())
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(e))
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="calendar.update",
+                    target=event.get("title", uid), status="ok")
+    state.bus.publish("calendar.changed", {"action": "update", "title": event.get("title", "")})
+    return {"event": event}
+
+
+@router.delete("/{uid}")
+async def delete_event(uid: str, state: AppState = Depends(get_state),
+                       principal: Principal = Depends(require_role("operator"))):
+    try:
+        event = state.services["calendar"].delete_uid(uid)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(e))
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="calendar.delete",
+                    target=event.get("title", uid), status="ok")
+    state.bus.publish("calendar.changed", {"action": "delete", "title": event.get("title", "")})
+    return {"event": event}
 
 
 @router.post("/move")
@@ -104,8 +144,21 @@ async def cancel_event(query: str, state: AppState = Depends(get_state),
     return {"event": event, "backend": backend}
 
 
+def _startup(state: AppState) -> None:
+    from ...services.classify import make_classifier
+    cal = state.services["calendar"]
+    cal.classifier = make_classifier(state)                  # erkennt beim Eintragen: was, wie, wo
+
+    async def job() -> None:
+        await cal.sync_google()
+
+    state.scheduler.add("calendar_sync", "Google-Termine übernehmen", 600, job, silent=True,
+                        description="Termine aus dem Google Firmenkalender (nur lesen) in den lokalen Kalender übernehmen",
+                        enabled=cal.bridge.configured(), run_immediately=True)
+
+
 MODULE = ModuleSpec(
     id="calendar", title="Kalender", router=router, icon="calendar", path="/calendar", order=35,
-    mobile_priority=40, description="Termine — lokal oder über Google",
+    mobile_priority=40, description="Termine — lokal oder über Google", on_startup=_startup,
     commands=[{"id": "calendar.open", "title": "Kalender öffnen", "path": "/calendar", "shortcut": "g k"}],
 )

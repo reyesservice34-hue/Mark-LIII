@@ -12,6 +12,7 @@ import { ActivityFeed } from "./ActivityFeed";
 import { VoiceConsole } from "./VoiceConsole";
 import { ArchitectureView } from "./ArchitectureView";
 import { CoreDeck } from "./CoreDeck";
+import { HeartbeatTile } from "./HeartbeatTile";
 
 export default function HomePage() {
   const nav = useNavigate();
@@ -42,6 +43,8 @@ export default function HomePage() {
       <VoiceConsole />
 
       <ArchitectureView />
+
+      <div style={{ marginTop: 14 }}><HeartbeatTile /></div>
 
       <div className="grid cols-2" style={{ marginTop: 14 }}>
         <CoreDeck />

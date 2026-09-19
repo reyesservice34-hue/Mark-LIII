@@ -207,6 +207,7 @@ class Event:
     backend: str = "local"
     remote_id: str = ""           # the backend's own id, when it has one
     file: str = ""                # the .ics written for it, when there is one
+    category: str = ""            # "tour", "ich", "privat", "google" — nur für die Ansicht (Farbe/Filter)
 
     def start_dt(self) -> datetime:
         return datetime.fromisoformat(self.start)
@@ -223,7 +224,7 @@ class Event:
 
 
 def build_event(title: str, when_date: date, when_time: dtime, minutes: int,
-                location: str = "", notes: str = "", backend: str = "local") -> Event:
+                location: str = "", notes: str = "", backend: str = "local", category: str = "") -> Event:
     start = datetime.combine(when_date, when_time)
     end = start + timedelta(minutes=minutes)
     return Event(
@@ -234,6 +235,7 @@ def build_event(title: str, when_date: date, when_time: dtime, minutes: int,
         location=location.strip(),
         notes=notes.strip(),
         backend=backend,
+        category=category.strip().lower(),
     )
 
 

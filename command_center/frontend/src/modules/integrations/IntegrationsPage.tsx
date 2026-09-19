@@ -11,6 +11,19 @@ export default function IntegrationsPage() {
   const { can } = useAuth();
   const list = useApi<{ integrations: any[]; summary: any }>("/api/integrations", { refreshOn: ["integration.status"] });
   const [busy, setBusy] = useState<string | null>(null);
+  const [edit, setEdit] = useState<string | null>(null);
+  const [vals, setVals] = useState<Record<string, string>>({});
+  const save = async (id: string) => {
+    setBusy("save:" + id);
+    try {
+      const r = await api.put<any>(`/api/integrations/${id}/config`, { values: vals });
+      toast({ title: r.check?.status === "healthy" ? "Verbunden" : "Gespeichert",
+              body: r.check?.status === "healthy" ? "Der Dienst antwortet." : (r.check?.detail || "Gespeichert, aber der Dienst meldet ein Problem."),
+              tone: r.check?.status === "healthy" ? "ok" : "warn" });
+      setEdit(null); setVals({}); list.reload(false);
+    } catch (e: any) { toast({ title: "Speichern fehlgeschlagen", body: e.message, tone: "err" }); }
+    finally { setBusy(null); }
+  };
   const check = async (id: string) => { setBusy(id); try { await api.post(`/api/integrations/${id}/check`); } catch (e: any) { toast({ title: "Check failed", body: e.message, tone: "err" }); } finally { setBusy(null); } };
   const checkAll = async () => { setBusy("*"); try { await api.post("/api/integrations/check-all"); list.reload(); } finally { setBusy(null); } };
   const s = list.data?.summary;
@@ -37,6 +50,18 @@ export default function IntegrationsPage() {
                 <span>{i.last_checked_at ? `checked ${relative(i.last_checked_at)}` : "never checked"}</span>
               </div>
               {can("operator") && <button className="btn sm" onClick={() => check(i.id)} disabled={busy === i.id || !i.configured}><Plug />{busy === i.id ? "Checking…" : "Check connection"}</button>}
+              {can("admin") && (edit === i.id ? (
+                <form className="stack" style={{ gap: 8 }} autoComplete="off" onSubmit={(e) => { e.preventDefault(); save(i.id); }}>
+                  {[...new Set([...i.required_env, ...i.any_env, ...i.optional_env])].map((k: string) => (
+                    <label key={k} className="field"><span className="tiny muted">{k}{i.config_state[k] ? " · gesetzt (leer lassen = behalten)" : ""}</span>
+                      <input className="input" type={/PASSWORD|TOKEN|SECRET|KEY/.test(k) ? "password" : "text"} autoComplete="new-password"
+                        value={vals[k] || ""} onChange={(e) => setVals({ ...vals, [k]: e.target.value })} /></label>))}
+                  <div className="row" style={{ gap: 6 }}>
+                    <button className="btn sm primary" type="submit" disabled={busy === "save:" + i.id}>{busy === "save:" + i.id ? "Speichere …" : "Speichern & prüfen"}</button>
+                    <button className="btn sm ghost" type="button" onClick={() => { setEdit(null); setVals({}); }}>Abbrechen</button>
+                  </div>
+                </form>
+              ) : <button className="btn sm ghost" onClick={() => { setEdit(i.id); setVals({}); }}>Zugangsdaten eintragen</button>)}
             </div>
           ))}
         </div>)}

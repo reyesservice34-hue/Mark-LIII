@@ -19,6 +19,7 @@ machine is worse than a refusal.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import time
@@ -176,9 +177,70 @@ def _with_offset(iso_local: str) -> str:
     return dt.astimezone().isoformat(timespec="seconds")
 
 
+class N8nCalendarBridge:
+    """Google Kalender lesen über die n8n-Brücke (nur lesen).
+
+    Die Google-Zugangsdaten bleiben in n8n; der Server ruft nur einen geschützten Webhook auf. Was der Webhook
+    liefert, wird wie jeder andere Termin behandelt — damit sehen Kalender-Seite, Kollisionscheck und Jarvis
+    dieselben Termine. Schreiben geht bewusst NICHT über diesen Weg.
+    """
+
+    def __init__(self) -> None:
+        self.urls = [u.strip() for u in _env("CALENDAR_BRIDGE_READ_URLS").split(",") if u.strip()]
+        self.token = _env("CALENDAR_BRIDGE_TOKEN")
+        self.header = _env("CALENDAR_BRIDGE_HEADER", "X-Jarvis-Bridge")
+
+    def configured(self) -> bool:
+        return bool(self.urls and self.token)
+
+    @staticmethod
+    def _local(value: Any, end_of_day: bool = False) -> str:
+        """Google liefert {dateTime,...} oder {date}. Ergebnis: lokale ISO-Zeit ohne Offset wie im Rest des Systems."""
+        if isinstance(value, dict):
+            value = value.get("dateTime") or value.get("date") or ""
+        value = str(value or "")
+        if len(value) == 10:                                   # ganztägig
+            return value + ("T23:59:00" if end_of_day else "T00:00:00")
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone().replace(tzinfo=None).isoformat(timespec="seconds")
+        except ValueError:
+            return value
+
+    async def list(self, days: int = 7, query: str = "", offset: int = 0) -> list["Event"]:
+        if not self.configured():
+            return []
+        import httpx
+        start = (datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+                 + timedelta(days=max(0, offset)))
+        end = start + timedelta(days=max(1, min(days, 31)))
+        events: list[Event] = []
+        async with httpx.AsyncClient(timeout=35) as c:
+            for url in self.urls:
+                r = await c.post(url, headers={self.header: self.token},
+                                 json={"timeMin": start.isoformat(), "timeMax": end.isoformat()})
+                if r.status_code in (401, 403):
+                    raise CalendarError("Die Kalender-Brücke lehnt den Schlüssel ab (CALENDAR_BRIDGE_TOKEN prüfen).")
+                r.raise_for_status()
+                data = r.json()
+                if data.get("ok") is not True or not isinstance(data.get("events"), list):
+                    raise CalendarError("Die Kalender-Brücke lieferte keine gültige Antwort.")
+                for e in data["events"]:
+                    if str(e.get("status", "")).lower() == "cancelled":
+                        continue
+                    ev = Event(uid=str(e.get("id", "")), title=str(e.get("summary") or "(ohne Titel)"),
+                               start=self._local(e.get("start")), end=self._local(e.get("end"), True),
+                               location=str(e.get("location") or ""), backend="n8n", remote_id=str(e.get("id", "")))
+                    if not query or query.lower() in (ev.title + " " + ev.location).lower():
+                        events.append(ev)
+        events.sort(key=lambda x: x.start)
+        return events
+
+
 class CalendarService:
     def __init__(self, store_file: Path | None = None):
         self.google = GoogleCalendarRest() if CORE_AVAILABLE else None
+        self.bridge = N8nCalendarBridge()
+        self.classifier = None          # async (title, when, notes, location) -> {category, location, team, vehicle}
         self.local = None
         if CORE_AVAILABLE:
             # open_files=False: a server must never try to launch a desktop app.
@@ -193,13 +255,21 @@ class CalendarService:
         return "" if CORE_AVAILABLE else f"calendar core not importable: {_IMPORT_ERROR}"
 
     def backend_name(self) -> str:
-        return "google" if (self.google and self.google.configured()) else "local"
+        return ("google" if (self.google and self.google.configured())
+                else "n8n" if self.bridge.configured() else "local")
 
     async def health(self) -> dict:
         if not CORE_AVAILABLE:
             return {"status": "offline", "detail": self.unavailable_reason()}
         if self.google and self.google.configured():
             return await self.google.health()
+        if self.bridge.configured():
+            try:
+                found = await self.bridge.list(days=1)
+                return {"status": "healthy", "detail": f"Google Kalender über die n8n-Brücke (nur lesen), "
+                                                        f"heute {len(found)} Termine"}
+            except Exception as e:  # noqa: BLE001
+                return {"status": "degraded", "detail": f"n8n-Kalenderbrücke: {e}"[:200]}
         count = len(self.local._load()) if self.local else 0
         return {"status": "healthy",
                 "detail": f"local calendar store ({count} appointments); connect Google to share them"}
@@ -210,11 +280,11 @@ class CalendarService:
         if self.google and self.google.configured():
             events = await self.google.list(days=days, query=query)
             return [asdict(e) for e in events], "google"
-        events = self.local.list(days=days, query=query)
-        return [asdict(e) for e in events], "local"
+        events = self.local.list(days=days, query=query)   # enthält die übernommenen Google-Termine
+        return [asdict(e) for e in events], ("n8n" if self.bridge.configured() else "local")
 
     async def create(self, *, title: str, when: str, at: str = "", duration: str | int = 60,
-                     location: str = "", notes: str = "") -> tuple[dict, str, str]:
+                     location: str = "", notes: str = "", category: str = "") -> tuple[dict, str, str]:
         """Returns (event, backend, spoken note about the backend)."""
         self._require()
         date_part, time_part = split_datetime(when)
@@ -227,25 +297,147 @@ class CalendarService:
             raise CalendarError("I need a time for the appointment, for example 14:00.")
         when_time = parse_time(time_part)
         minutes = parse_duration(duration)
-        event = build_event(title, when_date, when_time, minutes, location=location, notes=notes)
-        if self.google and self.google.configured():
+        seen = ""
+        if not category:                      # „Was, wie, wo“ selbst erkennen
+            found: dict = {}
+            if self.classifier:
+                try:
+                    found = await asyncio.wait_for(self.classifier(title, f"{when} {at}".strip(), notes, location), 20)
+                except Exception:  # noqa: BLE001
+                    found = {}
+            from .classify import rule_category
+            category = found.get("category") or rule_category(title, notes)
+            bits = [{"tour": "Tour", "ich": "mein Termin", "privat": "privat"}.get(category, category)]
+            if not location and found.get("location"):
+                location = found["location"]; bits.append("Ort " + location)
+            extra = []
+            if found.get("team"):
+                extra.append("Team: " + ", ".join(found["team"])); bits.append("Team " + ", ".join(found["team"]))
+            if found.get("vehicle"):
+                extra.append("Fahrzeug: " + found["vehicle"]); bits.append(found["vehicle"])
+            if extra and "Team:" not in notes and "Fahrzeug:" not in notes:
+                notes = (notes + "\n" if notes else "") + " · ".join(extra) + " (von Jarvis erkannt)"
+            seen = " Erkannt: " + ", ".join(bits) + "."
+        event = build_event(title, when_date, when_time, minutes, location=location, notes=notes,
+                            category=category)
+        if self._write_google():
             created = await self.google.create(event)
             return asdict(created), "google", ""
         created = self.local.create(event)
         return (asdict(created), "local",
-                "Saved in the local calendar on this server — Google is not connected, "
-                "so it is not in your shared calendar yet.")
+                "Im lokalen Kalender auf dem Server gespeichert." + seen)
 
     async def find(self, query: str) -> tuple[list[dict], str]:
         self._require()
         if self.google and self.google.configured():
             events = await self.google.list(days=365, query=query)
             return [asdict(e) for e in events], "google"
-        return [asdict(e) for e in self.local.find(query)], "local"
+        return [asdict(e) for e in self.local.find(query)], ("n8n" if self.bridge.configured() else "local")
+
+    async def range(self, start: str, end: str, query: str = "") -> tuple[list[dict], str]:
+        """Alle Termine, die den Zeitraum berühren — für die Monats-, Wochen- und Tagesansicht (auch rückwirkend)."""
+        self._require()
+        a, b = datetime.fromisoformat(start), datetime.fromisoformat(end)
+        out = [e for e in self.local._load() if e.start_dt() < b and e.end_dt() >= a
+               and (not query or query.lower() in (e.title + " " + e.location).lower())]
+        out.sort(key=lambda e: e.start)
+        return [asdict(e) for e in out], ("n8n" if self.bridge.configured() else "local")
+
+    def update(self, uid: str, *, title=None, when=None, at=None, duration=None, location=None, notes=None,
+               category=None) -> dict:
+        """Eigenen Termin ändern. Google-Termine sind nur lesbar."""
+        self._require()
+        events = self.local._load()
+        ev = next((e for e in events if e.uid == uid), None)
+        if not ev:
+            raise CalendarError("Diesen Termin gibt es nicht (mehr).")
+        if ev.backend == "google":
+            raise CalendarError("Das ist ein Google-Termin. Google-Termine kann Jarvis nur lesen — bitte direkt in Google ändern.")
+        start, length = ev.start_dt(), ev.end_dt() - ev.start_dt()
+        if when or at:
+            d = parse_date(when) if when else start.date()
+            t = parse_time(at) if at else start.time()
+            start = datetime.combine(d, t)
+        if duration is not None:
+            length = timedelta(minutes=parse_duration(duration))
+        ev.start = start.isoformat(timespec="seconds")
+        ev.end = (start + length).isoformat(timespec="seconds")
+        if title is not None and title.strip():
+            ev.title = title.strip()
+        if location is not None:
+            ev.location = location.strip()
+        if notes is not None:
+            ev.notes = notes.strip()
+        if category is not None:
+            ev.category = category.strip().lower()
+        self.local._save(events)
+        try:
+            if ev.file:
+                Path(ev.file).write_text(to_ics([ev]), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+        return asdict(ev)
+
+    def delete_uid(self, uid: str) -> dict:
+        self._require()
+        ev = next((e for e in self.local._load() if e.uid == uid), None)
+        if not ev:
+            raise CalendarError("Diesen Termin gibt es nicht (mehr).")
+        if ev.backend == "google":
+            raise CalendarError("Das ist ein Google-Termin. Google-Termine kann Jarvis nur lesen — bitte direkt in Google löschen.")
+        self.local.delete(ev)
+        return asdict(ev)
+
+    def _write_google(self) -> bool:
+        """Schreiben nach Google nur, wenn es ausdrücklich so eingestellt ist (Standard: lokal)."""
+        return _env("CALENDAR_WRITE_BACKEND", "local").lower() == "google" and bool(self.google and self.google.configured())
+
+    async def _find_writable(self, query: str) -> tuple[list[dict], str]:
+        """Treffer, die Jarvis ändern darf. Übernommene Google-Termine sind nur lesbar und werden klar abgelehnt."""
+        if self._write_google():
+            return await self.find(query)
+        found = [asdict(e) for e in self.local.find(query)]
+        own = [e for e in found if e.get("backend") != "google"]
+        if not own and found:
+            raise CalendarError(f"“{query}” ist ein Google-Termin. Google-Termine kann Jarvis nur lesen, "
+                                "nicht ändern oder löschen — bitte direkt in Google ändern.")
+        return own, "local"
+
+    async def sync_google(self, days: int = 93) -> dict:
+        """Google-Termine (über die n8n-Brücke, nur lesen) in den lokalen Kalender übernehmen.
+
+        Ein Spiegel: Was in Google verschwindet, verschwindet auch hier. Bricht die Abfrage irgendwo ab, wird
+        NICHTS geändert — ein halber Abgleich würde Termine löschen, die es noch gibt.
+        """
+        if not self.bridge.configured():
+            return {"synced": 0, "skipped": "Kalender-Brücke nicht eingerichtet"}
+        fresh: dict[str, Event] = {}
+        prev = {e.uid: e for e in self.local._load() if e.backend == "google"}
+        budget = 25                                         # höchstens so viele neue Termine pro Abgleich einordnen
+        for off in range(0, days, 31):
+            for e in await self.bridge.list(days=min(31, days - off), offset=off):
+                uid = "g-" + (e.remote_id or e.uid)
+                cat = prev[uid].category if uid in prev and prev[uid].category not in ("", "google") else ""
+                if not cat:
+                    from .classify import rule_category
+                    cat = rule_category(e.title, "")
+                    if self.classifier and budget > 0:
+                        budget -= 1
+                        try:
+                            cat = (await asyncio.wait_for(self.classifier(e.title, e.start, "", e.location), 20)).get("category") or cat
+                        except Exception:  # noqa: BLE001
+                            pass
+                fresh[uid] = Event(uid=uid, title=e.title, start=e.start, end=e.end, location=e.location,
+                                   notes="Aus dem Google Kalender übernommen (nur lesbar).", backend="google",
+                                   remote_id=e.remote_id, category=cat)
+        own = [e for e in self.local._load() if e.backend != "google"]
+        merged = sorted([*own, *fresh.values()], key=lambda x: x.start)
+        self.local._save(merged)
+        return {"synced": len(fresh), "own": len(own)}
 
     async def move(self, query: str, new_when: str, at: str = "") -> tuple[dict, str]:
         self._require()
-        matches, backend = await self.find(query)
+        matches, backend = await self._find_writable(query)
         event = self._one(matches, query)
         date_part, time_part = split_datetime(new_when)
         if at:
@@ -260,7 +452,7 @@ class CalendarService:
 
     async def cancel(self, query: str) -> tuple[dict, str]:
         self._require()
-        matches, backend = await self.find(query)
+        matches, backend = await self._find_writable(query)
         event = self._one(matches, query)
         if backend == "google":
             await self.google.delete(Event(**event))

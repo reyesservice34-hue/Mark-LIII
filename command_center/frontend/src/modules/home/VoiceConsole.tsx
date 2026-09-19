@@ -66,10 +66,12 @@ export function VoiceConsole() {
   // keine Servereinstellung — also hier benannt, statt den Nutzer rätseln zu
   // lassen, warum nichts passiert.
   const insecure = typeof window !== "undefined" && !window.isSecureContext;
+  // Ohne OpenAI-Schlüssel gibt es die eigene, lokale Leitung: eigene Seite,
+  // Hören und Sprechen laufen auf diesem Server und kosten nichts.
+  const local = !!caps && !caps.available;
   const blocked = !caps ? "Prüfe die Leitung …"
     : insecure ? "Das Mikrofon gibt der Browser nur über HTTPS frei. Ruf das Dashboard über deine Domain auf, nicht über die IP-Adresse."
-      : !caps.available ? caps.detail
-        : "";
+      : "";
 
   const open = state !== "closed";
 
@@ -84,6 +86,17 @@ export function VoiceConsole() {
 
   const stop = useCallback(async () => { await closeLine(); }, []);
 
+  // Lokale Leitung: die Live-Konsole sitzt direkt in der Kachel. Gleiche Adresse,
+  // gleiche Anmeldung — kein neuer Tab, keine zweite Anmeldung.
+  if (local && !blocked) {
+    return (
+      <section className="voice-console vc-embed-wrap" aria-label="Sprachkonsole">
+        <iframe className="vc-embed" src="/live/" title="Jarvis Live-Gespräch"
+          allow="microphone; autoplay" />
+      </section>
+    );
+  }
+
   return (
     <section className={`voice-console phase-${state}`} aria-label="Sprachkonsole">
       <div className="vc-core" aria-hidden>
@@ -96,7 +109,8 @@ export function VoiceConsole() {
       <div className="vc-body">
         <div className="vc-phase">
           <span className={`dot ${open ? "live" : ""} ${blocked ? "err" : open ? "info" : ""}`} />
-          {blocked ? "Nicht verfügbar" : PHASE_LABEL[state]}
+          {blocked ? "Nicht verfügbar" : local ? "Lokale Live-Leitung" : PHASE_LABEL[state]}
+          {local && !blocked && <span className="vc-meta">läuft auf diesem Server · kostenlos</span>}
           {caps?.available && !blocked && (
             <span className="vc-meta">{caps.voice} · {caps.tools} Werkzeuge</span>
           )}
@@ -104,6 +118,11 @@ export function VoiceConsole() {
 
         {blocked ? (
           <p className="vc-blocked">{blocked}</p>
+        ) : local ? (
+          <p className="vc-hint">
+            Öffne die Live-Seite und sprich. Jarvis hört über die lokale Spracherkennung zu, denkt mit Claude
+            und antwortet mit seiner Stimme. Fällst du ihm ins Wort, hört er sofort auf.
+          </p>
         ) : (
           <>
             {heard && <p className="vc-heard">„{heard}"</p>}
@@ -130,11 +149,17 @@ export function VoiceConsole() {
         )}
 
         <div className="vc-actions">
+          {local && !blocked ? (
+            <a className="btn primary" href="/live/" target="_blank" rel="noopener">
+              <Mic size={15} />Live-Gespräch öffnen
+            </a>
+          ) : (
           <button className={`btn ${open ? "danger" : "primary"}`} onClick={open ? stop : start}
             disabled={!!blocked || state === "connecting"} title={blocked || undefined}>
             {open ? <Square size={15} /> : <Mic size={15} />}
             {state === "connecting" ? "Verbinde …" : open ? "Leitung schließen" : "Leitung öffnen"}
           </button>
+          )}
         </div>
       </div>
     </section>

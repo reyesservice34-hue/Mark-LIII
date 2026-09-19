@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis — Live-Gespräch</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 24px; background: radial-gradient(circle at 50% 30%, #142033, #05070c 70%);
+    color: #e8edf5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    text-align: center; padding: 16px; box-sizing: border-box;
+  }
+  h1 { font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; font-size: 15px; color: #7fb0ff; margin: 0; }
+  #orb {
+    width: 160px; height: 160px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #4a9eff, #0c3a72 70%);
+    box-shadow: 0 0 40px 8px rgba(74,158,255,0.25);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  #orb.listening { box-shadow: 0 0 60px 16px rgba(74,255,158,0.35); }
+  #orb.speaking { box-shadow: 0 0 60px 16px rgba(255,190,74,0.35); }
+  #orb.thinking { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1);} 50% { transform: scale(1.06);} }
+  #status { font-size: 15px; color: #9fb2cc; min-height: 20px; }
+  #transcript { max-width: 560px; font-size: 14px; color: #6d7c94; min-height: 40px; white-space: pre-wrap; }
+  #reply { max-width: 560px; font-size: 17px; color: #e8edf5; min-height: 50px; }
+  button {
+    background: #1a2740; color: #e8edf5; border: 1px solid #2c4270; border-radius: 999px;
+    padding: 12px 28px; font-size: 15px; cursor: pointer;
+  }
+  button:hover { background: #24365c; }
+  #err { color: #ff9d7f; font-size: 13px; max-width: 560px; }
+  html.embedded, html.embedded body { background: transparent; min-height: 0; height: 100%; }
+  html.embedded body { justify-content: center; gap: 10px; padding: 8px; }
+  html.embedded h1 { display: none; }
+  html.embedded #orb { width: 96px; height: 96px; }
+  html.embedded #reply { font-size: 15px; min-height: 40px; }
+  html.embedded #transcript { min-height: 20px; }
+</style>
+</head>
+<body>
+  <h1>Jarvis · Live</h1>
+  <div id="orb"></div>
+  <div id="status">Auf „Gespräch beginnen“ tippen und Mikrofon erlauben.</div>
+  <div id="transcript"></div>
+  <div id="reply"></div>
+  <div id="timing" style="font-size:12px;color:#5f6f85;min-height:16px"></div>
+  <div id="learned" style="font-size:12px;color:#5fbf8f;min-height:16px"></div>
+  <div id="err"></div>
+  <button id="toggle">Gespräch beginnen</button>
+
+<script>
+if (window.self !== window.top) document.documentElement.classList.add('embedded');
+const orb = document.getElementById('orb');
+const statusEl = document.getElementById('status');
+const transcriptEl = document.getElementById('transcript');
+const replyEl = document.getElementById('reply');
+const errEl = document.getElementById('err');
+const timingEl = document.getElementById('timing');
+const learnedEl = document.getElementById('learned');
+const toggleBtn = document.getElementById('toggle');
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const useSR = !!SR;                 // Chrome/Edge: Erkennung im Browser, kein Server-Whisper nötig
+const QUIET_MS = 450;               // so lange darf der Text unverändert bleiben, dann gilt der Satz als fertig
+
+let audioCtx, analyser, micStream, mediaRecorder, rec;
+let chunks = [], history = JSON.parse(sessionStorage.getItem('jarvis_history') || '[]');
+let running = false, recording = false, silenceMs = 0, turnStartedAt = 0, loudStreak = 0;
+let currentAudio = null, audioQueue = [], abortCtl = null;
+let SPEECH_THRESHOLD = 0.02;
+const SILENCE_TO_END_MS = 550, MIN_TURN_MS = 400, MAX_TURN_MS = 15000;
+// Spracherkennung im Browser
+let fillers = [], lastFiller = -1, fillerTimer = null;
+let inboxSince = 0, inboxTimer = null;
+let memoryText = '', csrfToken = '', heardText = '';
+let acceptResults = true, lastText = '', lastChange = 0, busy = false, quietTimer = null;
+
+function setState(s) { orb.className = s; }
+function idleText() { return 'Ich höre zu, Master.'; }
+
+async function start() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (e) { errEl.textContent = 'Mikrofon-Zugriff wurde verweigert oder ist nicht verfügbar.'; return; }
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaStreamSource(micStream);
+  analyser = audioCtx.createAnalyser(); analyser.fftSize = 1024; source.connect(analyser);
+
+  statusEl.textContent = 'Kurz still sein, ich messe den Raum …';
+  const samples = [];
+  for (let i = 0; i < 12; i++) { await new Promise(r => setTimeout(r, 50)); samples.push(rms()); }
+  SPEECH_THRESHOLD = Math.max(0.015, (samples.reduce((a, b) => a + b, 0) / samples.length) * 3.5);
+
+  fetch('api/fillers').then(r => r.json()).then(d => { fillers = (d.items || []).map(i => URL.createObjectURL(b64ToBlob(i.audio_base64, i.audio_mime))); }).catch(() => {});
+  running = true; busy = false; acceptResults = true;
+  startInbox(); loadMemory(); setInterval(loadMemory, 300000);
+  toggleBtn.textContent = 'Gespräch beenden';
+  statusEl.textContent = idleText(); setState('listening');
+  if (useSR) startRecognition();
+  monitorLoop();
+}
+
+function stop() {
+  running = false;
+  try { if (rec) { rec.onend = null; rec.stop(); } } catch (e) {}
+  clearInterval(quietTimer); clearInterval(inboxTimer);
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+  if (abortCtl) abortCtl.abort();
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  audioQueue = [];
+  toggleBtn.textContent = 'Gespräch beginnen'; statusEl.textContent = 'Gespräch beendet.'; setState('');
+}
+
+function rms() {
+  const buf = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buf);
+  let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+  return Math.sqrt(sum / buf.length);
+}
+
+/* ── Erkennung im Browser (schnell) ─────────────────────────────────── */
+function startRecognition() {
+  rec = new SR(); rec.lang = 'de-DE'; rec.continuous = true; rec.interimResults = true;
+  rec.onresult = (e) => {
+    if (!acceptResults || busy) return;
+    let t = '';
+    for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+    t = t.trim();
+    if (t && t !== lastText) { lastText = t; lastChange = performance.now(); transcriptEl.textContent = 'Sie: ' + t; }
+    if (e.results[e.results.length - 1].isFinal && t) fireText();
+  };
+  rec.onerror = (e) => { if (e.error === 'not-allowed') errEl.textContent = 'Spracherkennung wurde vom Browser blockiert.'; };
+  rec.onend = () => { if (running) { try { rec.start(); } catch (e) {} } };   // Chrome beendet sie von selbst, also neu starten
+  try { rec.start(); } catch (e) {}
+  clearInterval(quietTimer);
+  quietTimer = setInterval(() => {
+    // Text hat sich kurz nicht mehr geändert: Satz gilt als fertig, ohne auf Chromes langsames „final" zu warten.
+    if (acceptResults && !busy && lastText && performance.now() - lastChange > QUIET_MS) fireText();
+  }, 60);
+}
+
+function resetRecognition() {         // verwirft alles, was Chrome noch von Jarvis' eigener Stimme gepuffert hat
+  lastText = '';
+  try { if (rec) rec.stop(); } catch (e) {}   // onend startet neu
+}
+
+function fireText() {
+  const text = lastText; lastText = '';
+  if (!text) return;
+  const tPause = performance.now() - lastChange;
+  acceptResults = false; busy = true;
+  setState('thinking'); statusEl.textContent = 'Einen Moment, Master …'; errEl.textContent = '';
+  const form = new FormData();
+  form.append('text', text); form.append('history', JSON.stringify(history)); form.append('memory', memoryText);
+  runTurn('api/turn_text', form, tPause);
+}
+
+/* ── Lautstärke-Überwachung: Unterbrechen (und Aufnahme im Ausweichmodus) ─ */
+function monitorLoop() {
+  if (!running) return;
+  const level = rms();
+  const playing = !!(currentAudio || audioQueue.length);
+  const need = playing ? SPEECH_THRESHOLD * 3 : SPEECH_THRESHOLD;   // eigene Stimme aus dem Lautsprecher zählt nicht
+  loudStreak = level > need ? loudStreak + 1 : 0;
+  const loud = playing ? loudStreak >= 4 : level > need;
+
+  if (loud) {
+    if (playing) {                                   // Ins-Wort-Fallen: Wiedergabe und laufende Antwort abbrechen
+      if (currentAudio) currentAudio.pause();
+      currentAudio = null; audioQueue = [];
+      if (abortCtl) abortCtl.abort();
+      busy = false; acceptResults = true; lastText = '';
+      setState('listening'); statusEl.textContent = idleText();
+    }
+    if (!useSR && !recording) beginTurn();
+    silenceMs = 0;
+  } else if (recording) {
+    silenceMs += 50;
+    const len = performance.now() - turnStartedAt;
+    if ((silenceMs >= SILENCE_TO_END_MS && len > MIN_TURN_MS) || len > MAX_TURN_MS) endTurn();
+  }
+  setTimeout(monitorLoop, 50);
+}
+
+/* ── Ausweichmodus: Aufnahme an den Server (Whisper) ────────────────── */
+function beginTurn() {
+  recording = true; silenceMs = 0; turnStartedAt = performance.now(); chunks = [];
+  const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+  mediaRecorder = new MediaRecorder(micStream, { mimeType: mime });
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+  mediaRecorder.start(); setState('listening');
+}
+async function endTurn() {
+  recording = false;
+  if (!mediaRecorder) return;
+  const mime = mediaRecorder.mimeType;
+  const done = new Promise(res => { mediaRecorder.onstop = res; });
+  mediaRecorder.stop(); await done;
+  const blob = new Blob(chunks, { type: mime });
+  if (blob.size < 800) { setState('listening'); return; }
+  setState('thinking'); statusEl.textContent = 'Einen Moment, Master …'; errEl.textContent = '';
+  const form = new FormData();
+  form.append('audio', blob, 'clip.webm'); form.append('history', JSON.stringify(history));
+  runTurn('api/turn', form, SILENCE_TO_END_MS);
+}
+
+/* ── Antwort empfangen und Satz für Satz abspielen ──────────────────── */
+async function runTurn(url, form, pauseMs) {
+  abortCtl = new AbortController(); audioQueue = [];
+  const tSent = performance.now(); let tAudio = 0;
+  // Wie ein Mensch: kommt die Antwort nicht gleich, kurz reagieren statt zu schweigen.
+  clearTimeout(fillerTimer);
+  fillerTimer = setTimeout(() => {
+    if (tAudio || !fillers.length || !running) return;
+    let i; do { i = Math.floor(Math.random() * fillers.length); } while (fillers.length > 1 && i === lastFiller);
+    lastFiller = i; audioQueue.unshift(fillers[i]); playNext();
+  }, 900);
+  try {
+    const r = await fetch(url, { method: 'POST', body: form, signal: abortCtl.signal });
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = '', spoken = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+        if (!line) continue;
+        const d = JSON.parse(line);
+        if (d.error && !d.sentence) { errEl.textContent = d.error; statusEl.textContent = idleText(); setState('listening'); }
+        if (d.transcript) { heardText = d.transcript; transcriptEl.textContent = 'Sie: ' + d.transcript; replyEl.textContent = ''; }
+        if (d.sentence) { spoken += (spoken ? ' ' : '') + d.sentence; replyEl.textContent = spoken; }
+        if (d.audio_base64) {
+          if (!tAudio) {
+            tAudio = performance.now(); clearTimeout(fillerTimer);
+            timingEl.textContent = 'Pause ' + (pauseMs / 1000).toFixed(2) + ' s · Antwort-Ton nach ' + ((tAudio - tSent) / 1000).toFixed(1) + ' s'
+              + (useSR ? ' (Chrome-Erkennung)' : ' (Server-Erkennung)');
+          }
+          audioQueue.push(URL.createObjectURL(b64ToBlob(d.audio_base64, d.audio_mime || 'audio/mpeg'))); playNext();
+        }
+        if (d.done) learn(heardText, spoken);
+        if (d.done && d.history) { history = d.history; sessionStorage.setItem('jarvis_history', JSON.stringify(history)); }
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') { errEl.textContent = 'Verbindung zum Server verloren.'; setState('listening'); statusEl.textContent = idleText(); }
+  }
+  finishIfSilent();
+}
+
+function playNext() {
+  if (currentAudio || audioQueue.length === 0) return;
+  currentAudio = new Audio(audioQueue.shift());
+  setState('speaking'); statusEl.textContent = 'Jarvis spricht …';
+  currentAudio.onended = () => { currentAudio = null; if (audioQueue.length) playNext(); else finishIfSilent(); };
+  currentAudio.play().catch(() => {});
+}
+
+// Wenn Jarvis fertig ist (Antwort komplett empfangen und alles abgespielt): wieder zuhören.
+function finishIfSilent() {
+  if (currentAudio || audioQueue.length || !running) return;
+  busy = false; acceptResults = true;
+  if (useSR) resetRecognition();
+  setState('listening'); statusEl.textContent = idleText();
+}
+
+/* ── Lernen: Dauerhaftes aus dem Gespräch ins Gedächtnis ────────────── */
+async function learn(userText, reply) {
+  try {
+    if (!userText || userText.split(/\s+/).length < 3) return;
+    const f = new FormData(); f.append('user', userText); f.append('assistant', reply); f.append('memory', memoryText);
+    f.append('recent', history.slice(-6).map(m => (m.role === 'user' ? 'Nutzer: ' : 'Jarvis: ') + m.content).join('\n'));
+    const d = await (await fetch('api/extract', { method: 'POST', body: f })).json();
+    if (d.conflicts && d.conflicts.length) warn(d.conflicts[0]);   // Kollision: sofort ansprechen
+    else if (d.advice && d.advice.length) warn(d.advice[0]);       // sonst ein hilfreicher Rat
+    if (!d.facts || !d.facts.length) return;
+    if (!csrfToken) csrfToken = (await (await fetch('/api/auth/me', { credentials: 'same-origin' })).json()).csrf_token || '';
+    const day = new Date().toLocaleDateString('de-DE');
+    const saved = [];
+    for (const fact of d.facts) {
+      const r = await fetch('/api/memory/facts', { method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+        body: JSON.stringify({ text: fact + ' (im Live-Gespräch gemerkt, ' + day + ')', pinned: false }) });
+      if (r.status === 201) { saved.push(fact); memoryText += '\n- ' + fact; }
+    }
+    if (saved.length) { learnedEl.textContent = 'Gemerkt: ' + saved.join(' · '); setTimeout(() => { learnedEl.textContent = ''; }, 9000); }
+  } catch (e) {}
+}
+
+/* ── Kollisions-Warnung: Jarvis spricht sie von selbst aus ──────────── */
+async function warn(text) {
+  try {
+    errEl.style.color = '#ffb454'; errEl.textContent = text; setTimeout(() => { errEl.textContent = ''; errEl.style.color = ''; }, 15000);
+    const f = new FormData(); f.append('text', text);
+    const a = await (await fetch('api/say', { method: 'POST', body: f })).json();
+    if (a.audio_base64) { audioQueue.push(URL.createObjectURL(b64ToBlob(a.audio_base64, a.audio_mime))); playNext(); }
+    history.push({ role: 'assistant', content: text }); sessionStorage.setItem('jarvis_history', JSON.stringify(history));
+  } catch (e) {}
+}
+
+/* ── Gedächtnis: dasselbe wie im Dashboard ────────────────────────────── */
+async function loadMemory() {
+  try {
+    const r = await fetch('/api/memory?limit=200', { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const d = await r.json();
+    const facts = (d.facts || []).slice().sort((a, b) => (b.pinned | 0) - (a.pinned | 0));
+    memoryText = facts.map(f => '- ' + f.text).join('\n').slice(0, 3800);
+  } catch (e) {}
+}
+
+/* ── Jarvis meldet sich von selbst (Herzschlag des Dashboards) ───────── */
+function startInbox() {
+  clearInterval(inboxTimer); inboxSince = 0;
+  const poll = async () => {
+    if (!running) return;
+    try {
+      const r = await fetch('/api/heartbeat/inbox?since=' + inboxSince, { credentials: 'same-origin' });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (!inboxSince) { inboxSince = d.now; return; }          // erste Abfrage: nur Startpunkt merken, nichts nachsprechen
+      if (!d.items.length) return;
+      // Nur reden, wenn gerade nichts los ist; sonst beim nächsten Mal.
+      if (busy || recording || currentAudio || audioQueue.length || lastText) return;
+      const m = d.items[0]; inboxSince = m.ts;
+      const f = new FormData(); f.append('text', m.text);
+      const a = await (await fetch('api/say', { method: 'POST', body: f })).json();
+      if (a.audio_base64) {
+        replyEl.textContent = m.text; transcriptEl.textContent = '';
+        history.push({ role: 'assistant', content: m.text }); sessionStorage.setItem('jarvis_history', JSON.stringify(history));
+        audioQueue.push(URL.createObjectURL(b64ToBlob(a.audio_base64, a.audio_mime))); playNext();
+      }
+    } catch (e) {}
+  };
+  poll(); inboxTimer = setInterval(poll, 15000);
+}
+
+function b64ToBlob(b64, mime) {
+  const bytes = atob(b64), arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+toggleBtn.addEventListener('click', () => { running ? stop() : start(); });
+</script>
+</body>
+</html>

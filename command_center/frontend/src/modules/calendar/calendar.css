@@ -1,0 +1,52 @@
+.cal-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.cal-bar .title { font-family: var(--hud); font-size: 20px; font-weight: 700; letter-spacing: .02em; min-width: 190px; }
+.cal-tabs { display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--r-md); overflow: hidden; }
+.cal-tabs button { background: transparent; border: 0; padding: 6px 14px; color: var(--text-2); font-size: 13px; }
+.cal-tabs button.on { background: var(--accent-soft); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.cal-cats { display: flex; flex-wrap: wrap; gap: 8px; }
+.cal-cat { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--line-2);
+  background: transparent; color: var(--text-2); font-size: 12px; cursor: pointer; }
+.cal-cat .sw { width: 10px; height: 10px; border-radius: 3px; }
+.cal-cat.off { opacity: .4; text-decoration: line-through; }
+.cal-alert { border: 1px solid rgba(255,93,108,.5); background: var(--err-soft); color: #ffd0d5; border-radius: var(--r-md); padding: 8px 12px; font-size: 13px; }
+.cal-alert ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* Monat */
+.cal-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: var(--bg-1); }
+.cal-dow { padding: 6px 8px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); border-bottom: 1px solid var(--line); background: var(--bg-2); }
+.cal-cell { min-height: 112px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 4px 5px; cursor: pointer; position: relative; }
+.cal-cell:nth-child(7n) { border-right: 0; }
+.cal-cell:hover { background: rgba(255,255,255,.02); }
+.cal-cell.other { opacity: .45; }
+.cal-cell.today { background: var(--accent-soft); }
+.cal-cell .num { font-size: 12px; color: var(--text-2); display: flex; justify-content: space-between; align-items: center; }
+.cal-cell.today .num b { background: var(--accent); color: #06111c; border-radius: 999px; padding: 0 6px; }
+.cal-warn { color: var(--err); font-size: 12px; }
+
+/* Termin-Chip (Monat) und Block (Woche/Tag) */
+.cal-chip { display: flex; gap: 5px; align-items: center; font-size: 11.5px; padding: 1px 5px; margin-top: 2px; border-radius: 4px;
+  background: color-mix(in srgb, var(--c) 18%, transparent); border-left: 3px solid var(--c); overflow: hidden; white-space: nowrap; cursor: pointer; }
+.cal-chip.clash { outline: 1.5px solid var(--err); }
+.cal-chip .t { color: var(--text-3); flex: none; }
+.cal-chip .n { overflow: hidden; text-overflow: ellipsis; }
+.cal-more { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+/* Woche / Tag */
+.cal-week { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: auto; background: var(--bg-1); max-height: 72vh; }
+.cal-week-inner { min-width: 720px; }
+.cal-head { display: grid; position: sticky; top: 0; z-index: 3; background: var(--bg-2); border-bottom: 1px solid var(--line); }
+.cal-head > div { padding: 6px 8px; font-size: 12px; border-left: 1px solid var(--line); }
+.cal-head > div.today { color: var(--accent); }
+.cal-allday { display: grid; border-bottom: 1px solid var(--line); background: var(--bg-2); }
+.cal-allday > div { border-left: 1px solid var(--line); padding: 2px 4px; min-height: 8px; }
+.cal-body { display: grid; position: relative; }
+.cal-hours > div { height: 48px; font-size: 10.5px; color: var(--text-3); text-align: right; padding-right: 6px; border-top: 1px solid var(--line); }
+.cal-col { position: relative; border-left: 1px solid var(--line); cursor: pointer; }
+.cal-col .hl { height: 48px; border-top: 1px solid var(--line); }
+.cal-col.today { background: rgba(90,200,255,.04); }
+.cal-block { position: absolute; border-radius: 5px; padding: 2px 5px; font-size: 11.5px; overflow: hidden; cursor: pointer; line-height: 1.25;
+  background: color-mix(in srgb, var(--c) 24%, var(--bg-1)); border-left: 3px solid var(--c); box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.cal-block.clash { outline: 1.5px solid var(--err); background: color-mix(in srgb, var(--err) 18%, color-mix(in srgb, var(--c) 24%, var(--bg-1))); }
+.cal-block .t { color: var(--text-2); font-size: 10.5px; }
+.cal-block .x { color: var(--err); font-weight: 700; }
+.cal-now { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid var(--err); z-index: 2; pointer-events: none; }

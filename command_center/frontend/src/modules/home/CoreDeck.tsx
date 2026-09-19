@@ -57,16 +57,13 @@ export function CoreDeck() {
         foot={gw ? `${gw.detail || ""}` : undefined}>
         {!settings.data ? <div className="panel-body"><Skeleton rows={3} /></div> : (
           <div className="deck-grid">
-            {ANBIETER.map(([key, name]) => {
-              const da = !!settings.data!.providers?.[key];
-              const ist = da && (aktiv === key || (key === "local" && aktiv === "local"));
+            {ANBIETER.filter(([key]) => !!settings.data!.providers?.[key]).map(([key, name]) => {
+              const ist = aktiv === key || (key === "local" && aktiv === "local");
               return (
-                <div className={`deck-cell ${da ? (ist ? "live" : "ok") : "off"}`} key={key}>
+                <div className={`deck-cell ${ist ? "live" : "ok"}`} key={key}>
                   <span className="dot" />
                   <span className="deck-name">{name}</span>
-                  <span className="deck-state">
-                    {ist ? "denkt gerade" : da ? "Schlüssel liegt vor" : "nicht hinterlegt"}
-                  </span>
+                  <span className="deck-state">{ist ? "denkt gerade" : "Schlüssel liegt vor"}</span>
                 </div>
               );
             })}

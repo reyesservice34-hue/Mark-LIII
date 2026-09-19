@@ -290,13 +290,16 @@ class LocalCalendarIntegration(IntegrationAdapter):
         return await svc.health()
 
 
+@dataclass
 class SmtpImapIntegration(IntegrationAdapter):
+    slug: str = "buero"          # welches Postfach diese Karte betrifft
+
     async def check(self) -> dict:
         from ..services.email_service import EmailService
         svc = EmailService()
-        if not svc.configured():
-            return {"status": "not_configured", "detail": svc.unavailable_reason()}
-        return await svc.health()
+        if self.slug not in svc.accounts:
+            return {"status": "not_configured", "detail": f"{self.required_env[0]} / {self.required_env[1]} not set"}
+        return await svc.health(self.slug)
 
 
 class VoiceIntegration(IntegrationAdapter):
@@ -404,6 +407,16 @@ DEFAULT_ADAPTERS: list[IntegrationAdapter] = [
                         required_env=["EMAIL_USER", "EMAIL_PASSWORD"],
                         optional_env=["EMAIL_IMAP_HOST", "EMAIL_IMAP_PORT", "EMAIL_SMTP_HOST",
                                       "EMAIL_SMTP_PORT", "EMAIL_SENDER_NAME"], icon="mail"),
+    SmtpImapIntegration("email_privat", "E-Mail Firma privat (IMAP / SMTP)", "communication",
+                        ["inbox and unread", "search", "read full mail", "draft", "send (approval-gated)"],
+                        required_env=["EMAIL_PRIVAT_USER", "EMAIL_PRIVAT_PASSWORD"],
+                        optional_env=["EMAIL_PRIVAT_IMAP_HOST", "EMAIL_PRIVAT_IMAP_PORT", "EMAIL_PRIVAT_SMTP_HOST",
+                                      "EMAIL_PRIVAT_SMTP_PORT", "EMAIL_PRIVAT_SENDER_NAME"], icon="mail", slug="privat"),
+    SmtpImapIntegration("email_rechnungen", "E-Mail Rechnungen (IMAP / SMTP)", "communication",
+                        ["inbox and unread", "search", "read full mail", "draft", "send (approval-gated)"],
+                        required_env=["EMAIL_RECHNUNGEN_USER", "EMAIL_RECHNUNGEN_PASSWORD"],
+                        optional_env=["EMAIL_RECHNUNGEN_IMAP_HOST", "EMAIL_RECHNUNGEN_IMAP_PORT", "EMAIL_RECHNUNGEN_SMTP_HOST",
+                                      "EMAIL_RECHNUNGEN_SMTP_PORT", "EMAIL_RECHNUNGEN_SENDER_NAME"], icon="mail", slug="rechnungen"),
     VoiceIntegration("voice", "Voice (speech to text · text to speech)", "ai",
                      ["browser transcription", "spoken answers"],
                      any_env=["JARVIS_CC_STT_URL", "JARVIS_CC_TTS_URL"],

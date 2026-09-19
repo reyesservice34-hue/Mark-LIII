@@ -81,6 +81,10 @@ class VoiceService:
         self.stt_model = _env("JARVIS_CC_STT_MODEL", "whisper-1")
         self.tts_model = _env("JARVIS_CC_TTS_MODEL", "tts-1")
         self.tts_voice = _env("JARVIS_CC_TTS_VOICE", "alloy")
+        # Most OpenAI-compatible endpoints accept mp3. Some (e.g. Google's TTS
+        # models via OpenRouter) only speak raw pcm — set this to "pcm" for
+        # those and the response is wrapped into a WAV header below.
+        self.tts_format = _env("JARVIS_CC_TTS_FORMAT", "mp3")
         self.language = _env("JARVIS_CC_STT_LANGUAGE")
         self.eleven_key = _env("ELEVENLABS_API_KEY")
         self.eleven_voice = _env("ELEVENLABS_VOICE_ID")
@@ -239,7 +243,7 @@ class VoiceService:
             return await self._speak_eleven(text, voice)
         headers = {"Authorization": f"Bearer {self.tts_key}"} if self.tts_key else {}
         body = {"model": self.tts_model, "voice": voice or self.tts_voice, "input": text,
-                "response_format": "mp3"}
+                "response_format": self.tts_format}
         try:
             async with httpx.AsyncClient(timeout=120.0) as c:
                 r = await c.post(_endpoint(self.tts_url, "/audio/speech"), json=body, headers=headers)
@@ -252,6 +256,8 @@ class VoiceService:
         audio = r.content
         if not audio:
             raise VoiceError("The speech service returned no audio.")
+        if self.tts_format == "pcm":
+            return self._wav(audio, rate=24000), "audio/wav"
         return audio, r.headers.get("content-type", "audio/mpeg")
 
     # ── health ───────────────────────────────────────────────────────────

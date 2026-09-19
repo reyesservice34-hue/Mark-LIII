@@ -40,6 +40,9 @@ from .services.chat_store import ChatStore
 from .services.composio import ComposioService
 from .services.desktop_bridge import DesktopBridge
 from .services.email_service import EmailService
+# Im Dashboard eingegebene Zugangsdaten müssen da sein, BEVOR die Dienste (Mail, Kalender …) gebaut werden.
+from .modules.integrations import load_saved_secrets as _load_saved_secrets
+_load_saved_secrets()
 from .services.external import GitHubService
 from .services.files import FileService
 from .services.improve import ImprovementService

@@ -386,10 +386,11 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         event, backend, note = await calendar.create(
             title=str(args["title"]), when=str(args["when"]), at=str(args.get("at", "")),
             duration=args.get("duration", 60), location=str(args.get("location", "")),
-            notes=str(args.get("notes", "")))
+            notes=str(args.get("notes", "")), category=str(args.get("category", "")).strip().lower())
         ctx.emit("calendar", {"text": f"Appointment booked ({backend}): {event['title']} {event['start']}"})
         return {"booked": True, "backend": backend, "start": event["start"], "end": event["end"],
-                "title": event["title"], "note": note}
+                "title": event["title"], "category": event.get("category", ""), "location": event.get("location", ""),
+                "notes": event.get("notes", ""), "note": note}
 
     async def calendar_move(ctx: ToolContext, args: dict):
         event, backend = await calendar.move(str(args["query"]), str(args["when"]), str(args.get("at", "")))
@@ -410,7 +411,10 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                                 "when": _s("date, e.g. 2026-09-24, 'tomorrow', 'Montag' — may include the time"),
                                 "at": _s("time, e.g. 14:00 (optional if 'when' already has it)"),
                                 "duration": _s("minutes or e.g. '1h', default 60"),
-                                "location": _s("where"), "notes": _s("extra notes")}, ["title", "when"]),
+                                "location": _s("where"), "notes": _s("extra notes"),
+                                "category": _s("optional: tour | ich | privat. Leave EMPTY: Jarvis recognises what it is "
+                                               "(Tour für das Team, Termin des Masters, privat), the place, the team and "
+                                               "the vehicle from the text and memory")}, ["title", "when"]),
                           category="productivity", risk="medium", handler=calendar_create,
                           available=cal_ok, reason=cal_reason))
     reg.register(ToolSpec("calendar.move", "Move an existing appointment to a new date/time.",
@@ -432,46 +436,63 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
     async def email_search(ctx: ToolContext, args: dict):
         q = str(args.get("query", "")).strip()
         limit = int(args.get("limit", 10))
+        acc = str(args.get("account", "")).strip()
         if str(args.get("unread", "")).lower() in ("1", "true", "yes"):
-            items = await mail.unread(limit)
+            items = await mail.unread(limit, account=acc)
         elif q:
-            items = await mail.search(q, limit)
+            items = await mail.search(q, limit, account=acc)
         else:
-            items = await mail.recent(limit)
+            items = await mail.recent(limit, account=acc)
         return items or "no matching mail"
 
     async def email_read(ctx: ToolContext, args: dict):
-        return await mail.read(str(args["query"]))
+        return await mail.read(str(args["query"]), account=str(args.get("account", "")).strip())
 
     async def email_draft(ctx: ToolContext, args: dict):
+        acc = str(args.get("account", "")).strip()
         msg = mail.build(str(args["to"]), str(args.get("subject", "")), str(args.get("body", "")),
-                         str(args.get("cc", "")))
-        return {"drafted": True, "to": msg["To"], "subject": msg["Subject"], "body": str(args.get("body", "")),
+                         str(args.get("cc", "")), account=acc)
+        return {"drafted": True, "from": msg["From"], "to": msg["To"], "subject": msg["Subject"],
+                "body": str(args.get("body", "")),
                 "note": "Nothing was sent. Read the draft to the user and use email.send only once they agree."}
 
     async def email_send(ctx: ToolContext, args: dict):
         result = await mail.send(str(args["to"]), str(args.get("subject", "")), str(args.get("body", "")),
-                                 str(args.get("cc", "")))
-        ctx.emit("email", {"text": f"Mail sent to {result['to']}"})
+                                 str(args.get("cc", "")), account=str(args.get("account", "")).strip())
+        ctx.emit("email", {"text": f"Mail sent from {result['from']} to {result['to']}"})
         return result
+
+    STYLE = ("SCHREIBSTIL, immer einhalten: Schreibe wie ein echter Handwerksbetrieb-Inhaber, nicht wie eine KI. "
+             "Persönlich, direkt, ruhig und verbindlich. Kurze, normale Sätze, meist 3 bis 7 Sätze insgesamt. "
+             "Fang mit der Sache an, nicht mit Floskeln (kein 'ich hoffe, Sie sind wohlauf', kein 'vielen Dank für Ihre "
+             "Nachricht' als Standardsatz, kein 'gerne' oder 'selbstverständlich' in jedem Satz). "
+             "Anrede und Sie/Du so wie der Empfänger schreibt; Kunden im Zweifel mit 'Guten Tag Frau/Herr Nachname,' und Sie. "
+             "Kein Markdown, keine Aufzählungen, kein Fettdruck, keine Emojis, keine Gedankenstriche als Stilmittel, keine "
+             "Ausrufezeichen-Ketten. Vermeide typische KI-Wörter und -Wendungen (nahtlos, maßgeschneidert, ganzheitlich, "
+             "Expertise, im Folgenden, zusammenfassend, ich freue mich darauf). Abwechslungsreich formulieren, nicht jede "
+             "Mail gleich aufbauen. Am Ende ein klarer nächster Schritt (Termin, Rückmeldung, Unterlage). Nichts erfinden: "
+             "keine Preise, Termine, Zusagen oder Normen, die nicht belegt sind; lieber nachfragen. Interne Sätze, Margen "
+             "und Stundensätze nie nennen. Grußformel: 'Viele Grüße' bzw. 'Freundliche Grüße', darunter 'Paul'.")
+    ACC = ("Postfach: buero, privat oder rechnungen. Beim Antworten IMMER das Postfach, in dem die Mail angekommen "
+           "ist (Feld 'account' der Suchergebnisse). Bei Suchen ohne Angabe werden alle durchsucht.")
 
     reg.register(ToolSpec("email.search", "Search the mailbox, or list the newest / unread mail.",
                           _obj({"query": _s("text in subject, sender or body"), "limit": _i("max results"),
-                                "unread": _s("'true' for unread only")}),
+                                "unread": _s("'true' for unread only"), "account": _s(ACC)}),
                           category="communication", risk="low", handler=email_search,
                           available=mail_ok, reason=mail_reason, timeout_seconds=60))
     reg.register(ToolSpec("email.read", "Read one mail in full, including its body.",
-                          _obj({"query": _s("text identifying the mail")}, ["query"]),
+                          _obj({"query": _s("text identifying the mail"), "account": _s(ACC)}, ["query"]),
                           category="communication", risk="low", handler=email_read,
                           available=mail_ok, reason=mail_reason, timeout_seconds=60))
-    reg.register(ToolSpec("email.draft", "Compose a mail without sending it. Always draft before sending.",
+    reg.register(ToolSpec("email.draft", "Compose a mail without sending it. Always draft before sending. " + STYLE,
                           _obj({"to": _s("recipient address"), "subject": _s("subject"), "body": _s("full text"),
-                                "cc": _s("optional cc")}, ["to", "body"]),
+                                "cc": _s("optional cc"), "account": _s(ACC)}, ["to", "body"]),
                           category="communication", risk="low", handler=email_draft,
                           available=mail_ok, reason=mail_reason))
-    reg.register(ToolSpec("email.send", "Send a mail. Irreversible, so it always requires the user's approval.",
+    reg.register(ToolSpec("email.send", "Send a mail. Irreversible, so it always requires the user's approval. " + STYLE,
                           _obj({"to": _s("recipient address"), "subject": _s("subject"), "body": _s("full text"),
-                                "cc": _s("optional cc"), "reason": _s("why this mail is being sent")},
+                                "cc": _s("optional cc"), "reason": _s("why this mail is being sent"), "account": _s(ACC)},
                                ["to", "body", "reason"]),
                           category="communication", risk="high", handler=email_send,
                           available=mail_ok, reason=mail_reason, timeout_seconds=90))

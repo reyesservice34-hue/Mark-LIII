@@ -260,6 +260,15 @@ class AuthService:
         return Principal(kind="token", id=row["id"], name=row["name"], role=row["role"],
                          actor=row["actor"])
 
+    def delete_user(self, user_id: str) -> bool:
+        """Benutzer endgültig entfernen; laufende Anmeldungen enden sofort."""
+        self.db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+        return self.db.execute("DELETE FROM users WHERE id=?", (user_id,)).rowcount > 0
+
+    def purge_api_token(self, token_id: str) -> bool:
+        """Maschinen-Token endgültig aus der Liste entfernen (er ist danach auch ungültig)."""
+        return self.db.execute("DELETE FROM api_tokens WHERE id=?", (token_id,)).rowcount > 0
+
     def list_api_tokens(self) -> list[dict]:
         return [self.public_token(r) for r in self.db.fetchall(
             "SELECT * FROM api_tokens ORDER BY created_at DESC")]

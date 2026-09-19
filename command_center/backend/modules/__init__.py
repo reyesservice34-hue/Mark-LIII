@@ -19,7 +19,7 @@ from fastapi import APIRouter
 DEFAULT_MODULES = [
     "auth", "health", "events", "chat", "agents", "tasks", "teach", "workflows", "automations",
     "server", "desktop", "files", "integrations", "logs", "notifications", "approvals", "analytics",
-    "settings", "gateway", "voice", "live", "extensions", "memory", "calendar",
+    "settings", "gateway", "voice", "live", "extensions", "memory", "calendar", "heartbeat", "maillearn",
 ]
 
 
