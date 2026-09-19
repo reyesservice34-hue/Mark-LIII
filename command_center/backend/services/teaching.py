@@ -320,6 +320,28 @@ class TeachingService:
         self.bus.publish("procedure.updated", procedure)
         return procedure
 
+    def delete_recording(self, recording_id: str) -> bool:
+        """Eine Aufnahme wegwerfen — mitsamt ihren Ereignissen.
+
+        Eine Aufnahme ist der Rohstoff: was gesagt wurde, jeder Werkzeugaufruf
+        mit Argumenten und Ergebnis. Ein abgebrochener Versuch ist damit nicht
+        nur Ballast, sondern ein Mitschnitt echter Arbeit, der herumliegt.
+
+        Die Ereignisse stehen in einer eigenen Tabelle. Nur die Aufnahme zu
+        löschen hieße: sie ist aus der Liste weg, die Mitschnitte bleiben —
+        unsichtbar und für immer.
+
+        Eine daraus gelernte Prozedur bleibt bestehen. Sie ist das Ergebnis,
+        nicht der Rohstoff; wer die Aufnahme wegräumt, will selten das
+        Gelernte mit verlieren.
+        """
+        if not self.db.fetchone("SELECT id FROM recordings WHERE id=?", (recording_id,)):
+            return False
+        self.db.execute("DELETE FROM recording_events WHERE recording_id=?", (recording_id,))
+        self.db.execute("DELETE FROM recordings WHERE id=?", (recording_id,))
+        self.bus.publish("recording.deleted", {"id": recording_id})
+        return True
+
     def delete_procedure(self, procedure_id: str) -> bool:
         cur = self.db.execute("DELETE FROM procedures WHERE id=?", (procedure_id,))
         if cur.rowcount:

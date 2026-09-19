@@ -118,6 +118,23 @@ async def distill(recording_id: str, body: DistillBody, state: AppState = Depend
     return result
 
 
+@router.delete("/recordings/{recording_id}")
+async def delete_recording(recording_id: str, state: AppState = Depends(get_state),
+                           principal: Principal = Depends(require_role("operator"))):
+    """Eine Aufnahme wegwerfen. Eine daraus gelernte Prozedur bleibt.
+
+    Ein abgebrochener Versuch ist nicht nur Ballast: Eine Aufnahme enthält,
+    was gesagt wurde, und jeden Werkzeugaufruf mit Argumenten und Ergebnis.
+    Das liegen zu lassen, weil es keinen Knopf dafür gibt, ist das Gegenteil
+    von aufgeräumt.
+    """
+    if not _svc(state).delete_recording(recording_id):
+        raise HTTPException(status_code=404, detail="Diese Aufnahme gibt es nicht.")
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="teach.recording.delete",
+                    target=recording_id, status="ok")
+    return {"ok": True}
+
+
 @router.get("/procedures")
 async def procedures(state: AppState = Depends(get_state), _: Principal = Depends(current_principal)):
     return {"procedures": _svc(state).procedures()}

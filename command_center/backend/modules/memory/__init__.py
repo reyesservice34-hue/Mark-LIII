@@ -251,21 +251,30 @@ def _startup(state: AppState) -> None:
     from pathlib import Path
 
     kb = state.services.get("knowledge")
-    if kb is None or kb.get("jarvis-hauptgedaechtnis"):
+    if kb is None:
         return
-    for kandidat in (Path("/app/.claude/HAUPTGEDAECHTNIS.md"),
-                     Path(__file__).resolve().parents[4] / ".claude" / "HAUPTGEDAECHTNIS.md"):
-        if not kandidat.is_file():
+    mitgeliefert = (
+        ("jarvis-hauptgedaechtnis", "HAUPTGEDAECHTNIS.md", "JARVIS Hauptgedächtnis",
+         "Aufbau dieser Anlage: Server, Dienste, Geräte, Entscheidungen und offene Punkte. "
+         "Hier nachsehen statt raten."),
+        ("jarvis-stehende-anweisungen", "STEHENDE_ANWEISUNGEN.md", "JARVIS Stehende Anweisungen",
+         "Alle geltenden Regeln mit Angabe, welche der Code erzwingt und welche nur im Text "
+         "stehen. Nachsehen, bevor du über Grenzen oder Freigaben sprichst."),
+    )
+    for slug, dateiname, titel, zweck in mitgeliefert:
+        if kb.get(slug):
             continue
-        try:
-            kb.save(slug="jarvis-hauptgedaechtnis", title="JARVIS Hauptgedächtnis",
-                    summary="Aufbau dieser Anlage: Server, Dienste, Geräte, Entscheidungen "
-                            "und offene Punkte. Hier nachsehen statt raten.",
-                    content=kandidat.read_text(encoding="utf-8"), actor="system")
-            state.log.info("memory", f"Hauptgedächtnis eingespielt aus {kandidat}")
-        except Exception as e:  # noqa: BLE001 — ein Startfehler hier darf den Server nicht aufhalten
-            state.log.warn("memory", f"Hauptgedächtnis nicht einspielbar: {e}")
-        return
+        for kandidat in (Path("/app/.claude") / dateiname,
+                         Path(__file__).resolve().parents[4] / ".claude" / dateiname):
+            if not kandidat.is_file():
+                continue
+            try:
+                kb.save(slug=slug, title=titel, summary=zweck,
+                        content=kandidat.read_text(encoding="utf-8"), actor="system")
+                state.log.info("memory", f"{titel} eingespielt aus {kandidat}")
+            except Exception as e:  # noqa: BLE001 — ein Startfehler darf den Server nicht aufhalten
+                state.log.warn("memory", f"{titel} nicht einspielbar: {e}")
+            break
 
 
 MODULE = ModuleSpec(

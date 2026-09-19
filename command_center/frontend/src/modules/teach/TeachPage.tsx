@@ -73,6 +73,16 @@ export default function TeachPage() {
     } catch (e: any) { toast({ title: "Could not learn from it", body: e.message, tone: "err" }); }
     finally { setBusy(false); }
   };
+
+  const removeRec = async (id: string, title: string) => {
+    if (!window.confirm(`Aufnahme „${title}" löschen? Eine daraus gelernte Prozedur bleibt bestehen.`)) return;
+    try {
+      await api.del(`/api/teach/recordings/${id}`);
+      if (openRec === id) setOpenRec("");
+      recordings.reload();
+      toast({ title: "Aufnahme gelöscht", body: title, tone: "ok" });
+    } catch (e: any) { toast({ title: "Ging nicht", body: e.message, tone: "err" }); }
+  };
   const run = async (p: Procedure) => {
     try {
       const r = await api.post(`/api/teach/procedures/${p.id}/run`, { inputs: {} });
@@ -144,6 +154,14 @@ export default function TeachPage() {
                       {can("operator") && r.status !== "recording" && !r.procedure_id &&
                         <button className="btn sm primary" onClick={(e) => { e.stopPropagation(); learn(r.id, true); }}
                           disabled={busy}><Sparkles />Learn</button>}
+                      {/* Eine Aufnahme ist der Rohstoff: was gesagt wurde und jeder
+                          Werkzeugaufruf mit Ergebnis. Ein abgebrochener Versuch soll
+                          weggeworfen werden können — das Gelernte bleibt davon
+                          unberührt, das steht in der Liste darunter. */}
+                      {can("operator") && r.status !== "recording" &&
+                        <button className="btn sm danger" title="Aufnahme löschen"
+                          onClick={(e) => { e.stopPropagation(); removeRec(r.id, r.title); }}
+                          disabled={busy}><Trash2 size={13} /></button>}
                     </div>))}
                 </div>)}
         </Panel>

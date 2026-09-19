@@ -538,6 +538,36 @@ with TestClient(app) as c:
     check("the lesson is in memory too",
           "Angebot erstellen" in json.dumps(c.get("/v1/memory/search?q=Angebot", headers=T).json()))
 
+    print("\n6b. Eine Aufnahme wegwerfen — das Gelernte bleibt")
+    # Eine Aufnahme ist der Rohstoff: was gesagt wurde und jeder Werkzeugaufruf
+    # mit Argumenten und Ergebnis. Ein abgebrochener Versuch lag bisher für
+    # immer herum, weil es keinen Knopf dafür gab.
+    r = c.post("/api/teach/recordings", json={"title": "Fehlversuch", "goal": "wegwerfen"},
+               headers=H)
+    weg = r.json()["recording"]["id"]
+    c.post(f"/api/teach/recordings/{weg}/note", json={"text": "ein Schritt"}, headers=H)
+    c.post(f"/api/teach/recordings/{weg}/stop", headers=H)
+    check("die Aufnahme hat Ereignisse",
+          (state.db.scalar("SELECT COUNT(*) FROM recording_events WHERE recording_id=?",
+                           (weg,)) or 0) > 0)
+
+    check("sie laesst sich loeschen",
+          c.delete(f"/api/teach/recordings/{weg}", headers=H).status_code == 200)
+    check("und ist weg",
+          state.db.fetchone("SELECT id FROM recordings WHERE id=?", (weg,)) is None)
+    check("ihre Ereignisse auch — sonst blieben Mitschnitte unsichtbar liegen",
+          (state.db.scalar("SELECT COUNT(*) FROM recording_events WHERE recording_id=?",
+                           (weg,)) or 0) == 0)
+    check("eine zweimal geloeschte Aufnahme wird benannt, nicht stillschweigend geschluckt",
+          c.delete(f"/api/teach/recordings/{weg}", headers=H).status_code == 404)
+
+    # Die Aufnahme, aus der gelernt wurde, samt ihrer Prozedur.
+    gelernt = proc["id"]
+    check("auch eine gelernte Aufnahme darf weg",
+          c.delete(f"/api/teach/recordings/{rec_id}", headers=H).status_code == 200)
+    check("die Prozedur bleibt — sie ist das Ergebnis, nicht der Rohstoff",
+          teaching.procedure(gelernt) is not None)
+
     print("\n7. running what was learned")
     fake.turns = [text_turn("Angebot ist fertig.")]
     run = c.post(f"/api/teach/procedures/{proc['id']}/run", json={"inputs": {"kunde": "Schmidt"}}, headers=H)
