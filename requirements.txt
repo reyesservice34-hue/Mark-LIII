@@ -41,6 +41,9 @@ google-auth-oauthlib
 # ── Plugin extras: Tuya / Smart Life smart light (home_assistant) ─────────────
 tinytuya
 
+# ── Plugin extras: graphify (local code knowledge-graph, free/offline) ────────
+graphifyy
+
 # ── Windows-only (pip skips these automatically on macOS / Linux) ─────────────
 comtypes;   sys_platform == "win32"
 pycaw;      sys_platform == "win32"
