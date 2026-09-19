@@ -4432,7 +4432,31 @@ class MainWindow(QMainWindow):
 
     # ────────────────────────────────────────────────────────────────────────────
 
+    def _close_topmost_overlay(self) -> bool:
+        """Back out of an open settings panel instead of aborting the live
+        conversation underneath it. [ESC] and the INTERRUPT button are the
+        obvious way to back out while browsing the settings drawer, and
+        until now they always cut off JARVIS mid-speech even when nothing
+        about the conversation itself was being interrupted."""
+        if getattr(self, "_quick_drawer", None) is not None and self._quick_drawer.isVisible():
+            self._drawer_btn.setChecked(False)
+            self._quick_drawer.hide()
+            return True
+        ov = getattr(self, "_customize_overlay", None)
+        if ov is not None and ov.isVisible():
+            ov._cancel()   # also reverts any unsaved colour preview
+            return True
+        for attr in ("_audio_overlay", "_memory_overlay", "_plugin_manager_overlay",
+                     "_plugin_settings_overlay", "_remote_overlay"):
+            ov = getattr(self, attr, None)
+            if ov is not None and ov.isVisible():
+                ov.hide()
+                return True
+        return False
+
     def _do_interrupt(self):
+        if self._close_topmost_overlay():
+            return
         if self.on_interrupt:
             self.on_interrupt()
 
