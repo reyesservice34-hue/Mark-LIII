@@ -182,3 +182,17 @@ table.table tbody tr:hover { background: rgba(146, 172, 204, 0.045); }
   .stat .value { font-size: 25px; }
   body::before { background-size: 38px 38px; }
 }
+
+/* Ein Befehl zum Kopieren. Er muss vollständig lesbar sein, auch wenn er
+   lang ist und auf einem Telefon steht — sonst kopiert man die Hälfte. */
+.code-block {
+  background: #070a10;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-1);
+  user-select: all;
+}

@@ -46,6 +46,47 @@ async def disable_job(job_id: str, state: AppState = Depends(get_state),
     return {"job": job.public()}
 
 
+@router.delete("/jobs/{job_id}")
+async def delete_job(job_id: str, state: AppState = Depends(get_state),
+                     principal: Principal = Depends(require_role("admin"))):
+    """Eine Automatisierung loswerden — dort, wo sie herkommt.
+
+    Zwei Sorten stehen in derselben Liste, und sie verhalten sich verschieden:
+
+    * Was aus einer gelernten Prozedur stammt (`procedure:…`), wird vom
+      Zeitplan dieser Prozedur erzeugt. Den Auftrag allein zu entfernen wäre
+      wirkungslos — beim nächsten Abgleich wäre er wieder da. Also wird der
+      Zeitplan der Prozedur abgeschaltet; das ist die Stelle, an der es wirkt.
+    * Was zum Kern gehört (Aufräumen, Zustandsmessung, Ablauf von Freigaben),
+      bleibt. Das sind keine Automatisierungen, die sich jemand ausgesucht
+      hat, sondern der Betrieb des Servers. Abschalten geht und ist
+      reversibel; löschen wäre ein stiller Selbstabbau.
+    """
+    job = state.scheduler.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job_id.startswith("procedure:"):
+        procedure_id = job_id.split(":", 1)[1]
+        svc = state.services["teaching"]
+        if svc.procedure(procedure_id):
+            svc.update_procedure(procedure_id, trigger={"type": "manual"})
+            state.services["scheduler_procedures"](state)
+            state.log.audit(actor_type="user", actor_id=principal.actor, action="job.delete",
+                            target=job_id, status="ok", meta={"procedure_id": procedure_id})
+            return {"ok": True, "removed": job_id,
+                    "note": "Der Zeitplan ist entfernt. Die Prozedur bleibt und lässt sich "
+                            "weiter von Hand starten."}
+        # Die Prozedur ist weg, der Auftrag eine Leiche — die darf fort.
+        state.scheduler.remove(job_id)
+        return {"ok": True, "removed": job_id}
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"„{job.name}“ gehört zum Betrieb dieses Servers und lässt sich nicht löschen. "
+               f"Abschalten geht: das hält ihn an, ohne ihn zu verlieren.")
+
+
 def _startup(state: AppState) -> None:
     sched = state.scheduler
     metrics = state.services["metrics"]

@@ -22,6 +22,7 @@ export default function TasksPage() {
   const detail = useApi<{ task: any }>(taskId ? `/api/tasks/${taskId}` : null, { refreshOn: ["task.*", "run.*", "approval.*"] });
   const agents = useApi<{ agents: any[] }>("/api/agents");
   const [creating, setCreating] = useState(params.get("new") === "1");
+  const [edit, setEdit] = useState<{ id: string; title: string; description: string; priority: string } | null>(null);
   const [form, setForm] = useState({ title: "", description: "", priority: "normal", assigned_agent: "", start: true });
 
   const create = async () => {
@@ -45,6 +46,14 @@ export default function TasksPage() {
       nav("/tasks");
       list.reload();
     } catch (e: any) { toast({ title: "Löschen ging nicht", body: e.message, tone: "err" }); }
+  };
+  const saveEdit = async () => {
+    if (!edit?.title.trim()) return;
+    try {
+      await api.patch(`/api/tasks/${edit.id}`, { title: edit.title.trim(), description: edit.description, priority: edit.priority });
+      setEdit(null); detail.reload(); list.reload();
+      toast({ title: "Gespeichert", tone: "ok" });
+    } catch (e: any) { toast({ title: "Ging nicht", body: e.message, tone: "err" }); }
   };
   const t = detail.data?.task;
   const counts = list.data?.counts;
@@ -76,6 +85,10 @@ export default function TasksPage() {
                 {can("operator") && <div className="row wrap">
                   {!["COMPLETED", "FAILED", "CANCELLED"].includes(t.status) && <button className="btn sm danger" onClick={() => act(t.id, "cancel")}>Cancel</button>}
                   {["FAILED", "CANCELLED", "COMPLETED", "QUEUED"].includes(t.status) && <button className="btn sm" onClick={() => act(t.id, "retry")}>{t.status === "QUEUED" ? "Start" : "Retry"}</button>}
+                  {/* Bearbeiten stand nur im Server zur Verfügung, nicht auf
+                      der Seite: Ein Tippfehler im Titel war nur zu beheben,
+                      indem man die Aufgabe wegwarf und neu anlegte. */}
+                  <button className="btn sm" onClick={() => setEdit({ id: t.id, title: t.title, description: t.description || "", priority: t.priority || "normal" })}>Bearbeiten</button>
                   <button className="btn sm danger" onClick={() => remove(t.id, t.title)} title="Aufgabe endgültig löschen">Löschen</button>
                 </div>}
                 {t.subtasks?.length > 0 && <div><div className="label" style={{ marginBottom: 6 }}>Subtasks</div><div className="panel"><TaskTimeline tasks={t.subtasks} /></div></div>}
@@ -89,6 +102,27 @@ export default function TasksPage() {
           </Panel>
         )}
       </div>
+      {edit && (
+        <Modal title="Aufgabe bearbeiten" onClose={() => setEdit(null)} foot={<>
+          <button className="btn" onClick={() => setEdit(null)}>Abbrechen</button>
+          <button className="btn primary" onClick={saveEdit} disabled={!edit.title.trim()}>Speichern</button>
+        </>}>
+          <div className="stack">
+            <div className="field"><label>Titel</label>
+              <input className="input" autoFocus value={edit.title}
+                onChange={(e) => setEdit({ ...edit, title: e.target.value })} /></div>
+            <div className="field"><label>Beschreibung / Anweisung</label>
+              <textarea className="textarea" value={edit.description}
+                onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></div>
+            <div className="field"><label>Dringlichkeit</label>
+              <select className="select" value={edit.priority}
+                onChange={(e) => setEdit({ ...edit, priority: e.target.value })}>
+                <option value="low">niedrig</option><option value="normal">normal</option>
+                <option value="high">hoch</option><option value="critical">kritisch</option>
+              </select></div>
+          </div>
+        </Modal>
+      )}
       {creating && (
         <Modal title="New task" onClose={() => { setCreating(false); setParams({}); }} foot={<><button className="btn" onClick={() => setCreating(false)}>Cancel</button><button className="btn primary" onClick={create} disabled={!form.title.trim()}>{form.start ? "Create & start" : "Create"}</button></>}>
           <div className="stack">

@@ -15,7 +15,7 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { dateTime, relative } from "@/lib/format";
-import { Monitor, Play, RefreshCw, Terminal, Eye, Pencil, Trash2, Server, Cpu, Keyboard } from "@/lib/icons";
+import { Monitor, Play, RefreshCw, Terminal, Eye, Pencil, Trash2, Server, Cpu, Keyboard, Plus, Copy } from "@/lib/icons";
 import { Badge, EmptyState, ErrorState, KeyValue, Modal, Panel, Skeleton, StatusIndicator } from "@/components/ui";
 import { toast } from "@/lib/toast";
 
@@ -52,6 +52,8 @@ export default function DesktopPage() {
   const [rename, setRename] = useState<{ device: Device; name: string } | null>(null);
   const [shot, setShot] = useState<{ device: Device; path: string } | null>(null);
   const [busy, setBusy] = useState("");
+  /** Einen Rechner ankoppeln: Name eingeben, Befehl kopieren, fertig. */
+  const [pair, setPair] = useState<{ name: string; system: string; command: string } | null>(null);
 
   const devices = data?.devices || [];
 
@@ -101,6 +103,28 @@ export default function DesktopPage() {
     setQuick(null);
   };
 
+  /** Token erzeugen lassen. Es steht im Befehl und wird genau einmal gezeigt. */
+  const makePairing = async () => {
+    if (!pair?.name.trim()) return;
+    setBusy("pair");
+    try {
+      const r = await api.post<{ command: string }>("/api/desktop/pair",
+        { name: pair.name.trim(), system: pair.system });
+      setPair({ ...pair, command: r.command });
+    } catch (e: any) {
+      toast({ title: "Ging nicht", body: e.message, tone: "err" });
+    } finally { setBusy(""); }
+  };
+
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: "Kopiert", body: "Jetzt auf dem Rechner einfügen.", tone: "ok" });
+    } catch {
+      toast({ title: "Kopieren ging nicht", body: "Dann von Hand markieren.", tone: "err" });
+    }
+  };
+
   const sendRaw = async () => {
     if (!form) return;
     let params: any = {};
@@ -125,6 +149,12 @@ export default function DesktopPage() {
         </div>
         <div className="actions">
           <button className="btn" onClick={() => reload()}><RefreshCw size={14} />Aktualisieren</button>
+          {can("admin") && (
+            <button className="btn primary"
+              onClick={() => setPair({ name: "", system: "windows", command: "" })}>
+              <Plus size={14} />Rechner hinzufügen
+            </button>
+          )}
         </div>
       </header>
 
@@ -146,8 +176,8 @@ export default function DesktopPage() {
       {loading && !data ? <Skeleton rows={5} height={18} />
         : devices.length === 0 ? (
           <EmptyState icon={<Monitor size={22} />} title="Noch kein Rechner gekoppelt">
-            Auf dem PC einmal <code>python install_desktop.py</code> laufen lassen — das legt das
-            Maschinen-Token an und trägt es ein. Danach meldet sich der Rechner hier von selbst.
+            Oben auf „Rechner hinzufügen" klicken. Du bekommst einen Befehl zum Kopieren,
+            der auf dem PC alles einrichtet — Token inbegriffen.
           </EmptyState>
         ) : devices.map((d) => (
           <Panel key={d.id} title={d.name} icon={<Monitor size={15} />}
@@ -258,6 +288,63 @@ export default function DesktopPage() {
                 : "Der Name der Anwendung, so wie du sie kennst."}
             </span>
           </div>
+        </Modal>
+      )}
+
+      {pair && (
+        <Modal wide title="Rechner hinzufügen" onClose={() => setPair(null)} foot={
+          pair.command
+            ? <button className="btn primary" onClick={() => setPair(null)}>Fertig</button>
+            : <>
+              <button className="btn" onClick={() => setPair(null)}>Abbrechen</button>
+              <button className="btn primary" onClick={makePairing}
+                disabled={!pair.name.trim() || busy === "pair"}>
+                {busy === "pair" ? "Erzeuge …" : "Befehl erzeugen"}
+              </button>
+            </>}>
+          {!pair.command ? (
+            <div className="stack">
+              <div className="field">
+                <label>Wie soll der Rechner heißen?</label>
+                <input className="input" autoFocus value={pair.name}
+                  placeholder="YAM-DESKTOP, Büro-PC, Laptop …"
+                  onChange={(e) => setPair({ ...pair, name: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") void makePairing(); }} />
+                <span className="small muted">Nur zum Wiedererkennen in dieser Liste.</span>
+              </div>
+              <div className="field">
+                <label>Betriebssystem</label>
+                <select className="select" value={pair.system}
+                  onChange={(e) => setPair({ ...pair, system: e.target.value })}>
+                  <option value="windows">Windows</option>
+                  <option value="linux">Linux</option>
+                  <option value="macos">macOS</option>
+                </select>
+              </div>
+            </div>
+          ) : (
+            <div className="stack">
+              <p>
+                Diesen Befehl auf dem Rechner einfügen — {pair.system === "windows"
+                  ? "in PowerShell (Startmenü → „PowerShell“)"
+                  : "in einem Terminal"}. Er richtet alles ein und meldet den Rechner
+                anschließend hier an.
+              </p>
+              <pre className="code-block" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                {pair.command}
+              </pre>
+              <div className="row" style={{ gap: 8 }}>
+                <button className="btn primary" onClick={() => copy(pair.command)}>
+                  <Copy size={14} />Befehl kopieren
+                </button>
+              </div>
+              <p className="small muted">
+                Im Befehl steht das Gerätetoken. Es wird nur dieses eine Mal gezeigt — gespeichert
+                ist auf dem Server nur seine Prüfsumme. Nicht weitergeben; wer ihn hat, kann diesen
+                Rechner anmelden. Verloren? Dann hier einfach einen neuen Rechner hinzufügen.
+              </p>
+            </div>
+          )}
         </Modal>
       )}
 

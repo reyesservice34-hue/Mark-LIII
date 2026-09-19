@@ -416,6 +416,44 @@ with TestClient(app) as c:
           and "response.create" in kinds, kinds)
     check("a session.update from the browser is dropped", "session.update" not in kinds, kinds)
 
+    print("\n11c. Was man anlegen kann, muss man auch ändern und löschen können")
+    # Die Lücke, die dem Nutzer auffiel: überall ein „Hinzufügen", nirgends
+    # ein Weg zurück. Ein falsch gelernter Agent, den man nicht loswird,
+    # arbeitet still weiter; eine Automatisierung, die man nur anhalten kann,
+    # steht für immer in der Liste.
+    from command_center.backend.orchestrator.agent_registry import AgentSpec
+
+    state.agents.register(AgentSpec(
+        id="test-spezialist", name="Testspezialist", description="zum Wegwerfen",
+        instructions="Sei kurz angebunden.", tools=["memory.*"], source="learned"), replace=True)
+
+    r = c.patch("/api/agents/test-spezialist",
+                json={"name": "Umbenannt", "instructions": "Sei ausführlich."}, headers=H)
+    check("ein Agent lässt sich ändern", r.status_code == 200, r.text)
+    check("der neue Name steht drin", r.json()["agent"]["name"] == "Umbenannt", r.json()["agent"])
+    check("und die Anweisung ist wirklich übernommen",
+          state.agents.get("test-spezialist").instructions == "Sei ausführlich.")
+
+    master = state.agents.master_id()
+    r = c.delete(f"/api/agents/{master}", headers=H)
+    check("der Master lässt sich NICHT löschen", r.status_code == 400, r.status_code)
+    check("und die Begründung nennt den Weg, der geht", "bschalten" in r.json()["detail"], r.json())
+    check("er ist auch wirklich noch da", state.agents.get(master) is not None)
+
+    r = c.delete("/api/agents/test-spezialist", headers=H)
+    check("ein selbst angelegter Agent lässt sich löschen", r.status_code == 200, r.text)
+    check("und ist weg", state.agents.get("test-spezialist") is None)
+    check("auch aus der Tabelle, aus der beim Start geladen wird",
+          state.db.fetchone("SELECT id FROM learned_agents WHERE id='test-spezialist'") is None)
+
+    r = c.delete("/api/automations/jobs/log_trim", headers=H)
+    check("ein Auftrag des Betriebs lässt sich nicht löschen", r.status_code == 400, r.status_code)
+    check("die Begründung sagt, was stattdessen geht", "bschalten" in r.json()["detail"], r.json())
+    check("und er läuft weiter", state.scheduler.get("log_trim") is not None)
+    check("abschalten dagegen geht",
+          c.post("/api/automations/jobs/log_trim/disable", headers=H).status_code == 200)
+    c.post("/api/automations/jobs/log_trim/enable", headers=H)
+
     print("\n12. logout ends the session")
     check("logout", c.post("/api/auth/logout", headers=H).status_code == 200)
     check("session gone", c.get("/api/auth/me").status_code == 401)

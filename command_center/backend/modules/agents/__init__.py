@@ -39,6 +39,53 @@ async def get_agent(agent_id: str, state: AppState = Depends(get_state), _: Prin
     return {"agent": agent}
 
 
+class AgentPatch(BaseModel):
+    name: str | None = Field(default=None, max_length=80)
+    description: str | None = Field(default=None, max_length=500)
+    instructions: str | None = Field(default=None, max_length=20_000)
+    tools: list[str] | None = None
+
+
+@router.patch("/agents/{agent_id}")
+async def patch_agent(agent_id: str, body: AgentPatch, state: AppState = Depends(get_state),
+                      principal: Principal = Depends(require_role("admin"))):
+    """Einen Agenten ändern — vor allem seine Anweisungen.
+
+    Ein aus einer Vorführung gelernter Spezialist hat gelegentlich einen Satz
+    drin, der so nicht gemeint war. Ihn deswegen wegzuwerfen und die ganze
+    Vorführung zu wiederholen, wäre viel Arbeit für einen Halbsatz.
+    """
+    if not state.agents.get(agent_id):
+        raise HTTPException(status_code=404, detail="Agent not found")
+    try:
+        spec = state.agents.update(agent_id, **body.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="agent.update",
+                    target=agent_id, status="ok",
+                    meta={k: v for k, v in body.model_dump().items() if v is not None})
+    state.bus.publish("agent.updated", {"id": agent_id, "name": spec.name})
+    return {"agent": state.agents.public(agent_id, state.tools, _provider_info(state))}
+
+
+@router.delete("/agents/{agent_id}")
+async def delete_agent(agent_id: str, state: AppState = Depends(get_state),
+                       principal: Principal = Depends(require_role("admin"))):
+    """Einen selbst angelegten Agenten entfernen. Eingebaute bleiben."""
+    spec = state.agents.get(agent_id)
+    if not spec:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    name = spec.name
+    try:
+        state.agents.unregister(agent_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="agent.delete",
+                    target=agent_id, status="ok", meta={"name": name})
+    state.bus.publish("agent.removed", {"id": agent_id, "name": name})
+    return {"ok": True, "removed": agent_id}
+
+
 @router.post("/agents/{agent_id}/enable")
 async def enable_agent(agent_id: str, state: AppState = Depends(get_state),
                        principal: Principal = Depends(require_role("admin"))):

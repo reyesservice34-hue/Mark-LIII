@@ -4,7 +4,7 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { relative, dateTime } from "@/lib/format";
-import { Bot, RefreshCw, Icon } from "@/lib/icons";
+import { Bot, RefreshCw, Icon, Pencil, Trash2 } from "@/lib/icons";
 import { Badge, EmptyState, ErrorState, KeyValue, Modal, Panel, Skeleton, StatusIndicator } from "@/components/ui";
 import { toast } from "@/lib/toast";
 import { AgentCard, type Agent } from "./AgentCard";
@@ -19,6 +19,10 @@ export default function AgentsPage() {
   const [assign, setAssign] = useState<Agent | null>(null);
   const [form, setForm] = useState({ title: "", description: "", priority: "normal" });
   const [checking, setChecking] = useState(false);
+  /** Bearbeiten: vor allem die Anweisungen. Ein gelernter Spezialist hat
+   *  gelegentlich einen Satz drin, der so nicht gemeint war — das ist kein
+   *  Grund, die ganze Vorführung zu wiederholen. */
+  const [edit, setEdit] = useState<{ id: string; name: string; description: string; instructions: string } | null>(null);
 
   const act = async (a: Agent, action: "enable" | "disable" | "stop") => {
     try { await api.post(`/api/agents/${a.id}/${action}`); list.reload(); detail.reload(); toast({ title: `${a.name}: ${action}`, tone: "ok" }); }
@@ -28,6 +32,22 @@ export default function AgentsPage() {
     if (!assign || !form.title.trim()) return;
     try { const r = await api.post(`/api/agents/${assign.id}/assign`, form); toast({ title: "Task assigned", body: r.task.title, tone: "ok" }); setAssign(null); setForm({ title: "", description: "", priority: "normal" }); nav(`/tasks/${r.task.id}`); }
     catch (e: any) { toast({ title: "Assign failed", body: e.message, tone: "err" }); }
+  };
+  const saveEdit = async () => {
+    if (!edit?.name.trim()) return;
+    try {
+      await api.patch(`/api/agents/${edit.id}`, { name: edit.name.trim(), description: edit.description, instructions: edit.instructions });
+      setEdit(null); list.reload(); detail.reload();
+      toast({ title: "Gespeichert", tone: "ok" });
+    } catch (e: any) { toast({ title: "Ging nicht", body: e.message, tone: "err" }); }
+  };
+  const removeAgent = async (ag: Agent) => {
+    if (!window.confirm(`„${ag.name}" wirklich löschen? Das lässt sich nicht rückgängig machen.`)) return;
+    try {
+      await api.del(`/api/agents/${ag.id}`);
+      toast({ title: `${ag.name} gelöscht`, tone: "ok" });
+      nav("/agents"); list.reload();
+    } catch (e: any) { toast({ title: "Ging nicht", body: e.message, tone: "err" }); }
   };
   const checkMaster = async () => { setChecking(true); try { const r = await api.post("/api/master/check"); toast({ title: `Provider ${r.health.status}`, body: r.health.detail, tone: r.health.status === "healthy" ? "ok" : "warn" }); list.reload(); } catch (e: any) { toast({ title: "Check failed", body: e.message, tone: "err" }); } finally { setChecking(false); } };
 
@@ -73,6 +93,11 @@ export default function AgentsPage() {
                   <button className="btn sm" onClick={() => nav(`/chat?new=1`)}>Open conversation</button>
                   {["THINKING", "EXECUTING", "WAITING"].includes(a.status) && <button className="btn sm danger" onClick={() => act(a, "stop")}>Stop</button>}
                   {can("admin") && a.kind !== "master" && (a.enabled ? <button className="btn sm" onClick={() => act(a, "disable")}>Disable</button> : <button className="btn sm success" onClick={() => act(a, "enable")}>Enable</button>)}
+                  {can("admin") && <button className="btn sm" onClick={() => setEdit({ id: a.id, name: a.name, description: a.description || "", instructions: a.instructions || "" })}><Pencil size={13} />Bearbeiten</button>}
+                  {/* Der Master ist nicht löschbar — ohne ihn antwortet nichts
+                      mehr. Der Knopf fehlt deshalb ganz, statt eine Absage zu
+                      zeigen, die niemand vorher erraten konnte. */}
+                  {can("admin") && a.kind !== "master" && <button className="btn sm danger" onClick={() => removeAgent(a)}><Trash2 size={13} />Löschen</button>}
                 </div>}
                 <div><div className="label" style={{ marginBottom: 6 }}>Task history</div>
                   {a.tasks.length === 0 ? <span className="small muted">no tasks yet</span> : <div className="list">{a.tasks.slice(0, 8).map((t: any) => <a key={t.id} href={`/tasks/${t.id}`} className="list-item clickable" style={{ padding: "6px 0", color: "inherit" }}><Badge status={t.status} /><span className="grow truncate small">{t.title}</span><span className="tiny muted">{relative(t.updated_at)}</span></a>)}</div>}
@@ -90,6 +115,29 @@ export default function AgentsPage() {
             <div className="field"><label>Title</label><input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} autoFocus /></div>
             <div className="field"><label>Instructions</label><textarea className="textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What exactly should the agent do?" /></div>
             <div className="field"><label>Priority</label><select className="select" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option>low</option><option>normal</option><option>high</option><option>critical</option></select></div>
+          </div>
+        </Modal>
+      )}
+      {edit && (
+        <Modal wide title="Agent bearbeiten" onClose={() => setEdit(null)} foot={<>
+          <button className="btn" onClick={() => setEdit(null)}>Abbrechen</button>
+          <button className="btn primary" onClick={saveEdit} disabled={!edit.name.trim()}>Speichern</button>
+        </>}>
+          <div className="stack">
+            <div className="field"><label>Name</label>
+              <input className="input" autoFocus value={edit.name}
+                onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></div>
+            <div className="field"><label>Beschreibung</label>
+              <input className="input" value={edit.description}
+                onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></div>
+            <div className="field"><label>Anweisungen</label>
+              <textarea className="textarea" style={{ minHeight: 220, fontFamily: "var(--mono)" }}
+                value={edit.instructions}
+                onChange={(e) => setEdit({ ...edit, instructions: e.target.value })} />
+              <span className="small muted">
+                Das ist der Text, mit dem dieser Agent in jeden Auftrag geht. Er wirkt sofort,
+                ohne Neustart.
+              </span></div>
           </div>
         </Modal>
       )}
