@@ -42,8 +42,14 @@ export default function HomePage() {
       <ErrorState error={status.error} retry={() => status.reload(false)} />
 
       <section className="hero-core" aria-label="JARVIS Kern">
-        <div className="holo" aria-hidden="true"><i/><i/><i/></div>
-        <BrainCore thinking={!!master?.active_runs?.length} />
+        <div className="hero-stage">
+          <BrainCore thinking={!!master?.active_runs?.length} />
+          <div className="hud tl"><b>JARVIS · KERN</b><span className={master?.online ? "on" : "off"}>{master?.online ? "SYSTEM ONLINE" : "OFFLINE"}</span></div>
+          <div className="hud tr"><b>DENKT MIT</b><span>{master?.provider?.label || "—"}</span></div>
+          <div className="hud bl"><b>LAUFZEIT</b><span>{s ? duration(s.jarvis.uptime_seconds) : "—"}</span></div>
+          <div className="hud br"><b>BETRIEBSART</b><span>{master?.mode || "—"}</span></div>
+          <div className="hero-caption">{master?.active_runs?.length ? "Ich arbeite gerade, Master." : "Ich höre zu, Master."}</div>
+        </div>
         <VoiceConsole />
       </section>
 

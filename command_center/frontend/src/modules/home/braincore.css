@@ -1,25 +1,44 @@
-/* Kern der Startseite: Gehirn links, Live-Konsole daneben. Orange bleibt dem Denken vorbehalten,
-   alles andere behält seine Farben. */
-.hero-core { position: relative; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr); align-items: stretch;
-  border: 1px solid var(--line-2); border-radius: 22px; overflow: hidden;
-  background: radial-gradient(700px 360px at 30% 50%, rgba(255, 138, 31, 0.10), transparent 62%), linear-gradient(180deg, var(--bg-2), var(--bg-0)); }
-.hero-core::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5;
-  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 44px 44px;
-  -webkit-mask-image: radial-gradient(ellipse at 30% 50%, #000 10%, transparent 70%); mask-image: radial-gradient(ellipse at 30% 50%, #000 10%, transparent 70%); }
-.brain-core { position: relative; display: block; width: 100%; height: 380px; }
-.hero-core .voice-console, .hero-core .vc-embed-wrap { position: relative; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: transparent; min-height: 0; padding: 0; display: block; }
-.hero-core .vc-embed { height: 100%; min-height: 380px; }
+/* Der Kern der Startseite als Filmszene: goldenes Hologramm links, blaues Glas rechts,
+   dazu Vignette, Filmkorn und Leinwandbalken. Nur der Kern trägt Gold, alles andere bleibt blau. */
+.hero-core { position: relative; display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr); align-items: stretch;
+  min-height: 540px; border-radius: 26px; overflow: hidden; isolation: isolate;
+  border: 1px solid rgba(255, 176, 64, .22);
+  background: radial-gradient(900px 520px at 32% 50%, rgba(255, 138, 31, .16), transparent 62%),
+              radial-gradient(700px 500px at 100% 0%, rgba(90, 200, 255, .12), transparent 60%), #05070b;
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, .9), 0 0 0 1px rgba(255, 255, 255, .03) inset, 0 0 60px -20px rgba(255, 150, 40, .25); }
+/* Leinwandbalken, Vignette und Korn */
+.hero-core::before { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: linear-gradient(180deg, rgba(0,0,0,.85) 0, transparent 46px, transparent calc(100% - 46px), rgba(0,0,0,.85) 100%),
+              radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(0,0,0,.55) 100%); }
+.hero-core::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: .09; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  animation: grain 1.2s steps(6) infinite; }
+@keyframes grain { 0% { transform: translate(0, 0); } 25% { transform: translate(-3%, 2%); } 50% { transform: translate(2%, -3%); } 75% { transform: translate(-2%, -1%); } 100% { transform: translate(3%, 3%); } }
+.hero-stage { position: relative; min-height: 540px; }
+.hero-stage::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .35;
+  background-image: linear-gradient(rgba(255,176,64,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,176,64,.08) 1px, transparent 1px); background-size: 46px 46px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 50%, #000 5%, transparent 68%); mask-image: radial-gradient(ellipse at 50% 50%, #000 5%, transparent 68%); }
+.brain-core { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hud { position: absolute; z-index: 2; display: flex; flex-direction: column; gap: 3px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: rgba(255, 200, 120, .9); text-shadow: 0 0 12px rgba(255, 150, 40, .6); }
+.hud b { font-weight: 500; color: rgba(255, 176, 64, .6); font-size: 9.5px; }
+.hud span { font-size: 13px; color: #ffe2b0; letter-spacing: .1em; }
+.hud span.on::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 8px; background: #3ddc97; box-shadow: 0 0 10px #3ddc97; animation: live-bar-pulse 1.8s ease-in-out infinite; }
+.hud span.off { color: #ff8b95; }
+.hud::before, .hud::after { content: ""; position: absolute; width: 16px; height: 16px; border: 1px solid rgba(255, 176, 64, .6); }
+.hud.tl { top: 58px; left: 26px; padding: 10px 0 0 14px; } .hud.tl::before { left: 0; top: 0; border-right: 0; border-bottom: 0; } .hud.tl::after { display: none; }
+.hud.tr { top: 58px; right: 26px; padding: 10px 14px 0 0; text-align: right; } .hud.tr::before { right: 0; top: 0; border-left: 0; border-bottom: 0; } .hud.tr::after { display: none; }
+.hud.bl { bottom: 62px; left: 26px; padding: 0 0 10px 14px; } .hud.bl::before { left: 0; bottom: 0; border-right: 0; border-top: 0; } .hud.bl::after { display: none; }
+.hud.br { bottom: 62px; right: 26px; padding: 0 14px 10px 0; text-align: right; } .hud.br::before { right: 0; bottom: 0; border-left: 0; border-top: 0; } .hud.br::after { display: none; }
+.hero-caption { position: absolute; z-index: 4; left: 0; right: 0; bottom: 34px; text-align: center; font-size: 15px; letter-spacing: .04em; color: #fff0d0; text-shadow: 0 2px 14px #000, 0 0 18px rgba(255, 150, 40, .5); }
+/* rechts: blaues Hologramm-Glas */
+.hero-core .voice-console, .hero-core .vc-embed-wrap { position: relative; z-index: 2; border: 0; border-left: 1px solid rgba(90, 200, 255, .22); border-radius: 0; padding: 0; display: block; min-height: 0;
+  background: linear-gradient(160deg, rgba(90, 200, 255, .08), rgba(10, 20, 34, .55)); backdrop-filter: blur(14px); box-shadow: inset 0 0 60px -30px rgba(90, 200, 255, .5); }
+.hero-core .vc-embed { height: 100%; min-height: 540px; }
 @media (max-width: 1000px) {
-  .hero-core { grid-template-columns: 1fr; }
-  .hero-core .voice-console, .hero-core .vc-embed-wrap { border-left: 0; border-top: 1px solid var(--line); }
-  .hero-core .vc-embed { min-height: 250px; height: 250px; }
-  .brain-core { height: 320px; }
+  .hero-core { grid-template-columns: 1fr; min-height: 0; }
+  .hero-stage { min-height: 420px; }
+  .hero-core .voice-console, .hero-core .vc-embed-wrap { border-left: 0; border-top: 1px solid rgba(90, 200, 255, .22); }
+  .hero-core .vc-embed { min-height: 260px; height: 260px; }
+  .hud.tr, .hud.br { display: none; }
 }
-
-/* Goldene Hologramm-Ringe um das Gehirn (Eigenentwurf, nur der Kern trägt Orange/Gold) */
-.hero-core .holo { position: absolute; left: 0; top: 0; width: 60%; height: 380px; pointer-events: none; display: grid; place-items: center; }
-.hero-core .holo i { position: absolute; border-radius: 50%; border: 1px solid rgba(255, 176, 64, .28); }
-.hero-core .holo i:nth-child(1) { width: 330px; height: 330px; border-style: dashed; animation: spin 40s linear infinite; }
-.hero-core .holo i:nth-child(2) { width: 370px; height: 370px; border-color: rgba(255, 176, 64, .14); animation: spin 60s linear infinite reverse; }
-.hero-core .holo i:nth-child(3) { width: 250px; height: 250px; border-color: rgba(255, 210, 120, .18); }
-@media (max-width: 1000px) { .hero-core .holo { width: 100%; height: 320px; } .hero-core .holo i { transform: scale(.85); } }
+@media (prefers-reduced-motion: reduce) { .hero-core::after { animation: none; } }

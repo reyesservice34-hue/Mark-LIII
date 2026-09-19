@@ -1,27 +1,89 @@
-/* Modernisierung: gleiche Farben, weichere Formen, schwebende Leisten, mehr Luft. */
-:root { --r-md: 12px; --r-lg: 18px; --r-xl: 24px; }
-.shell { padding: 12px 12px 0 12px; gap: 0 12px; }
-.shell > .sidebar { border: 1px solid var(--line-2); border-radius: 22px; margin-bottom: 12px; overflow: hidden;
-  box-shadow: var(--shadow-2); }
-.shell > .topbar { border: 1px solid var(--line-2); border-radius: 18px; margin-bottom: 12px; box-shadow: var(--shadow-1); }
-.shell > .main { padding: 8px 12px 32px; }
-.brand, .sidebar-foot { border-color: var(--line); }
-.nav-item { border-radius: 999px; padding: 9px 14px; }
-.nav-item.active::before { display: none; }
-.nav-item.active { box-shadow: inset 0 0 18px rgba(90,200,255,0.10), 0 0 18px -6px rgba(90,200,255,0.5); }
-.panel { border-radius: 20px; backdrop-filter: blur(10px); transition: transform var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease), border-color var(--t-med); }
-.panel:hover { transform: translateY(-2px); border-color: var(--line-3); }
-.btn, button.btn { border-radius: 999px; }
-input, select, textarea { border-radius: 12px; }
-.page { gap: 20px; }
-.page > * { animation: rise 420ms var(--ease) both; }
-.page > *:nth-child(2) { animation-delay: 60ms; } .page > *:nth-child(3) { animation-delay: 120ms; }
-.page > *:nth-child(4) { animation-delay: 180ms; } .page > *:nth-child(n+5) { animation-delay: 240ms; }
-table th, table td { padding-top: 11px; padding-bottom: 11px; }
+/* Modernisierung im Stil einer Filmoberfläche: Glas, Leuchtkanten, schwebende Leisten, viel Tiefe.
+   Farben bleiben (Blau/Cyan); nur der Kern der Startseite trägt Gold. */
+:root { --r-md: 12px; --r-lg: 20px; --r-xl: 26px; }
+
+/* Raum: langsam treibende Lichthöfe statt flachem Schwarz */
+body { background:
+  radial-gradient(1200px 700px at 85% -10%, rgba(45, 143, 230, .10), transparent 60%),
+  radial-gradient(900px 600px at -5% 105%, rgba(90, 200, 255, .10), transparent 60%),
+  radial-gradient(700px 500px at 50% 45%, rgba(20, 40, 80, .18), transparent 70%), #020306; background-attachment: fixed; }
+body::after { content: ""; position: fixed; inset: -20%; z-index: 0; pointer-events: none; opacity: .5;
+  background: radial-gradient(40% 30% at 30% 30%, rgba(90, 200, 255, .07), transparent), radial-gradient(35% 30% at 75% 70%, rgba(45, 143, 230, .08), transparent);
+  animation: aurora 26s ease-in-out infinite alternate; }
+@keyframes aurora { to { transform: translate3d(6%, -4%, 0) rotate(6deg); } }
+
+/* Schwebende Leisten */
+.shell { padding: 14px 14px 0 14px; gap: 0 14px; }
+.shell > .sidebar { border: 1px solid rgba(90, 200, 255, .16); border-radius: 26px; margin-bottom: 14px; overflow: hidden;
+  background: linear-gradient(180deg, rgba(14, 22, 34, .82), rgba(6, 10, 16, .9)); box-shadow: 0 30px 60px -30px #000, inset 0 1px 0 rgba(255,255,255,.06), 0 0 40px -20px rgba(90,200,255,.35); }
+.shell > .topbar { border: 1px solid rgba(90, 200, 255, .16); border-radius: 20px; margin-bottom: 14px; background: rgba(10, 16, 26, .7);
+  box-shadow: 0 16px 40px -24px #000, inset 0 1px 0 rgba(255,255,255,.06); }
+.topbar::after { display: none; }
+.shell > .main { padding: 6px 10px 40px; }
+.brand { border-bottom: 1px solid rgba(90,200,255,.12); }
+.brand-text strong { background: linear-gradient(90deg, #fff, var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.nav-item { border-radius: 14px; padding: 10px 14px; transition: transform var(--t-fast), background var(--t-fast), color var(--t-fast); }
+.nav-item:hover { transform: translateX(3px); background: rgba(90, 200, 255, .07); }
+.nav-item.active { background: linear-gradient(90deg, rgba(90,200,255,.22), rgba(90,200,255,.04)); border-color: rgba(90,200,255,.4);
+  box-shadow: 0 0 26px -8px rgba(90, 200, 255, .8), inset 0 0 20px rgba(90,200,255,.08); }
+.nav-item.active::before { display: block; left: -9px; top: 10px; bottom: 10px; width: 3px; box-shadow: 0 0 12px var(--accent); }
+.nav-item.active svg { filter: drop-shadow(0 0 6px rgba(90,200,255,.9)); }
+.chip { padding: 5px 10px; border-radius: 999px; background: rgba(90,200,255,.05); border: 1px solid rgba(90,200,255,.12); }
+
+/* Überschrift */
+.page { gap: 22px; max-width: 1680px; }
+.page-head h1 { font-family: var(--hud); font-size: 40px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  background: linear-gradient(90deg, #fff 30%, var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.page-head .eyebrow { letter-spacing: .3em; }
+
+/* Glas-Kacheln mit Leuchtkante */
+.panel { border: 1px solid transparent; border-radius: 22px; overflow: hidden; backdrop-filter: blur(16px);
+  background: linear-gradient(180deg, rgba(20, 30, 46, .72), rgba(8, 13, 20, .78)) padding-box,
+              linear-gradient(140deg, rgba(90, 200, 255, .42), rgba(90, 200, 255, .06) 38%, rgba(255,255,255,.05) 62%, rgba(45, 143, 230, .35)) border-box;
+  box-shadow: 0 24px 50px -28px #000, inset 0 1px 0 rgba(255,255,255,.07);
+  transition: transform var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease); }
+.panel:hover { transform: translateY(-3px); box-shadow: 0 34px 60px -28px #000, 0 0 46px -18px rgba(90, 200, 255, .55), inset 0 1px 0 rgba(255,255,255,.1); }
+.panel::before, .panel::after { display: none; }
+.panel-head { padding: 15px 20px; }
+.panel-head h2 { font-size: 13px; letter-spacing: .12em; }
+.panel-head h2 svg { border-radius: 10px; box-shadow: 0 0 18px -4px rgba(90,200,255,.6), inset 0 0 0 1px rgba(90,200,255,.25); }
+.panel-body { padding: 18px 20px; }
+.panel-foot { padding: 12px 20px; }
+.num { font-family: var(--hud); }
+.stat .value { font-family: var(--hud); font-size: 38px; }
+
+/* Eingaben, Knöpfe, Zähler */
+.btn, button.btn { border-radius: 999px; height: 34px; padding: 0 16px; }
+.btn.sm { border-radius: 999px; }
+.btn.primary { background: linear-gradient(180deg, #6fd0ff, #2b86d8); box-shadow: 0 8px 26px -8px rgba(90,200,255,.9), inset 0 1px 0 rgba(255,255,255,.4); }
+.btn.primary:hover { box-shadow: 0 10px 34px -6px rgba(90,200,255,1), inset 0 1px 0 rgba(255,255,255,.5); transform: translateY(-1px); }
+.input, input, select, textarea { border-radius: 14px; background: rgba(6, 12, 20, .6); border-color: rgba(90,200,255,.16); }
+.input:focus, input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(90,200,255,.15), 0 0 24px -6px rgba(90,200,255,.6); outline: none; }
+.mini-meter, .meter { border-radius: 999px; }
+.meter > span, .mini-meter > span { background: linear-gradient(90deg, var(--accent-2), var(--accent)); box-shadow: 0 0 12px rgba(90,200,255,.7); border-radius: 999px; }
+table th, table td { padding-top: 12px; padding-bottom: 12px; }
+
+/* Einblenden nacheinander */
+.page > * { animation: rise 520ms var(--ease) both; }
+.page > *:nth-child(2) { animation-delay: 70ms; } .page > *:nth-child(3) { animation-delay: 140ms; }
+.page > *:nth-child(4) { animation-delay: 210ms; } .page > *:nth-child(n+5) { animation-delay: 280ms; }
+
 @media (max-width: 720px) {
   .shell { padding: 8px 8px 0; }
-  .shell > .topbar { border-radius: 14px; margin-bottom: 8px; }
-  .shell > .main { padding: 4px 4px 24px; }
-  .mobile-nav { border-radius: 18px 18px 0 0; }
+  .shell > .topbar { border-radius: 16px; margin-bottom: 8px; }
+  .shell > .main { padding: 2px 2px 24px; }
+  .page-head h1 { font-size: 30px; }
+  .mobile-nav { border-radius: 22px 22px 0 0; border: 1px solid rgba(90,200,255,.16); }
 }
-@media (hover: none) { .panel:hover { transform: none; } }
+@media (hover: none) { .panel:hover, .nav-item:hover { transform: none; } }
+
+/* Schwarzes Glas: alles außerhalb des Kerns halbdurchsichtig schwarz, wie die Filmszene */
+.shell > .sidebar { background: linear-gradient(180deg, rgba(0,0,0,.5), rgba(0,0,0,.62)); backdrop-filter: blur(18px) saturate(1.2); }
+.shell > .topbar { background: rgba(0,0,0,.42); backdrop-filter: blur(18px) saturate(1.2); }
+.panel { background: linear-gradient(180deg, rgba(0,0,0,.34), rgba(0,0,0,.52)) padding-box,
+  linear-gradient(140deg, rgba(90,200,255,.38), rgba(90,200,255,.05) 40%, rgba(255,255,255,.05) 62%, rgba(45,143,230,.3)) border-box;
+  backdrop-filter: blur(18px) saturate(1.2); }
+.panel-foot { background: rgba(0,0,0,.25); }
+.core-strip, .chip, .mobile-nav { background: rgba(0,0,0,.4); backdrop-filter: blur(14px); }
+.input, input, select, textarea { background: rgba(0,0,0,.4); }
+.btn:not(.primary):not(.ghost):not(.danger):not(.success) { background: rgba(0,0,0,.38); }
