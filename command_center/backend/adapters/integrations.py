@@ -119,12 +119,44 @@ class GeminiIntegration(IntegrationAdapter):
 
 
 class LocalLLMIntegration(IntegrationAdapter):
+    """Ein lokales Modell kostet nichts — aber nur, wenn es auch etwas kann.
+
+    Der übliche Gesundheitscheck fragt, ob das Modell gelistet ist. Das sagt
+    nichts darüber, ob es Werkzeuge aufrufen kann, und genau daran hängt alles:
+    Ein Modell ohne Werkzeugaufrufe macht JARVIS zu einem Gesprächspartner ohne
+    Hände. Er redet dann über den Kalender, statt einen Termin anzulegen.
+
+    Deshalb wird es hier wirklich ausprobiert — einmal, und das Ergebnis wird
+    gemerkt: Ein lokales Modell antwortet langsam, und ein Probelauf bei jedem
+    Gesundheitscheck wäre eine Dauerlast auf demselben Rechner.
+    """
+
+    _tools_ok: tuple[str, bool, str] | None = None     # (Modell, kann es, Grund)
+
     async def check(self) -> dict:
         if not self.configured():
             return {"status": "not_configured", "detail": "LOCAL_LLM_URL not set"}
         from ..ai import build_provider
         p = build_provider("local")
-        return await p.health() if p else {"status": "offline", "detail": "provider init failed"}
+        if p is None:
+            return {"status": "offline", "detail": "provider init failed"}
+        zustand = await p.health()
+        if zustand.get("status") != "healthy" or not hasattr(p, "tool_check"):
+            return zustand
+
+        gemerkt = type(self)._tools_ok
+        if gemerkt is None or gemerkt[0] != p.info.model:
+            kann, grund = await p.tool_check()
+            type(self)._tools_ok = (p.info.model, kann, grund)
+        else:
+            _, kann, grund = gemerkt
+
+        if not kann:
+            # Erreichbar, aber für diesen Zweck untauglich — das ist „degraded",
+            # nicht „healthy". Alles andere wäre ein grüner Punkt über einem
+            # Modell, mit dem nichts funktioniert.
+            return {"status": "degraded", "detail": grund}
+        return {"status": "healthy", "detail": f"{p.info.model} — {grund}, kostet nichts"}
 
 
 class N8nIntegration(IntegrationAdapter):
