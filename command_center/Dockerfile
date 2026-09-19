@@ -35,6 +35,11 @@ COPY config/__init__.py /app/config/
 # Ohne ihn meldete der lokale Kalender im Dashboard "core not importable" und
 # war offline — ein Termin ohne Google-Konto ging damit gar nicht.
 COPY plugins/__init__.py plugins/_calendar_core.py /app/plugins/
+# Das Hauptgedächtnis: was JARVIS über diese Anlage weiß. Beim ersten Start
+# wandert es in den Wissensspeicher, danach wird es dort gepflegt und nicht
+# mehr überschrieben. Ohne diese Zeile läge es im Repository und wäre für ihn
+# unsichtbar — er liest keine Datei, die niemand in seinen Systemtext stellt.
+COPY .claude/HAUPTGEDAECHTNIS.md /app/.claude/HAUPTGEDAECHTNIS.md
 COPY --from=frontend /build/dist /app/command_center/backend/static
 
 # ── sich selbst umbauen können ───────────────────────────────────────────

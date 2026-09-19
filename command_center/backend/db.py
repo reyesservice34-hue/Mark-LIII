@@ -242,6 +242,17 @@ CREATE TABLE IF NOT EXISTS skills (
   uses INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   created_by TEXT NOT NULL DEFAULT ''
 );
+-- Wissensspeicher: was zu lang ist, um in jeder Anfrage mitzureisen.
+-- Das Hauptgedächtnis fasst 30 Sätze, weil es JEDES Mal mitgeschickt wird.
+-- Ein Systemhandbuch passt da nicht hinein und gehört trotzdem zu dem, was er
+-- wissen muss. Also hier: im Systemtext steht nur Titel und Zweck, den vollen
+-- Text holt er sich mit knowledge.open, wenn er ihn braucht.
+CREATE TABLE IF NOT EXISTS knowledge (
+  id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1, uses INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by TEXT NOT NULL DEFAULT ''
+);
 """
 
 

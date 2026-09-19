@@ -11,13 +11,14 @@ import { useEffect, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
-import { BookOpen, Sparkles, Trash2, Plus, Check, Zap, X, Pencil } from "@/lib/icons";
-import { Panel, EmptyState, ErrorState, Skeleton } from "@/components/ui";
+import { BookOpen, Sparkles, Trash2, Plus, Check, Zap, X, Pencil, FileText, Eye } from "@/lib/icons";
+import { Panel, EmptyState, ErrorState, Modal, Skeleton, Toggle } from "@/components/ui";
 import { relative } from "@/lib/format";
 import "@/modules/home/architecture.css";
 
 interface Fact { id: string; text: string; actor: string; created_at: string; pinned: number }
 interface Payload { instructions: string; facts: Fact[]; core: Fact[]; max_core: number; total: number }
+interface Doc { slug: string; title: string; summary: string; enabled: boolean; uses: number; bytes: number; lines: number; updated_at: string }
 
 const BEISPIEL = `Sprich mich mit „Chef" an.
 Angebote immer mit 14 Tagen Bindefrist.
@@ -34,6 +35,12 @@ export default function MemoryPage() {
   const [q, setQ] = useState("");
   // Welcher Eintrag gerade bearbeitet wird, und mit welchem Wortlaut.
   const [edit, setEdit] = useState<{ id: string; text: string } | null>(null);
+  // Wissensspeicher: lange Texte, die er auf Abruf liest. Getrennt vom
+  // Hauptgedächtnis, weil dort nur 30 Sätze Platz haben — ein Handbuch
+  // gehört nicht in jede einzelne Anfrage.
+  const wissen = useApi<{ documents: Doc[] }>("/api/memory/knowledge", { refreshOn: ["memory.knowledge"] });
+  const [lesen, setLesen] = useState<{ slug: string; title: string; content: string } | null>(null);
+  const [neuDoc, setNeuDoc] = useState<{ title: string; content: string; summary: string } | null>(null);
 
   // Den Serverstand übernehmen, solange niemand tippt — sonst überschreibt
   // ein Hintergrund-Neuladen die halbfertige Eingabe.
@@ -198,6 +205,55 @@ export default function MemoryPage() {
         )}
       </Panel>
 
+      <Panel title={`Wissensspeicher${wissen.data ? ` (${wissen.data.documents.length})` : ""}`}
+        icon={<FileText size={15} />}
+        actions={<button className="btn sm primary" onClick={() => setNeuDoc({ title: "", content: "", summary: "" })}>
+          <Plus size={14} />Dokument anlegen
+        </button>}
+        foot="Hier steht, was er über diese Anlage WEISS — zu lang fürs Hauptgedächtnis, zu wichtig zum Vergessen. Im Systemtext steht nur der Titel; den vollen Text schlägt er mit knowledge.open auf, wenn er ihn braucht.">
+        <div className="panel-body stack">
+          {!wissen.data ? <Skeleton rows={2} /> : wissen.data.documents.length === 0 ? (
+            <p className="small muted">
+              Noch nichts hinterlegt. Hier gehört hinein, was dauerhaft gilt und länger als ein Satz
+              ist: wie diese Anlage aufgebaut ist, welche Dienste es gibt, was entschieden wurde.
+            </p>
+          ) : wissen.data.documents.map((d) => (
+            <div key={d.slug} className="list-item" style={{ gap: 10, alignItems: "flex-start" }}>
+              <div className="grow">
+                <div className="row" style={{ gap: 8 }}>
+                  <strong>{d.title}</strong>
+                  {!d.enabled && <span className="badge err">abgeschaltet</span>}
+                </div>
+                <div className="small muted">{d.summary}</div>
+                <div className="tiny muted" style={{ marginTop: 3 }}>
+                  {d.lines} Zeilen · {Math.round(d.bytes / 1024)} kB · {d.uses}× aufgeschlagen · geändert {relative(d.updated_at)}
+                </div>
+              </div>
+              <div className="row" style={{ gap: 6 }}>
+                <Toggle checked={d.enabled} label={`${d.title} mitgeben`}
+                  onChange={async (v) => {
+                    try { await api.patch(`/api/memory/knowledge/${d.slug}?enabled=${v}`); wissen.reload(); }
+                    catch (e: any) { toast({ title: "Ging nicht", body: e.message, tone: "err" }); }
+                  }} />
+                <button className="btn sm" title="Ansehen und bearbeiten"
+                  onClick={async () => {
+                    try {
+                      const r = await api.get<{ document: any }>(`/api/memory/knowledge/${d.slug}`);
+                      setLesen({ slug: d.slug, title: r.document.title, content: r.document.content });
+                    } catch (e: any) { toast({ title: "Ging nicht", body: e.message, tone: "err" }); }
+                  }}><Eye size={13} /></button>
+                <button className="btn sm danger" title="Löschen"
+                  onClick={async () => {
+                    if (!window.confirm(`„${d.title}" löschen? Dann weiß er das nicht mehr.`)) return;
+                    try { await api.del(`/api/memory/knowledge/${d.slug}`); wissen.reload(); }
+                    catch (e: any) { toast({ title: "Ging nicht", body: e.message, tone: "err" }); }
+                  }}><Trash2 size={13} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+
       <Panel title={`Gemerktes${data ? ` (${data.total})` : ""}`} icon={<BookOpen size={15} />}
         actions={<>
           <input className="input sm" placeholder="suchen …" value={q} onChange={(e) => setQ(e.target.value)}
@@ -247,6 +303,57 @@ export default function MemoryPage() {
             </table>
           )}
       </Panel>
+
+      {lesen && (
+        <Modal wide title={lesen.title} onClose={() => setLesen(null)} foot={<>
+          <button className="btn" onClick={() => setLesen(null)}>Schließen</button>
+          <button className="btn primary" onClick={async () => {
+            try {
+              await api.post("/api/memory/knowledge", { title: lesen.title, content: lesen.content, slug: lesen.slug });
+              toast({ title: "Gespeichert", tone: "ok" }); setLesen(null); wissen.reload();
+            } catch (e: any) { toast({ title: "Ging nicht", body: e.message, tone: "err" }); }
+          }}>Speichern</button>
+        </>}>
+          <div className="field">
+            <textarea className="input" style={{ minHeight: 460, fontFamily: "var(--mono)", fontSize: 12.5, lineHeight: 1.55 }}
+              value={lesen.content} onChange={(e) => setLesen({ ...lesen, content: e.target.value })} />
+            <span className="small muted">
+              Das ist genau der Text, den er beim Aufschlagen zu sehen bekommt. Änderungen wirken
+              sofort, ohne Neustart.
+            </span>
+          </div>
+        </Modal>
+      )}
+
+      {neuDoc && (
+        <Modal wide title="Wissensdokument anlegen" onClose={() => setNeuDoc(null)} foot={<>
+          <button className="btn" onClick={() => setNeuDoc(null)}>Abbrechen</button>
+          <button className="btn primary" disabled={!neuDoc.title.trim() || !neuDoc.content.trim()}
+            onClick={async () => {
+              try {
+                await api.post("/api/memory/knowledge", neuDoc);
+                toast({ title: "Angelegt", body: neuDoc.title, tone: "ok" });
+                setNeuDoc(null); wissen.reload();
+              } catch (e: any) { toast({ title: "Ging nicht", body: e.message, tone: "err" }); }
+            }}>Anlegen</button>
+        </>}>
+          <div className="stack">
+            <div className="field"><label>Titel</label>
+              <input className="input" autoFocus value={neuDoc.title}
+                placeholder="z. B. Aufbau des Servers"
+                onChange={(e) => setNeuDoc({ ...neuDoc, title: e.target.value })} /></div>
+            <div className="field"><label>Wofür ist das da?</label>
+              <input className="input" value={neuDoc.summary}
+                placeholder="Ein Satz — danach entscheidet er, wann er es aufschlägt"
+                onChange={(e) => setNeuDoc({ ...neuDoc, summary: e.target.value })} />
+              <span className="small muted">Leer gelassen, nimmt er die erste Zeile des Textes.</span></div>
+            <div className="field"><label>Inhalt</label>
+              <textarea className="input" style={{ minHeight: 320, fontFamily: "var(--mono)", fontSize: 12.5 }}
+                value={neuDoc.content} placeholder="Markdown, so lang wie nötig …"
+                onChange={(e) => setNeuDoc({ ...neuDoc, content: e.target.value })} /></div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

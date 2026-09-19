@@ -1131,6 +1131,55 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           _obj({"name": _s("skill name from skill.list")}, ["name"]),
                           category="skills", risk="low", min_role="viewer", handler=skill_open))
 
+    # ── Wissensspeicher: was er über diese Anlage weiß ───────────────────
+    # Der Unterschied zu einer Fähigkeit ist inhaltlich, nicht technisch:
+    # Eine Fähigkeit sagt, WIE etwas zu tun ist. Wissen sagt, WAS der Fall ist —
+    # unter welchem Pfad der Server liegt, welche n8n-Instanz gemeint ist,
+    # welcher Widerspruch noch ungeklärt ist. Beides wäre im Hauptgedächtnis zu
+    # lang; beides muss er trotzdem kennen.
+    wissensspeicher = st.services["knowledge"]
+
+    async def knowledge_list(ctx: ToolContext, args: dict):
+        items = wissensspeicher.all(enabled_only=True)
+        if not items:
+            return "Im Wissensspeicher liegt noch nichts."
+        return [{"name": k["slug"], "title": k["title"], "what_about": k["summary"],
+                 "lines": k["lines"], "opened": k["uses"]} for k in items]
+
+    async def knowledge_open(ctx: ToolContext, args: dict):
+        from ..services.knowledge import KnowledgeError
+        try:
+            doc = wissensspeicher.open(str(args["name"]))
+        except KnowledgeError as e:
+            return str(e), False
+        ctx.emit("knowledge", {"text": f"nachgeschlagen: {doc['title']}"})
+        return doc
+
+    async def knowledge_search(ctx: ToolContext, args: dict):
+        treffer = wissensspeicher.search(str(args["query"]), int(args.get("limit", 5)))
+        if not treffer:
+            return (f"Zu '{args['query']}' steht nichts im Wissensspeicher. "
+                    f"Das heißt nicht, dass es nicht stimmt — nur, dass es hier nicht steht.")
+        return treffer
+
+    reg.register(ToolSpec("knowledge.list",
+                          "What this server knows about itself and its surroundings — "
+                          "each entry a document you can open.",
+                          _obj({}), category="memory", risk="low", min_role="viewer",
+                          handler=knowledge_list))
+    reg.register(ToolSpec("knowledge.open",
+                          "Read a knowledge document in full. Do this BEFORE answering about "
+                          "this installation, its servers, services or devices — do not guess.",
+                          _obj({"name": _s("name from knowledge.list")}, ["name"]),
+                          category="memory", risk="low", min_role="viewer", handler=knowledge_open))
+    reg.register(ToolSpec("knowledge.search",
+                          "Find where something is written down in the knowledge base. "
+                          "Returns the place and its surrounding lines, not whole documents.",
+                          _obj({"query": _s("what to look for"),
+                                "limit": {"type": "integer", "description": "how many, default 5"}},
+                               ["query"]),
+                          category="memory", risk="low", min_role="viewer", handler=knowledge_search))
+
     # ── MCP: fremde Werkzeugserver ───────────────────────────────────────
     # Die Werkzeuge selbst melden sich beim Start an und heißen mcp.<server>.<werkzeug>.
     # Hier steht nur, was der Nutzen für das Modell ist: nachsehen und neu einlesen.

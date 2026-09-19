@@ -694,6 +694,15 @@ class MasterRuntime:
             catalogue = lib.catalogue()
             if catalogue:
                 parts.append(catalogue)
+        # Dasselbe für das, was er über diese Anlage WEISS: Ein Handbuch passt
+        # nicht in die 30 Sätze des Hauptgedächtnisses, gehört aber zu dem, was
+        # er kennen muss. Also auch hier nur Titel und Zweck — den vollen Text
+        # holt er sich mit knowledge.open, statt zu raten.
+        wissen = st.services.get("knowledge")
+        if wissen is not None:
+            verzeichnis = wissen.catalogue()
+            if verzeichnis:
+                parts.append(verzeichnis)
         # Was der Nutzer im Dashboard unter Gedächtnis einträgt, gilt in jedem
         # Gespräch — und zwar über den eingebauten Voreinstellungen. Es steht
         # weit hinten im Text, weil das Letzte am stärksten wirkt.

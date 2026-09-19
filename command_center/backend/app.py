@@ -48,6 +48,7 @@ from .services.notifications import NotificationService
 from .services.mcp import McpRegistry
 from .services.selfext import SelfExtension
 from .services.skills import SkillLibrary
+from .services.knowledge import KnowledgeBase
 from .services.tasks import TaskService
 from .services.teaching import TeachingService
 from .services.voice_service import VoiceService
@@ -91,6 +92,7 @@ def build_state(settings: Settings | None = None) -> AppState:
     # Fähigkeiten und fremde Werkzeugserver brauchen den fertigen Zustand
     # (Verzeichnis, Protokoll), deshalb erst hier und nicht in der Liste oben.
     state.services["skills"] = SkillLibrary(state)
+    state.services["knowledge"] = KnowledgeBase(db, bus)
     state.services["mcp"] = McpRegistry(state)
     state.integrations = IntegrationRegistry(db, bus)
     state.workflows = WorkflowHub(db, bus)
