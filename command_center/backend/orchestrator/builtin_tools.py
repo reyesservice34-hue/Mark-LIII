@@ -235,6 +235,20 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           _obj({"status": _s("status filter"), "limit": _i("max rows")}),
                           category="tasks", risk="low", min_role="viewer", handler=task_list))
 
+    # ── Modellwahl ───────────────────────────────────────────────────────
+    async def think_deeper(ctx: ToolContext, args: dict):
+        run = st.runtime.get_run(ctx.run_id or "") if st.runtime else None
+        if run is None or st.runtime.fast_provider is None:
+            return {"ok": True, "note": "Du läufst bereits auf dem stärksten Modell."}
+        run.deep = True
+        ctx.emit("model", {"text": "Wechsle auf das stärkere Modell: " + str(args.get("reason", ""))[:120]})
+        return {"ok": True, "note": "Ab jetzt antwortet das stärkere Modell. Mach mit der Aufgabe weiter."}
+
+    reg.register(ToolSpec("think.deeper", "Wechselt für den Rest dieser Aufgabe auf das stärkere, langsamere Modell "
+                          "(Claude Sonnet 5). Nur bei kniffligen Aufgaben, nicht bei Routine.",
+                          _obj({"reason": _s("kurz: warum die Aufgabe knifflig ist")}),
+                          category="meta", risk="low", min_role="viewer", handler=think_deeper))
+
     # ── agents ───────────────────────────────────────────────────────────
     async def agent_delegate(ctx: ToolContext, args: dict):
         return await st.runtime.delegate(ctx, str(args["agent_id"]), str(args["instruction"]),

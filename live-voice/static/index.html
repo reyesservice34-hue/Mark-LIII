@@ -172,6 +172,8 @@ function fireText() {
   const tPause = performance.now() - lastChange;
   acceptResults = false; busy = true;
   setState('thinking'); statusEl.textContent = 'Einen Moment, Master …'; errEl.textContent = '';
+  if (pendingApproval) { answerApproval(text).then(ok => { if (ok) { busy = false; acceptResults = true; setState('listening'); } else if (agentOK) runAgent(text, tPause); }); return; }
+  if (agentOK) { runAgent(text, tPause); return; }
   const form = new FormData();
   form.append('text', text); form.append('history', JSON.stringify(history)); form.append('memory', memoryText);
   runTurn('api/turn_text', form, tPause);
@@ -191,6 +193,7 @@ function monitorLoop() {
       if (currentAudio) currentAudio.pause();
       currentAudio = null; audioQueue = [];
       if (abortCtl) abortCtl.abort();
+      cancelAgentRun();
       busy = false; acceptResults = true; lastText = '';
       setState('listening'); statusEl.textContent = idleText();
     }
@@ -267,6 +270,118 @@ async function runTurn(url, form, pauseMs) {
     }
   } catch (e) {
     if (e.name !== 'AbortError') { errEl.textContent = 'Verbindung zum Server verloren.'; setState('listening'); statusEl.textContent = idleText(); }
+  }
+  finishIfSilent();
+}
+
+
+/* ── Voller Jarvis: dieselben Werkzeuge, Freigaben und Gedächtnis wie im Chat ─────────────
+   Jede Äußerung geht als Nachricht in ein eigenes Chat-Gespräch („Live-Gespräch“) des Dashboards. Der Agent
+   antwortet mit allen Werkzeugen; die Antwort wird Satz für Satz vorgelesen. Geht das nicht (nicht angemeldet,
+   Server nicht erreichbar), springt die schnelle Sprechleitung ohne Werkzeuge ein. */
+let agentConv = sessionStorage.getItem('jarvis_conv') || '', agentOK = true, agentRun = '', pendingApproval = null;
+function csrf() { const m = document.cookie.match(/(?:^|;\s*)jcc_csrf=([^;]+)/); return m ? decodeURIComponent(m[1]) : ''; }
+async function cc(path, body, method) {
+  return fetch('/api/' + path, { method: method || 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() }, body: body === undefined ? undefined : JSON.stringify(body) });
+}
+async function ensureConv() {
+  if (agentConv) return agentConv;
+  const r = await cc('chat/conversations', { title: 'Live-Gespräch' });
+  if (!r.ok) throw new Error('conv ' + r.status);
+  agentConv = (await r.json()).conversation.id; sessionStorage.setItem('jarvis_conv', agentConv);
+  return agentConv;
+}
+async function cancelAgentRun() { if (agentRun) { const id = agentRun; agentRun = ''; try { await cc('chat/runs/' + id + '/cancel', {}); } catch (e) {} } }
+
+// Ein Satz nach dem anderen zu Ton machen, aber in der richtigen Reihenfolge abspielen.
+let sayChain = Promise.resolve();
+function sayQueued(text) {
+  const f = new FormData(); f.append('text', text);
+  const p = fetch('api/say', { method: 'POST', body: f }).then(r => r.json()).catch(() => ({}));
+  sayChain = sayChain.then(() => p).then(a => {
+    if (a && a.audio_base64) { audioQueue.push(URL.createObjectURL(b64ToBlob(a.audio_base64, a.audio_mime || 'audio/mpeg'))); playNext(); }
+  });
+  return sayChain;
+}
+
+const YES = /\b(ja|jawohl|jep|jo|klar|okay|ok|freigeben|freigabe|genehmigt|genehmige|mach|mach's|los|gerne|bitte|einverstanden|passt)\b/i;
+const NO = /\b(nein|nö|nicht|stopp|stop|abbrechen|ablehnen|abgelehnt|lass|verwerfen)\b/i;
+async function answerApproval(text) {
+  const ap = pendingApproval; if (!ap) return false;
+  const no = NO.test(text), yes = YES.test(text);
+  if (!no && !yes) return false;                                 // etwas anderes gesagt: als normale Nachricht behandeln
+  pendingApproval = null;
+  try { await cc('approvals/' + ap.id + (no ? '/reject' : '/approve'), { note: 'per Sprache: ' + text.slice(0, 120) }); } catch (e) {}
+  transcriptEl.textContent = 'Sie: ' + text; statusEl.textContent = no ? 'Abgelehnt.' : 'Freigegeben, ich mache weiter.';
+  return true;
+}
+
+async function runAgent(text, pauseMs) {
+  abortCtl = new AbortController(); audioQueue = []; sayChain = Promise.resolve();
+  heardText = text; transcriptEl.textContent = 'Sie: ' + text; replyEl.textContent = '';
+  const tSent = performance.now(); let tAudio = 0, spoken = '', pending = '', sentAny = false, firstOut = false;
+  const speak = (t) => {
+    t = t.trim(); if (!t) return; sentAny = true; spoken += (spoken ? ' ' : '') + t; replyEl.textContent = spoken;
+    if (!tAudio) { tAudio = performance.now(); clearTimeout(fillerTimer);
+      timingEl.textContent = 'Pause ' + (pauseMs / 1000).toFixed(2) + ' s · erste Antwort nach ' + ((tAudio - tSent) / 1000).toFixed(1) + ' s (voller Jarvis)'; }
+    sayQueued(t);
+  };
+  const flushSentences = (final) => {
+    if (!firstOut && pending.length >= 40) { const m = pending.match(/^(.{25,}?[,–—:;])\s/); if (m) { firstOut = true; speak(m[1]); pending = pending.slice(m[0].length); } }
+    const parts = pending.split(/(?<=[.!?…])\s+/);
+    for (let i = 0; i < parts.length - 1; i++) { firstOut = true; speak(parts[i]); }
+    pending = parts[parts.length - 1];
+    if (final && pending.trim()) { speak(pending); pending = ''; }
+  };
+  clearTimeout(fillerTimer);
+  fillerTimer = setTimeout(() => { if (tAudio || !fillers.length || !running) return;
+    let i; do { i = Math.floor(Math.random() * fillers.length); } while (fillers.length > 1 && i === lastFiller);
+    lastFiller = i; audioQueue.unshift(fillers[i]); playNext(); }, 900);
+  try {
+    const conv = await ensureConv();
+    const r = await fetch('/api/chat/conversations/' + conv + '/messages', { method: 'POST', credentials: 'same-origin', signal: abortCtl.signal,
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', 'X-CSRF-Token': csrf() },
+      body: JSON.stringify({ content: text, stream: true, channel: 'voice' }) });
+    if (r.status === 401 || r.status === 403 || r.status === 404) { if (r.status === 404) { agentConv = ''; sessionStorage.removeItem('jarvis_conv'); } else agentOK = false; throw new Error('auth ' + r.status); }
+    if (!r.ok) throw new Error('http ' + r.status);
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = '', ev = '', finished = false;
+    while (true) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true }); let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).replace(/\r$/, ''); buf = buf.slice(nl + 1);
+        if (line.startsWith('event:')) { ev = line.slice(6).trim(); continue; }
+        if (!line.startsWith('data:')) continue;
+        let j; try { j = JSON.parse(line.slice(5)); } catch (e) { continue; }
+        const type = j.type || ev, d = (j.data !== undefined ? j.data : j);
+        if (type === 'run.accepted') agentRun = d.run_id;
+        else if (type === 'chat.delta') { pending += d.text || ''; flushSentences(false); }
+        else if (type === 'chat.tool_call' || (type === 'run.activity' && d.kind === 'tool_call')) { statusEl.textContent = 'Jarvis arbeitet … ' + (d.tool || d.name || ''); }
+        else if (type === 'approval.requested') {
+          pendingApproval = { id: d.id };
+          flushSentences(true);
+          const what = (d.reason || d.action || 'eine Aktion').toString().slice(0, 200);
+          speak('Master, das braucht deine Freigabe: ' + what + '. Sagst du ja oder nein?');
+        }
+        else if (type === 'message.updated' && d.status && d.status !== 'streaming' && !sentAny && d.content) { pending = String(d.content); }
+        else if (type === 'run.finished') { finished = true; if (d.status === 'failed') errEl.textContent = 'Der Auftrag ist fehlgeschlagen.'; }
+      }
+    }
+    flushSentences(true); agentRun = '';
+    await sayChain;
+    if (!sentAny) speak('Erledigt, Master.');
+    learn(heardText, spoken);
+    history.push({ role: 'user', content: text }); history.push({ role: 'assistant', content: spoken });
+    sessionStorage.setItem('jarvis_history', JSON.stringify(history.slice(-20)));
+  } catch (e) {
+    clearTimeout(fillerTimer); agentRun = '';
+    if (e.name === 'AbortError') return;
+    if (!sentAny) {                                              // nichts gesagt: schnelle Leitung als Ausweg
+      errEl.textContent = agentOK ? 'Der volle Jarvis antwortet gerade nicht, ich nehme die schnelle Leitung.' : 'Nicht im Dashboard angemeldet: nur die schnelle Leitung ohne Werkzeuge.';
+      const form = new FormData(); form.append('text', text); form.append('history', JSON.stringify(history)); form.append('memory', memoryText);
+      return runTurn('api/turn_text', form, pauseMs);
+    }
   }
   finishIfSilent();
 }

@@ -45,6 +45,42 @@ _TEXT_EXT = {".txt", ".md", ".json", ".csv", ".py", ".js", ".ts", ".tsx", ".html
              ".toml", ".ini", ".log", ".xml", ".sh", ".env.example", ".sql"}
 
 
+# Die Live-Konsole liest jede Antwort laut vor. Fähigkeiten und Werkzeuge bleiben dieselben wie im Chat;
+# nur die Form der Antwort ändert sich.
+VOICE_HINT = (
+    "\n\nSPRACHMODUS (Live-Konsole): Deine Antwort wird laut vorgelesen. Sprich wie ein aufmerksamer Mensch am "
+    "Telefon: normales gesprochenes Deutsch, meist ein bis drei Sätze, erst das Ergebnis, Details nur auf Nachfrage. "
+    "Kein Markdown, keine Listen, keine Tabellen, keine Links oder Codeblöcke, Zahlen und Uhrzeiten so, wie man "
+    "sie spricht. Wenn du ein Werkzeug brauchst, benutze es wie im Chat, sag vorher in einem kurzen Satz, was du "
+    "tust, und danach knapp, was dabei herauskam. Lange Texte (E-Mail-Entwürfe, Berichte) legst du ab und "
+    "nennst nur das Wesentliche; zeig sie im Dashboard. Was eine Freigabe braucht, fragst du kurz laut: der Master "
+    "kann mit „ja“ oder „nein“ antworten."
+)
+
+
+# Schnell zuerst, gründlich wenn es nötig ist: Standard ist das schnelle Modell. Auf das stärkere (Sonnet 5)
+# wechselt Jarvis von selbst, entweder gleich, weil die Aufgabe offensichtlich schwer ist, oder mittendrin über
+# das Werkzeug think.deeper, wenn er merkt, dass es knifflig wird.
+_DEEP_RE = re.compile(
+    r"\b(angebot|kalkul|rechnung|abschlag|nachtrag|vertrag|recht|norm|din|steuer|haftung|gew(ä|ae)hrleistung|"
+    r"analys|strategie|vergleich|bericht|konzept|plan(e|ung)?|kollision|optimier|ausf(ü|ue)hrlich|"
+    r"schritt f(ü|ue)r schritt|entwurf|beschwerde|reklamation|mahnung|verhandl|begr(ü|ue)nd|warum)\w*", re.I)
+
+
+def needs_deep(goal: str) -> bool:
+    g = (goal or "").strip()
+    return len(g) > 400 or bool(_DEEP_RE.search(g))
+
+
+MODEL_HINT = (
+    "\n\nMODELLWAHL: Du läufst gerade auf dem schnellen Modell, damit du zügig antwortest. Wird eine Aufgabe "
+    "knifflig (Kalkulation oder Angebot, Verträge, Rechtliches oder Normen, heikle Kundenmails, längere Planung, "
+    "Terminkollisionen mit mehreren Beteiligten, mehrstufige Probleme), rufst du zuerst think.deeper auf. Danach "
+    "antwortet das stärkere Modell (Claude Sonnet 5). Einfache Fragen, Nachschlagen, kurze Antworten und "
+    "Routine erledigst du selbst, ohne zu wechseln."
+)
+
+
 @dataclass
 class RunHandle:
     id: str
@@ -62,6 +98,8 @@ class RunHandle:
     usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0})
     started_at: str = field(default_factory=now_iso)
     text: str = ""
+    voice: bool = False          # Antwort wird vorgelesen (Live-Konsole)
+    deep: bool = False           # stärkeres Modell (Sonnet 5) statt des schnellen
 
     def public(self) -> dict:
         return {"id": self.id, "agent_id": self.agent_id, "conversation_id": self.conversation_id,
@@ -112,6 +150,32 @@ def core_memory(state, limit: int = 0) -> str:
     lines = "\n".join(f"- {r['text']}" for r in rows)
     return ("HAUPTGEDÄCHTNIS — das hier gilt, ohne Ausnahme, in jeder Antwort und vor jeder "
             "Handlung. Widerspricht eine Anfrage dem, sag es, statt es zu übergehen:\n" + lines)
+
+
+def recall_memory(state, text: str, limit: int = 6) -> str:
+    """Erinnerungen, die zur aktuellen Frage passen — zusätzlich zum Hauptgedächtnis, bei jeder Anfrage neu.
+
+    Das Hauptgedächtnis (angeheftete Sätze) steht ohnehin immer im Text. Der große Rest wird hier nach den
+    Wörtern der Frage durchsucht, damit er beim Antworten nicht vergessen wird.
+    """
+    words = {w.lower() for w in re.findall(r"[A-Za-zÄÖÜäöüß0-9]{5,}", text or "")}
+    if not words:
+        return ""
+    try:
+        rows = state.db.fetchall("SELECT text FROM memory WHERE pinned=0 ORDER BY created_at DESC LIMIT 400")
+    except Exception:  # noqa: BLE001
+        return ""
+    scored = []
+    for r in rows:
+        low = r["text"].lower()
+        hit = sum(1 for w in words if w in low)
+        if hit:
+            scored.append((hit, r["text"]))
+    scored.sort(key=lambda x: -x[0])
+    if not scored:
+        return ""
+    return ("ERINNERUNGEN, die zu dieser Anfrage passen — nutze sie zuerst, bevor du rätst oder nachfragst:\n"
+            + "\n".join(f"- {t[:300]}" for _, t in scored[:limit]))
 
 
 class ToolExecutor:
@@ -215,6 +279,8 @@ class MasterRuntime:
             if self.provider is None:
                 self.mode = "none"
                 self.provider_error = "AI provider could not be initialised"
+        self.fast_provider: LLMProvider | None = None
+        self._build_fast_provider()
         self.executor = ToolExecutor(state)
         self._runs: dict[str, RunHandle] = {}
         self._provider_health: dict = {"status": "unknown", "detail": "not checked yet"}
@@ -249,6 +315,24 @@ class MasterRuntime:
                 "LOCAL_LLM_URL for local mode, or JARVIS_GATEWAY_URL + JARVIS_GATEWAY_TOKEN for remote mode."),
         }
 
+    def _build_fast_provider(self) -> None:
+        """Ein zweites, schnelles Modell hinter demselben Zugang (z. B. OpenRouter). Ohne Zugang bleibt es beim einen."""
+        from ..ai.openai_compat import OpenAICompatProvider
+        base = self.provider
+        if base is None or not isinstance(base, OpenAICompatProvider):
+            return
+        model = os.environ.get("JARVIS_FAST_MODEL", "").strip()
+        if not model and "openrouter" in base.base_url:
+            model = "anthropic/claude-haiku-4.5"
+        if not model or model == base.info.model:
+            return
+        self.fast_provider = OpenAICompatProvider(base.info.id, base.base_url, base.api_key, model)
+
+    def provider_for(self, handle: "RunHandle") -> LLMProvider:
+        if handle.deep or self.fast_provider is None:
+            return self.provider  # type: ignore[return-value]
+        return self.fast_provider
+
     async def check_provider(self) -> dict:
         if self.provider is None:
             self._provider_health = {"status": "offline" if self.mode == "none" else "unknown",
@@ -269,7 +353,7 @@ class MasterRuntime:
 
     # ── entry points ─────────────────────────────────────────────────────
     async def start_chat_run(self, conversation: dict, user_message: dict, principal: Principal,
-                             agent_id: str | None = None) -> dict:
+                             agent_id: str | None = None, channel: str = "") -> dict:
         st = self.state
         agent_id = agent_id or st.agents.master_id()
         run_id = new_id("run")
@@ -278,7 +362,7 @@ class MasterRuntime:
             meta={"agent_id": agent_id})
         handle = RunHandle(id=run_id, agent_id=agent_id, principal=principal,
                            conversation_id=conversation["id"], message_id=assistant["id"],
-                           task_id=None)
+                           task_id=None, voice=(channel == "voice"))
         self._register(handle, initiated_by=principal.actor)
         handle.task = asyncio.create_task(self._drive(handle, conversation=conversation,
                                                       user_message=user_message))
@@ -416,12 +500,21 @@ class MasterRuntime:
             raise RuntimeError(f"Agent '{handle.agent_id}' is not registered")
         if not agent.enabled:
             raise RuntimeError(f"Agent '{agent.name}' is disabled")
-        provider = self.provider
-        assert provider is not None
+        assert self.provider is not None
+        if self.fast_provider is not None and not handle.deep and needs_deep(goal):
+            handle.deep = True
         tools = st.tools.for_agent(agent.tools, handle.principal.role)
         if handle.depth >= self.settings.max_delegation_depth:
             tools = [t for t in tools if t.name != "agent.delegate"]
         system = self._system_prompt(agent, tools)
+        if handle.voice:
+            system += VOICE_HINT
+        if agent.kind == "master":
+            recalled = recall_memory(st, goal)
+            if recalled:
+                system += "\n\n" + recalled
+        if self.fast_provider is not None and agent.kind == "master":
+            system += MODEL_HINT
         tool_defs = [t.to_def() for t in tools]
         # Bilder, die Werkzeuge in diesem Zug besorgt haben. Nach den
         # Werkzeugergebnissen gehen sie als eigene Nachricht an das Modell.
@@ -452,6 +545,7 @@ class MasterRuntime:
             tool_calls: list[dict] = []
             stop_reason = "end_turn"
             segment: list[str] = []
+            provider = self.provider_for(handle)
             async for ev in provider.stream(system=system, messages=messages, tools=tool_defs):
                 if handle.cancel.is_set():
                     raise asyncio.CancelledError()

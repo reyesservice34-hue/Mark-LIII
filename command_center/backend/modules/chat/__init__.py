@@ -37,6 +37,7 @@ class MessageCreate(BaseModel):
     attachments: list[Attachment] = Field(default_factory=list)
     agent_id: str | None = None
     stream: bool = True
+    channel: str = ""            # "voice" = Live-Konsole: Antwort wird vorgelesen
 
 
 def _conv_or_404(state: AppState, conv_id: str, principal: Principal) -> dict:
@@ -180,7 +181,8 @@ async def send_message(conv_id: str, body: MessageCreate, state: AppState = Depe
                     status="ok", meta={"message_id": user_msg["id"], "attachments": len(attachments)})
     sub = RunSubscription(state) if body.stream else None
     try:
-        result = await state.runtime.start_chat_run(conv, user_msg, principal, agent_id=body.agent_id)
+        result = await state.runtime.start_chat_run(conv, user_msg, principal, agent_id=body.agent_id,
+                                                    channel=body.channel)
     except Exception:
         if sub:
             sub.close()

@@ -11,9 +11,9 @@ Loop per turn:
 Nothing here calls a paid TTS/STT provider — only the LLM call goes out,
 using the same OPENROUTER_API_KEY the rest of Jarvis already uses.
 
-This is a standalone conversational voice line, not the full Jarvis agent —
-it does not call Jarvis's tools. For anything action-oriented, use the
-normal Jarvis chat.
+This service is the fast fallback line. The live page itself sends every utterance to the
+Command Center chat (voice channel), so the full agent with all its tools, approvals and memory
+answers; only when that is unreachable does this LLM path answer on its own, without tools.
 """
 from __future__ import annotations
 
@@ -43,6 +43,26 @@ MODELS = [m.strip() for m in os.environ.get(
 ).split(",") if m.strip()]
 if not ALLOW_PAID:
     MODELS = [m for m in MODELS if m.endswith(":free")]
+
+# Schnell zuerst, gründlich bei Bedarf: das schnelle Modell antwortet standardmäßig, bei kniffligen Fragen
+# (Kalkulation, Vertrag, Planung, lange Fragen) steht das starke vorn. Reihenfolge der Liste = Ausweichfolge.
+FAST_MODEL = os.environ.get("FAST_MODEL", "anthropic/claude-haiku-4.5").strip()
+DEEP_MODEL = os.environ.get("DEEP_MODEL", "anthropic/claude-sonnet-5").strip()
+_DEEP_RE = re.compile(
+    r"\b(angebot|kalkul|rechnung|abschlag|nachtrag|vertrag|recht|norm|din|steuer|haftung|gew(ä|ae)hrleistung|"
+    r"analys|strategie|vergleich|bericht|konzept|plan(e|ung)?|kollision|optimier|ausf(ü|ue)hrlich|"
+    r"schritt f(ü|ue)r schritt|entwurf|beschwerde|reklamation|mahnung|verhandl|begr(ü|ue)nd|warum)\w*", re.I)
+
+
+def _models_for(text: str) -> list[str]:
+    deep = len(text) > 300 or bool(_DEEP_RE.search(text))
+    first = DEEP_MODEL if deep else FAST_MODEL
+    rest = [m for m in ([FAST_MODEL, DEEP_MODEL] + MODELS) if m and m != first]
+    out = [first]
+    for m in rest:
+        if m not in out and (ALLOW_PAID or m.endswith(":free")):
+            out.append(m)
+    return out if ALLOW_PAID else [m for m in out if m.endswith(":free")] or MODELS
 
 SYSTEM_PROMPT = (
     "Du bist JARVIS, der persönliche Assistent. Du redest wie ein aufmerksamer, kluger Mensch am Telefon: "
@@ -114,6 +134,9 @@ _REPL = [(r"\bz\. ?B\.", "zum Beispiel"), (r"\bca\.", "circa"), (r"\bbzw\.", "be
 
 def _speakable(text: str) -> str:
     """Was man schreibt, ist nicht, was man sagt: Abkürzungen, Euro-Zeichen und Uhrzeiten aussprechbar machen."""
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)          # Links: nur der Text
+    text = re.sub(r"```.*?```", " ", text, flags=re.S)                # Codeblöcke werden nicht vorgelesen
+    text = re.sub(r"[*_`#>|]+", "", text)                             # Markdown-Zeichen
     for pat, rep in _REPL:
         text = re.sub(pat, rep, text)
     return text.strip()
@@ -149,7 +172,7 @@ async def _stream_reply(client: httpx.AsyncClient, history: list[dict], text: st
         return
     system = SYSTEM_PROMPT + ("\n\nDas weißt du über den Nutzer und seinen Betrieb (Gedächtnis, halte dich daran):\n" + memory if memory else "")
     messages = [{"role": "system", "content": system}, *history, {"role": "user", "content": text}]
-    for model in MODELS:
+    for model in _models_for(text):
         buf, got_any, first_out = "", False, False
         try:
             async with client.stream(
