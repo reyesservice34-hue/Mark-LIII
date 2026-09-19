@@ -36,18 +36,18 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
 # Kostenlos ist Pflicht: nur Modelle mit Endung ":free" werden überhaupt angefragt,
 # außer ALLOW_PAID=1 ist ausdrücklich gesetzt. Fällt eines aus (Limit, Überlast),
 # kommt das nächste in der Liste dran.
-ALLOW_PAID = os.environ.get("ALLOW_PAID", "") == "1"
+ALLOW_PAID = os.environ.get("ALLOW_PAID", "") == "1"   # Standard: aus, es kostet nichts
 MODELS = [m.strip() for m in os.environ.get(
     "OPENROUTER_MODELS",
-    "google/gemma-4-26b-a4b-it:free,deepseek/deepseek-v4-flash-0731:free,google/gemma-4-31b-it:free",
+    "nex-agi/nex-n2.5-mini:free,nex-agi/nex-n2.5-pro:free,google/gemma-4-26b-a4b-it:free,deepseek/deepseek-v4-flash-0731:free",
 ).split(",") if m.strip()]
 if not ALLOW_PAID:
     MODELS = [m for m in MODELS if m.endswith(":free")]
 
 # Schnell zuerst, gründlich bei Bedarf: das schnelle Modell antwortet standardmäßig, bei kniffligen Fragen
 # (Kalkulation, Vertrag, Planung, lange Fragen) steht das starke vorn. Reihenfolge der Liste = Ausweichfolge.
-FAST_MODEL = os.environ.get("FAST_MODEL", "anthropic/claude-haiku-4.5").strip()
-DEEP_MODEL = os.environ.get("DEEP_MODEL", "anthropic/claude-sonnet-5").strip()
+FAST_MODEL = os.environ.get("FAST_MODEL", "nex-agi/nex-n2.5-mini:free").strip()
+DEEP_MODEL = os.environ.get("DEEP_MODEL", "nex-agi/nex-n2.5-pro:free").strip()
 _DEEP_RE = re.compile(
     r"\b(angebot|kalkul|rechnung|abschlag|nachtrag|vertrag|recht|norm|din|steuer|haftung|gew(ä|ae)hrleistung|"
     r"analys|strategie|vergleich|bericht|konzept|plan(e|ung)?|kollision|optimier|ausf(ü|ue)hrlich|"
@@ -265,7 +265,7 @@ def _hist(history: str) -> list[dict]:
 
 
 EXTRACT_MODELS = [m.strip() for m in os.environ.get(
-    "EXTRACT_MODELS", "google/gemma-4-26b-a4b-it:free,anthropic/claude-haiku-4.5").split(",") if m.strip()]
+    "EXTRACT_MODELS", "nex-agi/nex-n2.5-pro:free,google/gemma-4-26b-a4b-it:free").split(",") if m.strip()]
 if not ALLOW_PAID:
     EXTRACT_MODELS = [m for m in EXTRACT_MODELS if m.endswith(":free")]
 

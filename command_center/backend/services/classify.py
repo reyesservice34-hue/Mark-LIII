@@ -13,6 +13,8 @@ import re
 
 import httpx
 
+from ..ai.free import free_or
+
 CATEGORIES = ("tour", "ich", "privat")
 
 _PRIVATE = re.compile(r"\b(arzt|zahnarzt|ärztin|geburtstag|familie|kinder?|tochter|sohn|frau|urlaub|friseur|sport|freizeit|privat|hochzeit|beerdigung|kita|schule|elternabend|hausarzt|kino)\b", re.I)
@@ -54,7 +56,7 @@ def make_classifier(state):
         try:
             async with httpx.AsyncClient(timeout=15) as c:
                 r = await c.post(base + "/chat/completions", headers={"Authorization": f"Bearer {key}"},
-                                 json={"model": os.environ.get("JARVIS_CC_CLASSIFY_MODEL", "anthropic/claude-haiku-4.5"),
+                                 json={"model": free_or(os.environ.get("JARVIS_CC_CLASSIFY_MODEL", "anthropic/claude-haiku-4.5")),
                                        "max_tokens": 200, "temperature": 0,
                                        "messages": [{"role": "user", "content": text}]})
             r.raise_for_status()

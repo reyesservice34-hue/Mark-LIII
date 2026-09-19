@@ -23,6 +23,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, Depends
 
+from ...ai.free import free_or
 from ...auth import Principal
 from ...db import new_id, now_iso
 from ...deps import AppState, current_principal, get_state, require_role
@@ -71,7 +72,7 @@ async def _extract(client: httpx.AsyncClient, mail: dict, known: str) -> dict:
     text = (f"{PROMPT}\n\nBereits bekannt:\n{known[:2500]}\n\n--- E-MAIL ---\nPostfach: {mail.get('account_label')}\n"
             f"Von: {mail.get('from')}\nBetreff: {mail.get('subject')}\nDatum: {mail.get('date')}\n\n{body}")
     r = await client.post(base + "/chat/completions", headers={"Authorization": f"Bearer {key}"},
-                          json={"model": os.environ.get("JARVIS_CC_MAIL_LEARN_MODEL", "anthropic/claude-haiku-4.5"),
+                          json={"model": free_or(os.environ.get("JARVIS_CC_MAIL_LEARN_MODEL", "anthropic/claude-haiku-4.5")),
                                 "max_tokens": 450, "temperature": 0,
                                 "messages": [{"role": "user", "content": text}]}, timeout=60)
     r.raise_for_status()
@@ -152,7 +153,7 @@ async def run(state: AppState) -> dict:
 @router.get("")
 async def status(state: AppState = Depends(get_state), _: Principal = Depends(current_principal)):
     return {**_stats, "interval_seconds": INTERVAL_SECONDS, "boxes": state.services["email"].account_names(),
-            "model": os.environ.get("JARVIS_CC_MAIL_LEARN_MODEL", "anthropic/claude-haiku-4.5")}
+            "model": free_or(os.environ.get("JARVIS_CC_MAIL_LEARN_MODEL", "anthropic/claude-haiku-4.5"))}
 
 
 @router.post("/run")

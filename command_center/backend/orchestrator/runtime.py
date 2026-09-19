@@ -76,7 +76,7 @@ MODEL_HINT = (
     "\n\nMODELLWAHL: Du läufst gerade auf dem schnellen Modell, damit du zügig antwortest. Wird eine Aufgabe "
     "knifflig (Kalkulation oder Angebot, Verträge, Rechtliches oder Normen, heikle Kundenmails, längere Planung, "
     "Terminkollisionen mit mehreren Beteiligten, mehrstufige Probleme), rufst du zuerst think.deeper auf. Danach "
-    "antwortet das stärkere Modell (Claude Sonnet 5). Einfache Fragen, Nachschlagen, kurze Antworten und "
+    "antwortet das stärkere Modell. Beide Modelle sind kostenlos. Einfache Fragen, Nachschlagen, kurze Antworten und "
     "Routine erledigst du selbst, ohne zu wechseln."
 )
 
@@ -280,6 +280,7 @@ class MasterRuntime:
                 self.mode = "none"
                 self.provider_error = "AI provider could not be initialised"
         self.fast_provider: LLMProvider | None = None
+        self._make_free()
         self._build_fast_provider()
         self.executor = ToolExecutor(state)
         self._runs: dict[str, RunHandle] = {}
@@ -315,11 +316,21 @@ class MasterRuntime:
                 "LOCAL_LLM_URL for local mode, or JARVIS_GATEWAY_URL + JARVIS_GATEWAY_TOKEN for remote mode."),
         }
 
+    def _make_free(self) -> None:
+        """Ohne ausdrückliches JARVIS_ALLOW_PAID=1 nur kostenlose Modelle: gründlich und schnell je eine Kette."""
+        from ..ai.free import FREE_DEEP, FREE_FAST, FreeChain, allow_paid
+        from ..ai.openai_compat import OpenAICompatProvider
+        base = self.provider
+        if allow_paid() or not isinstance(base, OpenAICompatProvider) or base.info.model.endswith(":free"):
+            return
+        self.provider = FreeChain(base, FREE_DEEP, "Kostenlos")
+        self.fast_provider = FreeChain(base, FREE_FAST, "Kostenlos (schnell)")
+
     def _build_fast_provider(self) -> None:
         """Ein zweites, schnelles Modell hinter demselben Zugang (z. B. OpenRouter). Ohne Zugang bleibt es beim einen."""
         from ..ai.openai_compat import OpenAICompatProvider
         base = self.provider
-        if base is None or not isinstance(base, OpenAICompatProvider):
+        if self.fast_provider is not None or base is None or not isinstance(base, OpenAICompatProvider):
             return
         model = os.environ.get("JARVIS_FAST_MODEL", "").strip()
         if not model and "openrouter" in base.base_url:
