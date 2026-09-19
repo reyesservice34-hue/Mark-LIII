@@ -144,6 +144,52 @@ class OpenAICompatProvider:
         stop = "tool_use" if calls else ("max_tokens" if finish == "length" else "end_turn")
         yield {"type": "message_end", "stop_reason": stop, "content": content, "usage": usage}
 
+    async def tool_check(self) -> tuple[bool, str]:
+        """Beherrscht dieses Modell Werkzeugaufrufe? Einmal wirklich ausprobiert.
+
+        Der Unterschied entscheidet alles: Ein Modell, das antwortet, aber keine
+        Werkzeuge aufrufen kann, macht JARVIS zu einem Gesprächspartner ohne
+        Hände. Er kann dann über den Kalender reden, aber keinen Termin anlegen
+        — und das sieht von außen aus wie ein Fehler ganz woanders.
+
+        Gerade bei lokalen Modellen ist das der Regelfall, nicht die Ausnahme:
+        Viele kleine Modelle führen `tools` im Datenblatt und rufen trotzdem
+        keines auf. Deshalb wird es probiert, nicht geglaubt.
+        """
+        probe = ToolDef(name="melde_zahl",
+                        description="Melde die Zahl, nach der gefragt wird.",
+                        input_schema={"type": "object",
+                                      "properties": {"zahl": {"type": "integer"}},
+                                      "required": ["zahl"]})
+        body = {
+            "model": self.info.model,
+            "messages": [{"role": "user",
+                          "content": "Rufe melde_zahl mit zahl=7 auf. Antworte sonst nichts."}],
+            "tools": [{"type": "function", "function": {
+                "name": probe.name, "description": probe.description,
+                "parameters": probe.input_schema}}],
+            "tool_choice": "auto", "max_tokens": 128, "stream": False,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                r = await client.post(f"{self.base_url}/chat/completions",
+                                      headers=self._headers(), json=body)
+        except httpx.HTTPError as e:
+            return False, f"Werkzeugprobe nicht möglich: {e.__class__.__name__}"
+        if r.status_code >= 400:
+            # Manche Server lehnen `tools` rundheraus ab — auch das ist eine Antwort.
+            return False, f"Der Server nimmt keine Werkzeuge an (HTTP {r.status_code})"
+        try:
+            nachricht = (r.json()["choices"][0]["message"]) or {}
+        except (KeyError, IndexError, ValueError):
+            return False, "Antwort auf die Werkzeugprobe war nicht lesbar"
+        if nachricht.get("tool_calls"):
+            return True, "ruft Werkzeuge auf"
+        return False, (f"{self.info.model} antwortet, ruft aber kein Werkzeug auf. "
+                       f"Damit kann JARVIS reden, aber nichts tun — kein Termin, keine Mail, "
+                       f"kein Zugriff auf den PC. Ein Modell mit Werkzeugunterstützung wählen "
+                       f"(z. B. qwen2.5 oder llama3.1 in einer Größe ab 7B).")
+
     async def health(self) -> dict:
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:

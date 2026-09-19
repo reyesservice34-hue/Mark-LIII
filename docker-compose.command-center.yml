@@ -69,6 +69,53 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
+  # ── Ollama im selben Netz ───────────────────────────────────────────────
+  # Aus, bis man es ausdrücklich will:
+  #   docker compose --env-file command_center/.env \
+  #     -f docker-compose.command-center.yml --profile ollama up -d
+  #
+  # Warum als Container und nicht auf dem Host: Ein Ollama, das auf dem Host
+  # läuft, lauscht standardmäßig auf 127.0.0.1 und ist damit aus JEDEM
+  # Container unerreichbar — auch über host.docker.internal. Man muss dann
+  # systemd überschreiben, die Firewall öffnen und die Bridge-Adresse raten.
+  # Hier stehen beide im selben Netz und reden über den Namen: kein Umweg,
+  # keine Firewall, nichts zu raten.
+  #
+  # Dazu in command_center/.env:
+  #   JARVIS_AI_PROVIDER=local
+  #   LOCAL_LLM_URL=http://ollama:11434
+  #   LOCAL_LLM_MODEL=qwen2.5:7b
+  #
+  # Das Modell einmal holen (sonst antwortet Ollama, kennt aber nichts):
+  #   docker compose ... exec ollama ollama pull qwen2.5:7b
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jarvis-ollama
+    profiles: ["ollama"]
+    restart: unless-stopped
+    # Ausdrücklich dasselbe Netz wie der Command Center. Beide lägen ohnehin
+    # im Standardnetz — aber „ohnehin" ist keine Zusicherung, und wenn es
+    # bricht, sucht man zuletzt hier.
+    networks:
+      - default
+    # Kein Port nach außen: Nur der Command Center soll herankommen, und der
+    # steht im selben Netz. Ein offener Port 11434 wäre ein Modellserver ohne
+    # jede Anmeldung im Internet.
+    expose: ["11434"]
+    volumes:
+      # Die Modelle überleben einen Neubau — sonst lädt man mehrere Gigabyte
+      # bei jedem docker compose up erneut herunter.
+      - jarvis-ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
 networks:
   # Joined in addition to this stack's own network, so a container name like
   # http://n8n:5678 resolves. It must already exist — hence "external" — and
@@ -81,3 +128,4 @@ networks:
 
 volumes:
   jarvis-cc-data:
+  jarvis-ollama-models:
