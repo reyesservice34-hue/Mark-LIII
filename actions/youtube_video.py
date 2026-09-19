@@ -169,8 +169,15 @@ def _get_transcript(video_id: str) -> str | None:
 def _summarize_with_gemini(transcript: str, video_url: str) -> str:
     from google import genai as _genai
     from google.genai import types
+    from memory.config_manager import get_assistant_name, get_user_name
 
-    _client = _genai.Client(api_key=_get_api_key())
+    _client  = _genai.Client(api_key=_get_api_key())
+    _name    = get_assistant_name()
+    _user    = get_user_name()
+    _address = (f"Address the user as '{_user}'." if _user
+                else "Address the user with the ordinary respectful form "
+                     "for a superior in the language you are speaking "
+                     "(e.g. 'sir' in English).")
     max_chars = 80000
     truncated = transcript[:max_chars] + ("..." if len(transcript) > max_chars else "")
     response  = _client.models.generate_content(
@@ -178,10 +185,11 @@ def _summarize_with_gemini(transcript: str, video_url: str) -> str:
         contents=f"Please summarize this YouTube video transcript:\n\n{truncated}",
         config=types.GenerateContentConfig(
             system_instruction=(
-                "You are JARVIS, an AI assistant. "
+                f"You are {_name}, speaking in the first person about your own work — "
+                f"never refer to {_name} in the third person. "
                 "Summarize YouTube video transcripts clearly and concisely. "
                 "Structure: 1-sentence overview, then 3-5 key points. "
-                "Be direct. Address the user as 'sir'. "
+                f"Be direct. {_address} "
                 "Match the language of the transcript."
             )
         )

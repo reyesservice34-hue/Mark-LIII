@@ -703,8 +703,9 @@ class JarvisLive:
                       "speaking in this sentence.")
         identity_ctx = (
             f"[IDENTITY]\n"
-            f"Your name is {self._asst_name}. "
-            f"Always refer to yourself as {self._asst_name}.\n"
+            f"Your name is {self._asst_name}. You are {self._asst_name} — "
+            f"speak as yourself, in the first person, always. Never refer to "
+            f"{self._asst_name} in the third person, as if describing someone else.\n"
             f"{_addr}\n\n"
         )
 
