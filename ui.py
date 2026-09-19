@@ -1454,7 +1454,7 @@ class CustomizeOverlay(QWidget):
         lay.addWidget(self._name_input)
 
         lay.addSpacing(4)
-        lay.addWidget(_lbl("YOUR NAME  (leave blank for default sir / efendim)", 8,
+        lay.addWidget(_lbl("YOUR NAME  (optional — used to make a line more personal)", 8,
                             color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
         self._user_input = QLineEdit(user_name)
         self._user_input.setPlaceholderText("e.g.  Tony   (leave blank for auto)")
@@ -1462,6 +1462,21 @@ class CustomizeOverlay(QWidget):
         self._user_input.setFixedHeight(32)
         self._user_input.setStyleSheet(_fs)
         lay.addWidget(self._user_input)
+
+        # ── How JARVIS addresses you ─────────────────────────────────────────
+        # Its own field because it is its own decision: the name is who you are,
+        # the address is how you want to be spoken to. Takes effect on the next
+        # session, which _apply_name_update triggers when this changes.
+        from memory.config_manager import get_user_address
+        lay.addSpacing(4)
+        lay.addWidget(_lbl("FORM OF ADDRESS  (how JARVIS calls you)", 8,
+                            color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
+        self._address_input = QLineEdit(get_user_address())
+        self._address_input.setPlaceholderText("e.g.  mein Herr")
+        self._address_input.setFont(QFont("Courier New", 10))
+        self._address_input.setFixedHeight(32)
+        self._address_input.setStyleSheet(_fs)
+        lay.addWidget(self._address_input)
 
         # ── Assistant voice — Gemini prebuilt voices ─────────────────────────
         # Names are language-neutral proper nouns, so the row reads the same in
@@ -1622,6 +1637,7 @@ class CustomizeOverlay(QWidget):
     def _save(self):
         name = self._name_input.text().strip() or "JARVIS"
         user = self._user_input.text().strip()
+        self._address_value = self._address_input.text().strip()
         self.saved.emit(name, user, self._sel_color or DEFAULT_UI_COLOR, self._sel_voice)
         self.hide()
 
@@ -4297,10 +4313,19 @@ class MainWindow(QMainWindow):
                 save_voice(voice)
                 voice_changed = True
 
+        address_changed = False
+        new_address = getattr(self._customize_overlay, "_address_value", None)
+        if new_address is not None:
+            from memory.config_manager import get_user_address
+            if new_address != get_user_address():
+                address_changed = True
+
         try:
             data = _read_full_config()
             data["assistant_name"] = self._assistant_name
             data["user_name"] = user_name.strip()
+            if new_address is not None:
+                data["user_address"] = new_address
             if ui_color:
                 data["ui_color"] = ui_color.strip().lower()
             API_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
@@ -4309,10 +4334,15 @@ class MainWindow(QMainWindow):
                 self._log.append_log(f"SYS: UI colour applied — {ui_color}")
             if voice_changed:
                 self._log.append_log(f"SYS: Voice set — {voice}")
+            if address_changed:
+                from memory.config_manager import get_user_address
+                self._log.append_log(f"SYS: Address set — {get_user_address()}")
         except Exception as e:
             self._log.append_log(f"ERR: Config save failed — {e}")
 
-        if voice_changed and self.on_voice_change:
+        # Both the voice and the address are fixed when the session connects, so
+        # either one changing needs the same rebuild to take effect.
+        if (voice_changed or address_changed) and self.on_voice_change:
             self.on_voice_change()
 
     def _centre_overlay(self, ov) -> None:

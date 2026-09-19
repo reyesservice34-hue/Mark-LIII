@@ -7,6 +7,24 @@ A real-time voice AI that can hear, see, understand, and control your computer �
 
 ---
 
+## 🖥️ JARVIS Command Center (server dashboard)
+
+MARK LIII can be paired with a server-side **Command Center** — a web dashboard
+that hosts the Master Agent, the agent/tool/integration registries, tasks,
+approvals, logs, files and server monitoring. The desktop then becomes a client
+of it through the existing control-plane contract (`core/control_plane.py`).
+
+See [`command_center/README.md`](command_center/README.md) for deployment
+(`docker compose -f docker-compose.command-center.yml up -d`), configuration
+and desktop pairing.
+
+
+It can also **drive the desktop on instruction** (open apps, windows, keyboard,
+browser) and **learn by demonstration**: record yourself doing a job once and it
+becomes a named procedure, optionally with its own specialist agent.
+
+---
+
 ## ✨ Overview
 
 **MARK LIII is the hands-free & scalable release.** Say **"Hey Jarvis"** and it wakes; stay quiet and it slips back to sleep on its own — while asleep, your microphone never leaves the machine, so an off-hand *"I'll be right there"* to someone in the room no longer sets it off. Under the hood it now runs on the faster **Gemini 3.1 Flash Live** engine, and the moment you ask for something that takes a beat — analysing a file, searching the web — it answers instantly *("On it — going through that now…")* so you never wonder whether it heard you.
@@ -40,6 +58,7 @@ It's not just an assistant — it's an extension of your digital life.
 | ♾️ Unlimited Sessions | Sliding-window context compression — one conversation can last for hours |
 | 🖥️ System Control | Launch apps, adjust volume/brightness, WiFi, shortcuts, power — all by voice |
 | 🧩 Autonomous Tasks | High-level planning for complex multi-step goals via agent mode |
+| 🏛️ Agency Mode | A team of specialists — coordinator, researcher, analyst, engineer — that delegate to each other along a permission graph and answer with one voice |
 | 👁️ Visual Awareness | Real-time screen capture and webcam vision piped into your main Gemini session |
 | 🧠 Persistent Memory | Deeply remembers projects, preferences, and personal context across sessions |
 | ⌨️ Hybrid Input | Seamlessly switch between keyboard typing and voice commands |
@@ -52,6 +71,9 @@ It's not just an assistant — it's an extension of your digital life.
 | 🗺️ Dynamic Content Panel | Scrollable display layer beneath the HUD that renders web results, news, and search data |
 | 🔍 Multi-Mode Web Search | `news` / `research` / `price` / `compare` / `search` — Gemini Grounded first, DDG fallback |
 | ⏰ Smart Reminders | OS-native scheduled notifications (Windows Task Scheduler / macOS LaunchAgent / Linux systemd) |
+| 🗓️ Calendar | Real appointments — create, list, move, cancel — in Google Calendar when connected, otherwise as .ics files your own calendar app opens |
+| 💬 WhatsApp Voice Notes | JARVIS reaches your phone as a spoken voice note — in the same voice it speaks with — over a WhatsApp Web session you link once |
+| ✉ E-Mail | Read, search, draft and send from your own mailbox over plain IMAP/SMTP — any provider, no API account — with sending behind the on-screen confirmation |
 | ✈️ Flight Finder | Live flight price and availability lookup |
 | 🎮 Game Updater | Checks and triggers game updates on Steam and Epic Games on demand |
 | 📂 File Processor | Read, summarize, and answer questions about local files |
@@ -83,6 +105,71 @@ The live session moved to **`gemini-3.1-flash-live-preview`**, cutting the time-
 
 ### 🧩 Self-Describing Skills — a Scalable Core
 Every bundled **action** now carries its own `TOOL` declaration in its own file (exactly like a drop-in **plugin's** `PLUGIN` dict), and the core auto-discovers them at launch. `main.py` no longer holds a giant list of tool definitions and dispatch branches — it shrank by hundreds of lines. Adding a new built-in skill, or promoting an `actions/*.py` file into a shareable plugin, is now just… moving a file.
+
+### 🏛️ Agency Mode — several specialists, one answer
+
+`dev_agent` is one model doing one job. **Agency Mode** is a *team*: say something that needs more than one kind of work — *"compare the three cheapest mini PCs that can run Ollama, then write me the install script"* — and the **coordinator** breaks it up, hands the lookup to the **researcher**, the judgement call to the **analyst**, the script to the **engineer**, and answers you once, in your language, with no mention of the machinery.
+
+Three things make it a system rather than a prompt that says "you are a team":
+
+* **The flow graph is the permission model.** An agent can delegate only along a `[sender, receiver]` pair it appears in — a request off the graph is refused and told which peers it actually has. Same for tools: each agent carries its own whitelist (`researcher` has `web_search`, `engineer` has `code_helper` and `dev_agent`), and a call outside it never reaches the registry.
+* **The budget is shared, not per agent.** `max_steps` counts every model call in the whole run, so two agents passing work back and forth cannot multiply the cost. Running out is not a dead end: the engine hands back what it established instead of nothing.
+* **The roster is data.** Drop a `config/agency.json` next to your API keys — agents, instructions, tools, flows, entry point — and you have your own team without touching a line of Python. A malformed file is reported and ignored rather than half-applied, because a roster with the file's agents and the defaults' flows would quietly rewire who may talk to whom.
+
+Ask it to `roster` and it reads the team back to you. It runs on Gemini like the rest of the assistant, and falls back to your local model from `core/llm_client.py` when no API key is configured.
+
+> When *not* to use it: one question with one obvious tool is faster and cheaper straight through that tool. The tool description says so explicitly, so JARVIS routes a plain lookup to `web_search`, not to four agents.
+
+### 🗓️ Calendar — appointments, not just alarms
+
+JARVIS could set a **reminder** — an OS notification that fires once — but it could not put anything in a calendar. No duration, no place, nothing that reaches your phone or a colleague. Ask it to book Tuesday at nine and the honest answer was that no such tool existed; what you actually got was talk about planning, because the prompt still advertised an `agent_task` tool that had never been written. Both halves of that are fixed: the phantom tool is gone from `core/prompt.txt`, and `plugins/calendar.py` is the real thing.
+
+**One tool, two backends.** Two competing calendar tools would be a routing hazard — the model would have to guess which one you meant — so the choice happens inside the plugin:
+
+* **Google Calendar** when connected. One-time OAuth from ⚙ → PLUGIN SETTINGS → CONNECT GOOGLE; the token lands in `config/` under a name `.gitignore` already covers.
+* **Local** otherwise: a JSON store plus one `.ics` per appointment, handed straight to whatever your OS opens calendar files with. No account, works offline.
+
+`auto` prefers Google and falls back to local — and **says so in the answer** when it does, because a booking you believe is in your shared calendar but is actually a file on one machine is worse than a refusal. Pick `google` explicitly and an unconnected account is refused outright rather than quietly written somewhere else.
+
+Three details that decide whether this is trustworthy:
+
+* **It refuses what it cannot read.** Dates come as `YYYY-MM-DD`, and beyond that only the handful of forms a model really emits — `morgen`, `tomorrow`, `Freitag`, `14.03.`, `14 Uhr`. Anything else is refused with the format it wanted. A meeting silently booked on the wrong day is worse than one not booked.
+* **It never guesses which appointment you meant.** "Cancel the Müller appointment" with two matches lists both and asks. Cancelling the wrong meeting is not a mistake an assistant gets to make on a guess.
+* **The `.ics` is spec-correct**, down to CRLF line endings and line folding counted in *bytes* — an umlaut is two octets, and a naive character-count split writes a file some calendar apps reject outright.
+
+### 💬 Voice notes on WhatsApp — and one voice everywhere
+
+An assistant you can only hear while sitting in front of it is not much use on a building site. `plugins/whatsapp_voice.py` sends you a real WhatsApp message, spoken, over a WhatsApp Web session you link **once** by scanning a QR code. Playwright was already a dependency and `.gitignore` already reserved `config/whatsapp_web/` for exactly this, so it costs nothing and needs no business account.
+
+**The voice is the point.** `core/speech_out.py` asks Gemini's TTS for the same prebuilt voice `get_voice()` hands the live session — one setting, read by both, so the note in your pocket sounds like the assistant in the room rather than a stranger reading your mail. When no key is reachable it falls back to the free EdgeTTS, which cannot imitate a Gemini voice; that fallback is therefore *pinned to one configured voice and named in the answer*, because "always the same voice" honestly means the same one every time and a known second-best when the first is down.
+
+Three deliberate refusals:
+
+* **A failed recording still reaches you.** If synthesis dies, the message goes as text — and the log says why, because you asked for a voice note and silently getting something else is how trust goes.
+* **The OGG conversion may not happen.** WhatsApp renders OGG/Opus as a voice bubble; `ffmpeg` is not a dependency of this project, so when it is missing the original audio is sent as it is. A cosmetic step never fails a delivery.
+* **Every selector is a named constant.** WhatsApp Web is someone else's web app and changes without notice. Each step checks what it found and says which step failed, instead of reporting a success that never left the browser. Start with `dry_run`.
+
+### ✉ E-Mail — and a send button the model cannot press
+
+`plugins/email_box.py` reads, searches, drafts and sends from your own mailbox over plain **IMAP and SMTP**. Not a provider API: a business address sits wherever it sits — IONOS, Strato, Telekom, GMX, Gmail — and all of them speak IMAP. `imaplib`, `smtplib` and `email` are standard library, so this adds **no dependency, no account with anyone, and no cost**. Leave the server fields blank and they are filled from your address (a table of the common German providers, with the usual `imap.`/`smtp.` convention as a fallback); TEST CONNECTION checks *both halves*, because a working inbox with broken sending is the failure that only shows up at the worst moment.
+
+**Sending goes through the HUD gate.** A mail to a customer cannot be recalled, and this project already settled how that is handled: `core/confirm.py` issues the CONFIRM button from the *interface*, so the model cannot wave itself through by writing `confirmed=yes` into its own tool call. Reading and searching change nothing and are not gated.
+
+One consequence is deliberate: an agent running with no interface — the `kunde` agent inside `agency_agent` — **can draft but cannot send**, because there is no HUD to ask on and `confirm.request()` refuses rather than acting. Drafting is autonomous; sending is yours.
+
+Two smaller decisions with teeth: an attachment that is missing or over the size limit fails *before* the confirmation appears, so you are never asked to approve something that was going to break anyway — and an HTML-only mail has its tags stripped before it is read to you, because an assistant reciting `<td style=…>` out loud is worse than one that says nothing.
+
+### 🛰️ One JARVIS — desktop and WhatsApp on the same control plane
+
+The desktop used to answer with its own local session and its own persona. That is exactly why the JARVIS on WhatsApp and the JARVIS at the machine disagreed — two brains, two identities, one saying "Sir" while the other said "mein Herr". `core/control_plane.py` and `core/desktop_bridge.py` end that: when a gateway token is configured, the desktop stops being a second brain and becomes a **client** of the one server-side JARVIS.
+
+- A typed or spoken command goes to `POST /v1/commands`; the desktop polls `GET /v1/commands/{job_id}` until the server says the whole job is **completed, failed or awaiting approval** — a multi-step order stays one job, and the desktop never stops after the first part.
+- It reads back **exactly** the server's answer, in the one configured voice (`speech_out`, the same voice as the WhatsApp notes). Nothing local rephrases it, so no local persona can put "Sir" or an invented tool result into your ear.
+- A stable **actor** and a persisted **conversation_id** mean desktop and WhatsApp land on the same server-side identity and memory — continue on the phone what you started at the desk.
+- When the control plane is on, the local Live session runs **ears-only** (transcription, no spoken answer of its own), so the server is the only voice.
+- Failures are named, never faked: offline, a rejected token, or a timeout are said plainly, and nothing is executed locally to paper over them.
+
+**Setup.** Put the two `jarvis_*` keys from `config/control_plane.example.json` into `config/api_keys.json` (gitignored) — or, better, leave the token out of the file and set the `JARVIS_GATEWAY_TOKEN` environment variable, so the secret never touches disk in the project. No token → the desktop runs the old local way, unchanged.
 
 > Built on the Mark LI/LII foundation: the **🧩 Plugin System**, **♾️ Unlimited Sessions**, **🎨 Live Theming**, **〰️ Reactive HUD** and **🎙️ Voice Picker** are all still here.
 
@@ -195,7 +282,7 @@ It is held in memory only, deliberately: writing it to disk would make a fresh l
 | **LII** | Voice picker · live theming · reactive HUD · recallable memory · undo · real confirmation · audio device picker · session continuity |
 | **LIII** | Wake word · Gemini 3.1 Flash Live · instant acknowledgment · self-describing action/plugin architecture |
 | *shared* | The last five above also shipped to LIII, LIV and LV at the same time — moving up a Mark never loses them |
-| **LIV+** | Plugin files: email · quiz mode · calendar · home assistant · 3D-printer · and more |
+| **LIV+** | Plugin files: email · quiz mode · home assistant · 3D-printer · and more |
 
 ---
 

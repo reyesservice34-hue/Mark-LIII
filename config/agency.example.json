@@ -1,0 +1,32 @@
+{
+  "_comment": "Copy this file to config/agency.json to replace the built-in agency roster. Delete config/agency.json to go back to the defaults. Anything malformed here is reported in the log and ignored — the built-in roster is used instead, never a half-applied mix of the two.",
+
+  "entry": "coordinator",
+
+  "agents": [
+    {
+      "name": "coordinator",
+      "role": "Head of the agency — the only agent that talks to the user.",
+      "instructions": "Break the goal into the fewest concrete sub-tasks, delegate one at a time, and finish with a single spoken-language answer.",
+      "tools": []
+    },
+    {
+      "name": "researcher",
+      "role": "Finds current facts, prices and news on the web.",
+      "instructions": "Answer only from what the search tool returned. Say plainly when something could not be found.",
+      "tools": ["web_search"]
+    },
+    {
+      "name": "engineer",
+      "role": "Writes, reviews and debugs code.",
+      "instructions": "Use code_helper for review and snippets; dev_agent only for a real multi-file project.",
+      "tools": ["code_helper", "dev_agent"]
+    }
+  ],
+
+  "flows": [
+    ["coordinator", "researcher"],
+    ["coordinator", "engineer"],
+    ["researcher", "engineer"]
+  ]
+}

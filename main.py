@@ -70,11 +70,14 @@ from actions.background_monitor import (
 from actions.web_search        import _news as _fetch_news_sync
 from memory.config_manager     import (
     get_brief_enabled, get_voice, get_wake_word_enabled, save_wake_word_enabled,    get_input_device, get_output_device,
+    get_user_address,
 )
 from core.plugin_loader        import discover_plugins
 from core                      import undo as undo_stack
 from core                      import confirm as confirm_gate
 from core                      import audio_devices
+from core.desktop_bridge        import DesktopBridge
+from core                      import speech_out
 from core.action_loader        import discover_actions
 from core.wake_word            import (
     WakeWordDetector, is_ready as wake_is_ready, install_and_download as wake_install,
@@ -391,6 +394,7 @@ class JarvisLive:
         self._resume_handle: str | None = None
         self._turn_done_event: asyncio.Event | None = None
         self._dashboard     = None
+        self._desktop_runner = None   # set in run() when the server may drive this PC
         self._briefing_sent    = False          # morning briefing fires once per process
         self._sys_monitor      = SystemMonitor()  # persistent cooldown state
         self._proactive        = ProactiveEngine()
@@ -421,6 +425,23 @@ class JarvisLive:
         self.ui.get_plugins = self._plugin_registry.list_for_ui
         self.ui.get_plugin_settings = self._plugin_registry.settings_schemas  # ⚙ settings tab
         self.ui.request_say = self.plugin_say   # plugins: mid-task speech channel
+
+        # ── Control plane ────────────────────────────────────────────────────
+        # When a gateway token is configured, the desktop stops answering with
+        # its own local persona and becomes a client of the one server-side
+        # JARVIS — so Desktop and WhatsApp share a single identity, memory,
+        # queue, calendar and voice. No token → nothing changes, the local Live
+        # session runs exactly as before.
+        self._bridge = DesktopBridge()
+        try:
+            _cp_cfg = json.loads(open(API_CONFIG_PATH, encoding="utf-8").read())
+        except Exception:
+            _cp_cfg = {}
+        self._cp_enabled = (self._bridge.client.configured()
+                            and _cp_cfg.get("control_plane_enabled", True) is not False)
+        if self._cp_enabled:
+            print(f"[JARVIS] Control plane active — routing to {self._bridge.client.base_url} "
+                  f"as '{self._bridge.client.actor}'")
 
         # ── Wake word ────────────────────────────────────────────────────────
         # _awake gates the mic (see _listen_audio) and the background speakers.
@@ -609,13 +630,20 @@ class JarvisLive:
         return url, key, f"{url}/auto-login?key={key}", manual
 
     def _on_text_command(self, text: str):
-        if not self._loop or not self.session:
-            return
         # Respect wake-word sleep: a typed command must not be answered while
         # asleep either (the sleep gate is not just for the mic). Wake first with
         # "Hey Jarvis" or the WAKE NOW button.
         if self._wake_enabled and not self._awake:
             self.ui.write_log("SYS: I'm asleep — say 'Hey Jarvis' or tap WAKE NOW first.")
+            return
+
+        # Control plane on → the server is the brain. Route there and read back
+        # exactly what it says. The local Live session is not asked to answer.
+        if self._cp_enabled:
+            self._route_to_control_plane(text)
+            return
+
+        if not self._loop or not self.session:
             return
         asyncio.run_coroutine_threadsafe(
             self.session.send_client_content(
@@ -624,6 +652,40 @@ class JarvisLive:
             ),
             self._loop
         )
+
+    def _route_to_control_plane(self, text: str) -> None:
+        """Send one command to the control plane, wait for the whole job, and
+        speak back exactly the server's answer with the unified voice. Runs off
+        the UI thread so a multi-step order does not freeze the interface."""
+        command = (text or "").strip()
+        if not command:
+            return
+        self.ui.write_log(f"You: {command}")
+        self.ui.set_state("THINKING")
+
+        def _worker():
+            reply = self._bridge.handle(command)
+            # The server's own words are the record — no local rephrasing.
+            self.ui.write_log(f"{self._asst_name}: {reply.speak}")
+            self._speak_verbatim(reply.speak)
+            if not self.ui.muted:
+                self.ui.set_state("LISTENING")
+
+        threading.Thread(target=_worker, daemon=True, name="control-plane").start()
+
+    def _speak_verbatim(self, text: str) -> None:
+        """Read a string out loud UNCHANGED, in the one configured voice — the
+        same voice the WhatsApp notes use. Never routed through the local model,
+        so no persona can rewrite it. Failure to play audio is never fatal: the
+        text is already on the HUD."""
+        text = (text or "").strip()
+        if not text:
+            return
+        try:
+            speech = speech_out.synthesize(text, name=f"say_{int(time.time())}", as_opus=False)
+            speech_out.play_file(speech.path)
+        except Exception as e:
+            print(f"[JARVIS] Voice playback unavailable ({e}) — answer shown as text.")
 
     def set_speaking(self, value: bool):
         with self._speaking_lock:
@@ -666,7 +728,7 @@ class JarvisLive:
     def speak_error(self, tool_name: str, error: str):
         short = str(error)[:120]
         self.ui.write_log(f"ERR: {tool_name} — {short}")
-        self.speak(f"Sir, {tool_name} encountered an error. {short}")
+        self.speak(f"The {tool_name} tool ran into an error. {short}")
 
     def _build_config(self) -> types.LiveConnectConfig:
         from datetime import datetime
@@ -693,14 +755,20 @@ class JarvisLive:
         )
 
         # Identity injection — overrides any hardcoded name in prompt.txt
-        _addr = (f"ADDRESS: Always call the user '{_user_name}'."
-                 if _user_name
-                 else "ADDRESS: Address the user with the ordinary respectful form "
-                      "for a superior in the language you are currently speaking — "
-                      "\"sir\" in English, its everyday equivalent in any other "
-                      "language. Never an archaic or aristocratic form, and never "
-                      "the form from a different language than the one you are "
-                      "speaking in this sentence.")
+        # One rule, one source. Tool results carry no vocative of their own, so
+        # this is the only thing that decides how the user is addressed.
+        _address = get_user_address()
+        _addr = (
+            f"ADDRESS: Address the user as \"{_address}\". Use that exact wording "
+            f"when you speak German. In another language, use the closest natural "
+            f"equivalent of it — never \"sir\" inside a German sentence, and never a "
+            f"form borrowed from a language you are not speaking right now. Do not "
+            f"open every single sentence with it; once in a reply is warm, three "
+            f"times is servile."
+        )
+        if _user_name:
+            _addr += (f" The user's name is {_user_name}; use the name where it makes "
+                      f"the sentence more personal.")
         identity_ctx = (
             f"[IDENTITY]\n"
             f"Your name is {self._asst_name}. "
@@ -713,8 +781,19 @@ class JarvisLive:
             parts.append(mem_str)
         parts.append(sys_prompt)
 
+        # Control plane on → the Live session is ears only: it transcribes what
+        # the user says and must never answer, because the brain and the voice
+        # are the server plus speech_out. Otherwise the local persona ("Sir",
+        # invented tool results) speaks over the real answer.
+        #
+        # Asking for TEXT was the obvious way to get that and is wrong: Live
+        # models only produce AUDIO, and the session dies on connect with
+        # "The requested combination of response modalities (TEXT) is not
+        # supported by the model". So the modality stays AUDIO and the audio is
+        # dropped on arrival instead — see the `response.data` branch below.
+        _modalities = ["AUDIO"]
         cfg = dict(
-            response_modalities=["AUDIO"],
+            response_modalities=_modalities,
             output_audio_transcription={},
             input_audio_transcription={},
             system_instruction="\n".join(parts),
@@ -1017,6 +1096,8 @@ class JarvisLive:
                     if response.data:
                         if self._interrupted:
                             pass  # discard: interrupted
+                        elif getattr(self, "_cp_enabled", False):
+                            pass  # ears only: the server answers, not this session
                         else:
                             if self._turn_done_event and self._turn_done_event.is_set():
                                 self._turn_done_event.clear()
@@ -1055,7 +1136,6 @@ class JarvisLive:
 
                             full_in = " ".join(in_buf).strip()
                             if full_in:
-                                self.ui.write_log(f"You: {full_in}")
                                 self._session_log.append(f"User: {full_in}")
                                 if self._dashboard:
                                     asyncio.create_task(self._dashboard.broadcast({
@@ -1063,6 +1143,16 @@ class JarvisLive:
                                         "text": full_in,
                                         "ts": datetime.now().isoformat(),
                                     }))
+                                # Control plane on → the transcribed speech is a
+                                # command for the server, not for the local model
+                                # (which is in TEXT mode and stays silent). Route
+                                # it and speak back the server's own answer.
+                                if self._cp_enabled:
+                                    self._route_to_control_plane(full_in)
+                                    in_buf = []
+                                    out_buf = []
+                                    continue
+                                self.ui.write_log(f"You: {full_in}")
                             in_buf = []
 
                             full_out = " ".join(out_buf).strip()
@@ -1554,6 +1644,19 @@ class JarvisLive:
         except Exception as e:
             print(f"[Dashboard] Disabled: {e}")
             self._dashboard = None
+
+        # Let the Command Center drive this PC. It runs in its own thread and
+        # only starts when a gateway URL and token are configured, so a desktop
+        # without a server is completely unaffected.
+        try:
+            from core.desktop_runner import start_if_configured
+            self._desktop_runner = start_if_configured(
+                logger=lambda m: (print(m), self.ui.write_log(f"SYS: {m}")))
+            if self._desktop_runner:
+                self.ui.write_log("SYS: Remote desktop control active — the server can open apps here.")
+        except Exception as e:
+            print(f"[DesktopRunner] Disabled: {e}")
+            self._desktop_runner = None
 
         while True:
             try:

@@ -1,0 +1,965 @@
+"""
+Offline verification of the Command Center's outward-facing services:
+calendar, e-mail, GitHub and web search.
+
+No network, no mailbox, no Google account, no GitHub token: every HTTP call is
+stubbed and the calendar runs against a temporary local store.
+
+Run:  python tests/test_command_center_tools.py
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timedelta
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+for k in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "GOOGLE_CALENDAR_ID",
+          "EMAIL_USER", "EMAIL_PASSWORD", "EMAIL_IMAP_HOST", "EMAIL_SMTP_HOST", "EMAIL_SENDER_NAME",
+          "GITHUB_TOKEN", "GITHUB_DEFAULT_REPO"):
+    os.environ.pop(k, None)
+
+from command_center.backend.services import external as EXT  # noqa: E402
+from command_center.backend.services.calendar_service import CalendarService  # noqa: E402
+from command_center.backend.services.email_service import EmailService, MailError, load_account  # noqa: E402
+
+fails: list[str] = []
+
+
+def check(label: str, cond, detail="") -> None:
+    print(("  ok   " if cond else "  FAIL ") + label + ("" if cond else f"  :: {detail}"))
+    if not cond:
+        fails.append(label)
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+tmp = tempfile.mkdtemp(prefix="jarvis-cc-tools-")
+
+print("\n1. calendar — the local backend works with no credentials at all")
+cal = CalendarService(store_file=Path(tmp) / "events.json")
+check("calendar core importable", cal.available(), cal.unavailable_reason())
+check("backend is local without Google env", cal.backend_name() == "local")
+health = run(cal.health())
+check("health is healthy and says it is local", health["status"] == "healthy" and "local" in health["detail"],
+      health)
+
+tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+event, backend, note = run(cal.create(title="Baustelle Meier", when=tomorrow, at="14:00", duration=90,
+                                      location="Musterstraße 3"))
+check("appointment created locally", backend == "local" and event["title"] == "Baustelle Meier", event)
+check("duration honoured", (datetime.fromisoformat(event["end"]) -
+                            datetime.fromisoformat(event["start"])).total_seconds() == 90 * 60)
+check("the answer says it is only local", "local" in note.lower() and "google" in note.lower(), note)
+check(".ics written next to the store", event["file"] and Path(event["file"]).exists())
+ics = Path(event["file"]).read_text(encoding="utf-8")
+check("ics is a real VEVENT", "BEGIN:VEVENT" in ics and "SUMMARY:Baustelle Meier" in ics)
+
+events, backend = run(cal.list(days=7))
+check("listing finds it", any(e["title"] == "Baustelle Meier" for e in events), events)
+check("listing reports the backend", backend == "local")
+
+print("\n2. calendar — refuses what it cannot read, never guesses which appointment")
+try:
+    run(cal.create(title="X", when="irgendwann", at="14:00"))
+    check("unreadable date refused", False)
+except Exception as e:
+    check("unreadable date refused with a spoken reason", "irgendwann" in str(e).lower()
+          or "date" in str(e).lower(), str(e))
+try:
+    # A date it cannot read must be reported as such, not as a missing time.
+    run(cal.create(title="X", when="irgendwann"))
+    check("unreadable date beats the missing time in the message", False)
+except Exception as e:
+    check("unreadable date beats the missing time in the message", "time" not in str(e).lower(), str(e))
+try:
+    run(cal.create(title="X", when=tomorrow))
+    check("missing time refused", False)
+except Exception as e:
+    check("missing time refused", "time" in str(e).lower(), str(e))
+
+run(cal.create(title="Kunde Schmidt Termin", when=tomorrow, at="09:00"))
+run(cal.create(title="Kunde Schmidt Nachtermin", when=tomorrow, at="16:00"))
+try:
+    run(cal.cancel("Kunde Schmidt"))
+    check("ambiguous cancel refused", False)
+except Exception as e:
+    check("ambiguous cancel lists the candidates instead of guessing",
+          "matches 2" in str(e) or "which one" in str(e).lower(), str(e))
+try:
+    run(cal.cancel("gibt es nicht"))
+    check("unknown cancel refused", False)
+except Exception as e:
+    check("unknown appointment named plainly", "no appointment" in str(e).lower(), str(e))
+
+moved, backend = run(cal.move("Baustelle Meier", tomorrow, "17:30"))
+check("move keeps the duration and applies the new time",
+      moved["start"].endswith("17:30:00") and
+      (datetime.fromisoformat(moved["end"]) - datetime.fromisoformat(moved["start"])).total_seconds() == 90 * 60,
+      moved)
+cancelled, _ = run(cal.cancel("Baustelle Meier"))
+check("cancel removes it", cancelled["title"] == "Baustelle Meier"
+      and not any(e["title"] == "Baustelle Meier" for e in run(cal.list(days=7))[0]))
+
+print("\n3. calendar — Google is used when configured, and nothing is written to disk for it")
+os.environ.update({"GOOGLE_CLIENT_ID": "cid", "GOOGLE_CLIENT_SECRET": "sec", "GOOGLE_REFRESH_TOKEN": "ref"})
+gcal = CalendarService(store_file=Path(tmp) / "events.json")
+check("backend switches to google", gcal.backend_name() == "google")
+
+sent: list[dict] = []
+
+
+class FakeResponse:
+    def __init__(self, payload, status=200):
+        self._payload, self.status_code = payload, status
+        self.content = b"{}" if payload is not None else b""
+
+    def json(self):
+        return self._payload
+
+
+class FakeClient:
+    def __init__(self, *a, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, data=None, **kw):
+        sent.append({"method": "POST", "url": url, "data": data})
+        return FakeResponse({"access_token": "tok", "expires_in": 3600})
+
+    async def request(self, method, url, headers=None, **kw):
+        sent.append({"method": method, "url": url, "json": kw.get("json"), "params": kw.get("params")})
+        if method == "POST":
+            body = kw.get("json") or {}
+            return FakeResponse({"id": "gid1", "iCalUID": "gid1@google", "summary": body.get("summary", ""),
+                                 "start": {"dateTime": body["start"]["dateTime"]},
+                                 "end": {"dateTime": body["end"]["dateTime"]},
+                                 "location": body.get("location", ""), "description": body.get("description", "")})
+        return FakeResponse({"items": [
+            {"id": "gid1", "iCalUID": "gid1@google", "summary": "Google Termin",
+             "start": {"dateTime": "2026-09-24T10:00:00+02:00"}, "end": {"dateTime": "2026-09-24T11:00:00+02:00"},
+             "location": "Büro", "description": ""}]})
+
+
+EXT_HTTPX = None
+import command_center.backend.services.calendar_service as CAL  # noqa: E402
+real_httpx_client = CAL.httpx.AsyncClient
+CAL.httpx.AsyncClient = FakeClient
+try:
+    events, backend = run(gcal.list(days=7))
+    check("google listing parsed", backend == "google" and events[0]["title"] == "Google Termin", events)
+    check("offset dropped to floating local time", events[0]["start"] == "2026-09-24T10:00:00", events[0])
+    created, backend, note = run(gcal.create(title="Angebot besprechen", when=tomorrow, at="11:00"))
+    check("google create used the API, not the local store", backend == "google" and note == "", note)
+    check("no local note when it really is in Google", not note)
+    posted = [s for s in sent if s["method"] == "POST" and "calendar/v3" in s["url"]]
+    check("create sent an offset-aware start", posted and "+" in posted[0]["json"]["start"]["dateTime"]
+          or "Z" in str(posted[0]["json"]["start"]["dateTime"]), posted[:1])
+    store = json.loads((Path(tmp) / "events.json").read_text())
+    check("google appointments are not duplicated into the local store",
+          not any(e["title"] == "Angebot besprechen" for e in store), [e["title"] for e in store])
+finally:
+    CAL.httpx.AsyncClient = real_httpx_client
+    for k in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"):
+        os.environ.pop(k, None)
+
+print("\n4. e-mail — configuration, guessing and refusal without credentials")
+check("no account without env", load_account() is None)
+mail = EmailService()
+check("service reports why it cannot run", not mail.configured() and "EMAIL_USER" in mail.unavailable_reason())
+check("health says not_configured", run(mail.health())["status"] == "not_configured")
+try:
+    mail.build("a@b.de", "s", "b")
+    check("build refuses without a mailbox", False)
+except MailError as e:
+    check("build refuses without a mailbox", "configured" in str(e).lower(), str(e))
+
+os.environ.update({"EMAIL_USER": "chef@reyes-service.de", "EMAIL_PASSWORD": "pw"})
+mail.reload()
+acc = mail.account
+check("account loaded", mail.configured() and acc.address == "chef@reyes-service.de")
+check("servers guessed from the domain", acc.imap_host == "imap.reyes-service.de"
+      and acc.smtp_host == "smtp.reyes-service.de", acc)
+os.environ["EMAIL_USER"] = "chef@gmail.com"
+mail.reload()
+check("known provider uses its real servers", mail.account.imap_host == "imap.gmail.com"
+      and mail.account.smtp_port == 465, mail.account)
+os.environ["EMAIL_IMAP_HOST"] = "mail.example.com"
+os.environ["EMAIL_SENDER_NAME"] = "Reyes Service"
+mail.reload()
+check("explicit host overrides the guess", mail.account.imap_host == "mail.example.com")
+check("sender name used in the From header", "Reyes Service" in mail.account.sender())
+
+print("\n5. e-mail — drafting validates, nothing is sent by building a message")
+msg = mail.build("kunde@example.com, zweite@example.com", "Angebot", "Guten Tag,\n\nanbei das Angebot.")
+check("recipients kept", msg["To"] == "kunde@example.com, zweite@example.com")
+check("subject and body set", msg["Subject"] == "Angebot" and "anbei das Angebot" in msg.get_content())
+check("From uses the configured sender", "Reyes Service" in msg["From"])
+for bad in ("", "not-an-address", "a b@c.de"):
+    try:
+        mail.build(bad, "s", "b")
+        check(f"invalid recipient refused: {bad!r}", False)
+    except MailError:
+        check(f"invalid recipient refused: {bad!r}", True)
+
+print("\n6. e-mail — HTML bodies are read as text, not markup")
+import email as email_mod  # noqa: E402
+from command_center.backend.services.email_service import _body_of  # noqa: E402
+
+html_mail = email_mod.message_from_string(
+    "MIME-Version: 1.0\nContent-Type: text/html; charset=utf-8\n\n"
+    "<html><head><style>p{color:red}</style></head><body><p>Hallo <b>Chef</b></p>"
+    "<script>alert(1)</script></body></html>")
+body = _body_of(html_mail)
+check("tags removed", "<" not in body and "Hallo" in body and "Chef" in body, body)
+check("script and style content dropped", "alert" not in body and "color:red" not in body, body)
+
+multipart = email_mod.message_from_string(
+    'MIME-Version: 1.0\nContent-Type: multipart/alternative; boundary="b"\n\n'
+    "--b\nContent-Type: text/plain; charset=utf-8\n\nDer echte Text.\n"
+    "--b\nContent-Type: text/html; charset=utf-8\n\n<p>ignoriert</p>\n--b--\n")
+check("plain part preferred over html", _body_of(multipart).strip() == "Der echte Text.", _body_of(multipart))
+
+print("\n7. GitHub — refuses cleanly without a token, parses with one")
+gh = EXT.GitHubService()
+check("unconfigured", not gh.configured() and gh.unavailable_reason() == "GITHUB_TOKEN not set")
+check("health says not_configured", run(gh.health())["status"] == "not_configured")
+try:
+    run(gh.repo_overview("a/b"))
+    check("call without token refused", False)
+except EXT.ExternalError:
+    check("call without token refused", True)
+
+os.environ["GITHUB_TOKEN"] = "ghp_fake"
+gh = EXT.GitHubService()
+captured: list[str] = []
+
+
+class FakeGH:
+    def __init__(self, *a, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def get(self, url, headers=None, params=None):
+        captured.append(url)
+        import base64
+        if url.endswith("/contents/README.md"):
+            return FakeResponse({"path": "README.md", "size": 12, "encoding": "base64",
+                                 "content": base64.b64encode(b"# Titel\nText").decode(),
+                                 "html_url": "https://github.com/x/y/blob/main/README.md"})
+        if url.endswith("/issues"):
+            return FakeResponse([{"number": 7, "title": "Bug", "state": "open", "user": {"login": "someone"},
+                                  "html_url": "u", "updated_at": "2026-09-01T00:00:00Z", "labels": [{"name": "bug"}]}])
+        return FakeResponse({"full_name": "x/y", "description": "d", "default_branch": "main",
+                             "open_issues_count": 2, "stargazers_count": 5, "html_url": "u",
+                             "pushed_at": "2026-09-01T00:00:00Z", "language": "Python"})
+
+
+real_gh_client = EXT.httpx.AsyncClient
+EXT.httpx.AsyncClient = FakeGH
+try:
+    check("repo shorthand accepted", run(gh.repo_overview("x/y"))["full_name"] == "x/y")
+    check("full URL accepted too", run(gh.repo_overview("https://github.com/x/y"))["full_name"] == "x/y")
+    try:
+        run(gh.repo_overview("just-a-name"))
+        check("owner/repo required", False)
+    except EXT.ExternalError as e:
+        check("owner/repo required", "owner/repo" in str(e))
+    f = run(gh.read_file("x/y", "README.md"))
+    check("file content decoded from base64", f["content"].startswith("# Titel"), f)
+    issues = run(gh.list_issues("x/y"))
+    check("issues parsed", issues[0]["number"] == 7 and issues[0]["labels"] == ["bug"], issues)
+finally:
+    EXT.httpx.AsyncClient = real_gh_client
+    os.environ.pop("GITHUB_TOKEN", None)
+
+print("\n8. web search — results parsed, redirect wrappers unwrapped")
+check("duckduckgo redirect unwrapped",
+      EXT._real_url("//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fseite&rut=x") == "https://example.com/seite")
+check("direct url untouched", EXT._real_url("https://example.com/a") == "https://example.com/a")
+
+SAMPLE = '''
+<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fone">
+Erstes <b>Ergebnis</b></a><a class="result__snippet" href="#">Ein Schnipsel &amp; Text</a></div>
+<div class="result"><a class="result__a" href="https://example.org/two">Zweites</a>
+<a class="result__snippet" href="#">Noch einer</a></div>
+'''
+
+
+class FakeSearch:
+    def __init__(self, *a, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, data=None):
+        class R:
+            status_code = 200
+            text = SAMPLE
+        return R()
+
+
+real_search_client = EXT.httpx.AsyncClient
+EXT.httpx.AsyncClient = FakeSearch
+try:
+    results = run(EXT.web_search("dämmung preise", limit=5))
+    check("two results parsed", len(results) == 2, results)
+    check("title html stripped and entities decoded", results[0]["title"] == "Erstes Ergebnis", results[0])
+    check("snippet decoded", results[0]["snippet"] == "Ein Schnipsel & Text", results[0])
+    check("wrapped url resolved", results[0]["url"] == "https://example.com/one", results[0])
+    check("limit honoured", len(run(EXT.web_search("x", limit=1))) == 1)
+    try:
+        run(EXT.web_search("   "))
+        check("empty query refused", False)
+    except EXT.ExternalError:
+        check("empty query refused", True)
+finally:
+    EXT.httpx.AsyncClient = real_search_client
+
+print("\n9. voice — disabled and honest without a backend, real with one")
+from command_center.backend.services import voice_service as VS  # noqa: E402
+
+for k in ("JARVIS_CC_STT_URL", "JARVIS_CC_TTS_URL", "JARVIS_CC_STT_API_KEY", "JARVIS_CC_TTS_API_KEY",
+          "OPENAI_API_KEY"):
+    os.environ.pop(k, None)
+voice = VS.VoiceService()
+caps = voice.capabilities()
+check("speech-to-text reported unavailable", not caps["speech_to_text"]["available"])
+check("and names the variable to set", "JARVIS_CC_STT_URL" in caps["speech_to_text"]["detail"],
+      caps["speech_to_text"]["detail"])
+check("health says not_configured", run(voice.health())["status"] == "not_configured")
+for coro, label in ((voice.transcribe(b"x", "audio/webm"), "transcribe"), (voice.speak("hallo"), "speak")):
+    try:
+        run(coro)
+        check(f"{label} refuses without a backend", False)
+    except VS.VoiceError as e:
+        # Die Absage muss die Variable nennen, die fehlt — welche Sprache der
+        # Satz hat, ist dabei egal, die Kennung ist der Hinweis.
+        check(f"{label} refuses without a backend",
+              any(v in str(e) for v in ("JARVIS_CC_STT_URL", "JARVIS_CC_TTS_URL", "ELEVENLABS_API_KEY")),
+              str(e))
+
+check("endpoint from a bare host", VS._endpoint("http://w:8000", "/audio/speech") == "http://w:8000/v1/audio/speech")
+check("endpoint from a /v1 root", VS._endpoint("http://w:8000/v1/", "/audio/speech") == "http://w:8000/v1/audio/speech")
+check("a full endpoint url is left alone",
+      VS._endpoint("http://w:8000/v1/audio/transcriptions", "/audio/transcriptions")
+      == "http://w:8000/v1/audio/transcriptions")
+
+os.environ.update({"JARVIS_CC_STT_URL": "http://whisper:8000", "JARVIS_CC_TTS_URL": "http://kokoro:8880",
+                   "JARVIS_CC_STT_MODEL": "whisper-large", "JARVIS_CC_TTS_VOICE": "nova"})
+voice = VS.VoiceService()
+caps = voice.capabilities()
+check("becomes available once configured", caps["speech_to_text"]["available"] and caps["text_to_speech"]["available"])
+check("names the model and voice it will use",
+      caps["speech_to_text"]["model"] == "whisper-large" and caps["text_to_speech"]["voice"] == "nova", caps)
+
+posted: list[dict] = []
+
+
+class FakeVoiceClient:
+    def __init__(self, *a, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, files=None, data=None, json=None, headers=None):
+        posted.append({"url": url, "data": data, "json": json, "file": files["file"][0] if files else None})
+
+        class R:
+            status_code = 200
+            headers = {"content-type": "audio/mpeg"}
+            content = b"ID3audio"
+            text = ""
+
+            @staticmethod
+            def json():
+                return {"text": "  Trag den Termin ein.  ", "language": "de"}
+        return R()
+
+
+real_voice_client = VS.httpx.AsyncClient
+VS.httpx.AsyncClient = FakeVoiceClient
+try:
+    result = run(voice.transcribe(b"fake-audio-bytes", "audio/webm", "de"))
+    check("transcript trimmed and returned", result["text"] == "Trag den Termin ein.", result)
+    check("posted to the transcriptions endpoint",
+          posted[0]["url"] == "http://whisper:8000/v1/audio/transcriptions", posted[0]["url"])
+    check("model and language sent", posted[0]["data"]["model"] == "whisper-large"
+          and posted[0]["data"]["language"] == "de", posted[0]["data"])
+    check("file named by its real container", posted[0]["file"] == "speech.webm", posted[0]["file"])
+    audio, ctype = run(voice.speak("Erledigt."))
+    check("speech returns audio bytes", audio == b"ID3audio" and ctype == "audio/mpeg")
+    check("speech posted the configured voice", posted[1]["json"]["voice"] == "nova", posted[1]["json"])
+    for bad_type in ("text/plain", "application/octet-stream"):
+        try:
+            run(voice.transcribe(b"x", bad_type))
+            check(f"non-audio upload refused: {bad_type}", False)
+        except VS.VoiceError:
+            check(f"non-audio upload refused: {bad_type}", True)
+    try:
+        run(voice.transcribe(b"", "audio/webm"))
+        check("empty recording refused", False)
+    except VS.VoiceError:
+        check("empty recording refused", True)
+    try:
+        run(voice.transcribe(b"x" * (VS.MAX_AUDIO_BYTES + 1), "audio/webm"))
+        check("oversized recording refused", False)
+    except VS.VoiceError as e:
+        check("oversized recording refused", "MB" in str(e), str(e))
+finally:
+    VS.httpx.AsyncClient = real_voice_client
+    for k in ("JARVIS_CC_STT_URL", "JARVIS_CC_TTS_URL", "JARVIS_CC_STT_MODEL", "JARVIS_CC_TTS_VOICE"):
+        os.environ.pop(k, None)
+
+print("\n10. the tool registry exposes them with the right risk and availability")
+# Back to a bare environment: the registry must report what is *not* configured.
+for k in ("EMAIL_USER", "EMAIL_PASSWORD", "EMAIL_IMAP_HOST", "EMAIL_SENDER_NAME"):
+    os.environ.pop(k, None)
+os.environ["JARVIS_CC_DATA_DIR"] = tmp + "/state"
+from command_center.backend.config import reset_settings  # noqa: E402
+reset_settings()
+from command_center.backend.app import build_state  # noqa: E402
+
+state = build_state()
+by_name = {t.name: t for t in state.tools.all()}
+check("calendar tools available without any credentials",
+      all(by_name[n].available and by_name[n].handler for n in
+          ("calendar.read", "calendar.create", "calendar.move", "calendar.cancel")))
+check("cancelling an appointment needs approval", by_name["calendar.cancel"].needs_approval())
+check("booking one does not", not by_name["calendar.create"].needs_approval())
+check("email tools present but unavailable with a reason",
+      all(not by_name[n].available and "EMAIL_USER" in by_name[n].reason
+          for n in ("email.search", "email.read", "email.draft", "email.send")))
+check("sending mail is gated", by_name["email.send"].needs_approval() and by_name["email.send"].risk == "high")
+check("web.search needs no credentials", by_name["web.search"].available and by_name["web.search"].handler)
+check("github tools declared", all(n in by_name for n in ("github.read", "github.issues", "github.commits")))
+check("research agent can search the web",
+      any(t.name == "web.search" for t in state.tools.for_agent(state.agents.get("research").tools, "operator")))
+check("calendar agent reaches the calendar tools",
+      {t.name for t in state.tools.for_agent(state.agents.get("calendar").tools, "operator")}
+      >= {"calendar.read", "calendar.create"})
+email_agent = state.agents.public("email", state.tools)
+check("email agent shows as degraded while the mailbox is missing",
+      email_agent["health"] == "degraded" and "email.*" in email_agent["missing_tools"], email_agent["health"])
+check("and says which capability is missing", "email" in email_agent["health_detail"], email_agent["health_detail"])
+check("calendar agent is healthy because the local backend works",
+      state.agents.public("calendar", state.tools)["health"] == "healthy")
+state.db.close()
+
+print("\n11. .env.example must survive Docker's env_file parsing")
+# Docker hands `KEY=value   # comment` to the container *including* the comment,
+# so an inline comment silently turns an empty setting into a garbage value —
+# JARVIS_CC_ROOT_PATH would have broken every route. Guard it here.
+env_example = ROOT / "command_center" / ".env.example"
+parsed, offenders = {}, []
+for raw in env_example.read_text(encoding="utf-8").splitlines():
+    stripped = raw.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    key, sep, value = raw.partition("=")
+    if not sep:
+        offenders.append(f"no '=' in: {raw!r}")
+        continue
+    parsed[key] = value
+    if "#" in value:
+        offenders.append(f"{key} carries a comment in its value: {value!r}")
+    if value != value.strip():
+        offenders.append(f"{key} has surrounding whitespace: {value!r}")
+check("every line parses as KEY=value", not offenders, offenders[:3])
+check("the file actually documents the settings", len(parsed) > 40, len(parsed))
+for required in ("JARVIS_CC_ADMIN_USER", "JARVIS_CC_ADMIN_PASSWORD", "JARVIS_CC_BIND",
+                 "JARVIS_CC_PORT", "JARVIS_CC_ROOT_PATH"):
+    check(f"{required} documented", required in parsed)
+check("no dead WhatsApp credentials are still asked for",
+      "WHATSAPP_TOKEN" not in parsed and "WHATSAPP_PHONE_ID" not in parsed, list(parsed)[:0])
+
+print("\n12. no source file may be swallowed by .gitignore")
+# A rule meant for runtime output ("logs/") matched every directory of that name
+# at any depth, so command_center/{backend/modules,frontend/src/modules}/logs/
+# never reached the repository and the Docker build died on a missing import.
+# Guard every source tree against that whole class of mistake.
+import subprocess  # noqa: E402
+
+source_files: list[str] = []
+for tree, suffixes in ((ROOT / "command_center" / "backend", (".py",)),
+                       (ROOT / "command_center" / "frontend" / "src", (".ts", ".tsx", ".css")),
+                       (ROOT / "core", (".py", ".txt")),
+                       (ROOT / "actions", (".py",)),
+                       (ROOT / "plugins", (".py",)),
+                       (ROOT / "tests", (".py",))):
+    for path in tree.rglob("*"):
+        if path.is_file() and path.suffix in suffixes and "__pycache__" not in path.parts:
+            source_files.append(str(path.relative_to(ROOT)))
+
+check("source trees were found at all", len(source_files) > 100, len(source_files))
+ignored = subprocess.run(["git", "check-ignore", "--stdin"], cwd=ROOT, input="\n".join(source_files),
+                         capture_output=True, text=True).stdout.split()
+check("no source file is gitignored", not ignored, ignored[:5])
+
+tracked = set(subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True)
+              .stdout.splitlines())
+untracked = [f for f in source_files if f not in tracked]
+check("every source file is tracked by git", not untracked, untracked[:5])
+
+# Both halves of every backend module must exist, or the app cannot even import.
+from command_center.backend.modules import DEFAULT_MODULES  # noqa: E402
+missing_modules = [m for m in DEFAULT_MODULES
+                   if not (ROOT / "command_center" / "backend" / "modules" / m / "__init__.py").exists()]
+check("every module in DEFAULT_MODULES exists on disk", not missing_modules, missing_modules)
+
+print("\n13. Composio — one key, but only what is really connected")
+# Composio hosts the OAuth for a few hundred services. The value of this
+# adapter is honesty about which of them are actually usable, so the tests
+# that matter are the refusals: no key, an unconnected toolkit, and a call
+# Composio itself reports as failed.
+from command_center.backend.services import composio as CS  # noqa: E402
+
+for k in ("COMPOSIO_API_KEY", "COMPOSIO_USER_ID", "COMPOSIO_BASE_URL"):
+    os.environ.pop(k, None)
+bare = CS.ComposioService()
+check("not configured without a key", not bare.configured())
+check("and names the variable", bare.unavailable_reason() == "COMPOSIO_API_KEY not set")
+check("health reports not_configured", run(bare.health())["status"] == "not_configured")
+for label, coro in (("listing apps", bare.connections()), ("executing", bare.execute("GMAIL_SEND_EMAIL", {}))):
+    try:
+        run(coro)
+        check(f"{label} refuses without a key", False)
+    except CS.ComposioError as e:
+        check(f"{label} refuses without a key", "COMPOSIO_API_KEY" in str(e), str(e))
+
+os.environ.update({"COMPOSIO_API_KEY": "cmp_test_key", "COMPOSIO_USER_ID": "reyes"})
+svc = CS.ComposioService()
+calls: list[dict] = []
+ACCOUNTS = {"items": [
+    {"id": "ca_gmail", "toolkit": {"slug": "gmail"}, "status": "ACTIVE", "is_disabled": False,
+     "created_at": "2026-09-01T10:00:00Z"},
+    {"id": "ca_slack", "toolkit": {"slug": "slack"}, "status": "EXPIRED", "is_disabled": False,
+     "created_at": "2026-08-01T10:00:00Z"},
+]}
+TOOLS = {"items": [
+    {"slug": "GMAIL_SEND_EMAIL", "name": "Send email", "toolkit": {"slug": "gmail"},
+     "description": "Send an email from the connected mailbox.", "no_auth": False,
+     "input_parameters": {"recipient_email": {"type": "string"}}},
+    {"slug": "NOTION_CREATE_PAGE", "name": "Create page", "toolkit": {"slug": "notion"},
+     "description": "Create a page.", "no_auth": False, "input_parameters": {}},
+]}
+
+
+class FakeComposioClient:
+    payload: dict = {}
+    status: int = 200
+
+    def __init__(self, *a, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def request(self, method, url, headers=None, params=None, json=None):
+        calls.append({"method": method, "url": url, "params": params, "json": json,
+                      "key": (headers or {}).get("x-api-key")})
+        body, status = FakeComposioClient.payload, FakeComposioClient.status
+        if url.endswith("/connected_accounts"):
+            body = ACCOUNTS
+        elif url.endswith("/tools"):
+            body = TOOLS
+
+        class R:
+            status_code = status
+            text = "stub"
+
+            @staticmethod
+            def json():
+                return body
+        return R()
+
+
+real_composio_client = CS.httpx.AsyncClient
+CS.httpx.AsyncClient = FakeComposioClient
+try:
+    health = run(svc.health())
+    check("healthy when something is connected", health["status"] == "healthy", health)
+    check("names only the usable app", "gmail" in health["detail"] and "slack" not in health["detail"], health)
+    check("api key sent in the x-api-key header", calls[0]["key"] == "cmp_test_key", calls[0])
+    check("connections scoped to the configured user", calls[0]["params"]["user_ids"] == "reyes", calls[0])
+
+    live = run(svc.live_toolkits())
+    check("an expired connection is not live", live == {"gmail": "ca_gmail"}, live)
+
+    found = run(svc.tools(search="send an email"))
+    check("tools mapped to slug + app + arguments",
+          found[0]["slug"] == "GMAIL_SEND_EMAIL" and found[0]["toolkit"] == "gmail"
+          and "recipient_email" in found[0]["input_parameters"], found[0])
+
+    calls.clear()
+    FakeComposioClient.payload = {"successful": True, "data": {"id": "msg_1"}, "log_id": "log_1"}
+    res = run(svc.execute("gmail_send_email", {"recipient_email": "kunde@example.de"}))
+    exec_call = calls[-1]
+    check("executes with the upper-case slug",
+          exec_call["url"].endswith("/api/v3/tools/execute/GMAIL_SEND_EMAIL"), exec_call["url"])
+    check("sends the connected account and the user",
+          exec_call["json"]["connected_account_id"] == "ca_gmail"
+          and exec_call["json"]["user_id"] == "reyes", exec_call["json"])
+    check("returns Composio's own data", res["data"] == {"id": "msg_1"} and res["toolkit"] == "gmail", res)
+
+    calls.clear()
+    try:
+        run(svc.execute("NOTION_CREATE_PAGE", {"title": "x"}))
+        check("an unconnected app is refused by name", False)
+    except CS.ComposioError as e:
+        check("an unconnected app is refused by name", "notion" in str(e) and "not connected" in str(e), str(e))
+    check("and nothing was executed", not any("execute" in c["url"] for c in calls), calls)
+
+    FakeComposioClient.payload = {"successful": False, "error": "Invalid recipient", "data": {}}
+    try:
+        run(svc.execute("GMAIL_SEND_EMAIL", {"recipient_email": "nope"}))
+        check("a failed Composio call is an error here too", False)
+    except CS.ComposioError as e:
+        check("a failed Composio call is an error here too", "Invalid recipient" in str(e), str(e))
+
+    try:
+        run(svc.execute("GMAIL_SEND_EMAIL", {"a": 1}, text="do the thing"))
+        check("arguments and text together are refused", False)
+    except CS.ComposioError as e:
+        check("arguments and text together are refused", "not both" in str(e), str(e))
+
+    FakeComposioClient.status = 401
+    bad = run(svc.health())
+    check("a rejected key reports offline, not healthy",
+          bad["status"] == "offline" and "rejected" in bad["detail"], bad)
+finally:
+    CS.httpx.AsyncClient = real_composio_client
+    FakeComposioClient.status = 200
+    for k in ("COMPOSIO_API_KEY", "COMPOSIO_USER_ID", "COMPOSIO_BASE_URL"):
+        os.environ.pop(k, None)
+
+print("\n14. provider errors must name the fix, not just repeat the API")
+# A raw SDK message is honest but useless: the operator sees a 400 and cannot
+# tell which of their settings caused it. This one cost a real user a session.
+from command_center.backend.ai.anthropic_provider import _explain  # noqa: E402
+
+workspace = _explain(400, "This API key is not scoped to a workspace, so this request must include "
+                          "the anthropic-workspace-id header with the ID of the workspace to use.")
+check("workspace-scoping error names the variable and the console",
+      "ANTHROPIC_WORKSPACE_ID" in workspace and "console.anthropic.com" in workspace, workspace)
+credit = _explain(400, "Your credit balance is too low to access the Claude API.")
+check("an empty account says so plainly", "credit" in credit and "billing" in credit, credit)
+model404 = _explain(404, "model: claude-does-not-exist")
+check("an unknown model points at JARVIS_AI_MODEL", "JARVIS_AI_MODEL" in model404, model404)
+overloaded = _explain(529, "Overloaded")
+check("anything else is passed through verbatim", overloaded == "Anthropic API error 529: Overloaded",
+      overloaded)
+
+os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-not-a-real-key"
+os.environ["ANTHROPIC_WORKSPACE_ID"] = "wrkspc_test123"
+try:
+    from command_center.backend.ai import build_provider  # noqa: E402
+    prov = build_provider("anthropic")
+    sent = getattr(prov._client, "default_headers", {}) or {}   # noqa: SLF001
+    check("the workspace id is sent as a header",
+          sent.get("anthropic-workspace-id") == "wrkspc_test123", dict(sent))
+    os.environ.pop("ANTHROPIC_WORKSPACE_ID")
+    plain = build_provider("anthropic")
+    plain_headers = getattr(plain._client, "default_headers", {}) or {}   # noqa: SLF001
+    check("and left out entirely when unset", "anthropic-workspace-id" not in plain_headers,
+          dict(plain_headers))
+except ImportError:
+    check("anthropic SDK present for the header check", False, "anthropic not installed")
+finally:
+    for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID"):
+        os.environ.pop(k, None)
+
+print("\n15. dotted tool names must survive every provider's name rule")
+# Every provider validates function names against roughly [a-zA-Z0-9_-] and
+# rejects the dot. Every name in this registry is dotted, so a single missed
+# translation means the model is offered nothing at all — which is exactly what
+# happened on the first real chat: HTTP 400, tools.0.custom.name.
+import re as _re  # noqa: E402
+
+from command_center.backend.ai.base import ToolDef, ToolNameMap  # noqa: E402
+
+os.environ["JARVIS_CC_DATA_DIR"] = tmp + "/state-names"
+reset_settings()
+name_state = build_state()
+registry_names = [t.name for t in name_state.tools.all()]
+check("the registry really does use dotted names",
+      sum("." in n for n in registry_names) > 30, sum("." in n for n in registry_names))
+
+for limit, who in ((128, "Anthropic"), (64, "OpenAI / Gemini")):
+    m = ToolNameMap(registry_names, limit=limit)
+    bad = [w for w in m.to_wire.values() if not _re.fullmatch(rf"[a-zA-Z0-9_-]{{1,{limit}}}", w)]
+    check(f"{who}: every name passes the pattern", not bad, bad[:3])
+    lost = [n for n in registry_names if m.real(m.wire(n)) != n]
+    check(f"{who}: every name maps back to itself", not lost, lost[:3])
+    check(f"{who}: no two tools share a wire name",
+          len(set(m.to_wire.values())) == len(registry_names),
+          len(set(m.to_wire.values())))
+
+clash = ToolNameMap(["a.b", "a_b"])
+check("a collision is given a suffix, not silently merged",
+      clash.wire("a.b") != clash.wire("a_b")
+      and clash.real(clash.wire("a.b")) == "a.b"
+      and clash.real(clash.wire("a_b")) == "a_b",
+      (clash.wire("a.b"), clash.wire("a_b")))
+
+# The Anthropic provider also rewrites tool_use blocks in the history, because
+# the API validates those against the same rule.
+from command_center.backend.ai.anthropic_provider import AnthropicProvider  # noqa: E402
+
+hist = [{"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "calendar.read",
+                                           "input": {"q": "x"}}]}]
+converted = AnthropicProvider._convert_messages(hist, ToolNameMap(["calendar.read"]).wire)
+check("an earlier tool call in the history is renamed too",
+      converted[0]["content"][0]["name"] == "calendar_read", converted)
+name_state.db.close()
+
+print("\n16. every .gitignore rule must actually ignore something")
+# In .gitignore a '#' only starts a comment at the START of a line. A trailing
+# comment becomes part of the pattern, so the rule matches a filename nobody
+# has. Nine rules in this repository were broken that way, among them the ones
+# for the API keys, the TLS private key and a linked WhatsApp session. The rule
+# looked right in the file and protected nothing.
+gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+trailing = [ln for ln in gitignore.splitlines()
+            if ln.strip() and not ln.lstrip().startswith("#") and "#" in ln]
+check("no rule carries a trailing comment", not trailing, trailing[:3])
+
+# And check the ones that matter by asking git itself, not by reading the file.
+must_be_ignored = [
+    "config/api_keys.json", "config/certs/key.pem", "config/whatsapp_web/session.json",
+    "memory/calendar/termin.ics", "memory/voice_notes/a.mp3", "memory/conversation_state.json",
+    "memory/long_term.json", "token_gmail.json", "client_secret_abc.json",
+    "command_center/.env",
+]
+res = subprocess.run(["git", "check-ignore", "--stdin"], cwd=ROOT,
+                     input="\n".join(must_be_ignored), capture_output=True, text=True)
+ignored = set(res.stdout.split())
+leaking = [f for f in must_be_ignored if f not in ignored]
+check("every secret path is really ignored by git", not leaking, leaking)
+
+# The documented example must stay visible, or nobody knows what to configure.
+res = subprocess.run(["git", "check-ignore", "-q", "command_center/.env.example"], cwd=ROOT)
+check("but the documented .env.example is not", res.returncode != 0)
+
+# And nothing of the sort is already committed.
+tracked_secrets = [f for f in subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True,
+                                             text=True).stdout.splitlines()
+                   if any(x in f for x in ("api_keys.json", "config/certs/", "whatsapp_web/",
+                                           "client_secret", "conversation_state"))]
+check("and no secret is already in the repository", not tracked_secrets, tracked_secrets[:3])
+
+print("\n13. ElevenLabs: eine Stimme, auf dem Server erzeugt")
+import os as _os
+from command_center.backend.services.voice_service import VoiceError, VoiceService
+
+for k in ("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "JARVIS_CC_TTS_URL"):
+    _os.environ.pop(k, None)
+v = VoiceService()
+caps = v.capabilities()["text_to_speech"]
+check("ohne alles ist keine Stimme da", caps["available"] is False and caps["provider"] == "")
+check("und es steht dabei, welche Variablen fehlen",
+      "ELEVENLABS_API_KEY" in caps["detail"] and "ELEVENLABS_VOICE_ID" in caps["detail"], caps["detail"])
+
+_os.environ["ELEVENLABS_API_KEY"] = "sk-test"
+v = VoiceService()
+caps = v.capabilities()["text_to_speech"]
+check("ein Schlüssel ohne Stimmen-Kennung reicht nicht", v.eleven_available() is False)
+check("und das wird auch so gesagt", "ELEVENLABS_VOICE_ID" in caps["detail"], caps["detail"])
+
+_os.environ["ELEVENLABS_VOICE_ID"] = "voice-xyz"
+v = VoiceService()
+check("mit beidem ist ElevenLabs da", v.eleven_available() and v.tts_provider() == "elevenlabs")
+check("Voreinstellung ist ein mehrsprachiges Modell",
+      v.eleven_model == "eleven_multilingual_v2", v.eleven_model)
+
+_os.environ["JARVIS_CC_TTS_URL"] = "http://kokoro:8880"
+v = VoiceService()
+check("ElevenLabs geht vor, wenn beides eingerichtet ist", v.tts_provider() == "elevenlabs")
+
+# Rohes PCM in WAV fassen: Der Windows-PC spielt WAV mit der
+# Standardbibliothek, MP3 nur mit Zusatzpaket.
+wav = VoiceService._wav(b"\x00\x01" * 1200)
+check("aus PCM wird eine gültige WAV-Datei", wav[:4] == b"RIFF" and wav[8:12] == b"WAVE", wav[:12])
+import wave as _wave, io as _io
+with _wave.open(_io.BytesIO(wav)) as w:
+    check("mono, 16 bit, 24 kHz", (w.getnchannels(), w.getsampwidth(), w.getframerate()) == (1, 2, 24000),
+          (w.getnchannels(), w.getsampwidth(), w.getframerate()))
+
+for k in ("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "JARVIS_CC_TTS_URL"):
+    _os.environ.pop(k, None)
+
+print("\n14. Der PC bekommt Ton, keinen Schlüssel")
+import json as _json
+from actions.speak_audio import speak_audio
+import base64 as _b64
+
+out = _json.loads(speak_audio({}))
+check("ohne Audio wird das gesagt", "audio_base64" in out.get("error", ""), out)
+out = _json.loads(speak_audio({"audio_base64": "kein base64!!"}))
+check("kaputtes Audio wird erkannt", "kodiert" in out.get("error", ""), out)
+out = _json.loads(speak_audio({"audio_base64": _b64.b64encode(b"x" * 100).decode()}))
+check("ohne Lautsprecher wird nicht behauptet, es lief",
+      out.get("played") is not True, out)
+check("und der Grund steht dabei", bool(out.get("error")), out)
+
+src = (ROOT / "actions" / "speak_audio.py").read_text(encoding="utf-8")
+check("der PC holt sich das Audio nicht selbst — kein Schlüssel, keine Verbindung",
+      "ELEVENLABS_API_KEY" not in src and "api.elevenlabs.io" not in src and "xi-api-key" not in src)
+
+print("\n18. was der Server aus dem Repo importiert, muss auch ins Image")
+# Gefunden auf der laufenden Instanz: Der lokale Kalender stand auf OFFLINE
+# mit "calendar core not importable: No module named 'plugins'". Die Tests
+# liefen alle grün — sie laufen ja im Repo, wo die Datei da ist. Im Image
+# fehlte sie, weil das Dockerfile nur core/ und config/ kopiert.
+# Ein Termin ohne Google-Konto war damit unmöglich.
+import re as _re
+
+dockerfile = (ROOT / "command_center" / "Dockerfile").read_text(encoding="utf-8")
+kopiert: set[str] = set()
+for zeile in dockerfile.splitlines():
+    z = zeile.strip()
+    if not z.startswith("COPY ") or "--from=" in z:
+        continue
+    for stueck in z[5:].split()[:-1]:          # das letzte Stück ist das Ziel
+        kopiert.add(stueck.split("/")[0])
+
+# Welche Pakete des Repos zieht der Servercode heran?
+gebraucht: set[str] = set()
+pakete = {p.name for p in ROOT.iterdir() if (p / "__init__.py").exists()}
+for py in (ROOT / "command_center" / "backend").rglob("*.py"):
+    text = py.read_text(encoding="utf-8", errors="replace")
+    for m in _re.finditer(r"^\s*(?:from|import)\s+([A-Za-z_][\w]*)", text, _re.M):
+        if m.group(1) in pakete and m.group(1) != "command_center":
+            gebraucht.add(m.group(1))
+
+fehlt = sorted(gebraucht - kopiert)
+check("jedes Paket, das der Server importiert, wird ins Image kopiert",
+      not fehlt, f"nicht im Dockerfile: {fehlt}")
+
+# Und die eine Datei, an der es hing, namentlich.
+check("der Kalenderkern liegt im Image",
+      "plugins/_calendar_core.py" in dockerfile)
+check("mitsamt dem __init__, sonst ist plugins kein Paket",
+      "plugins/__init__.py" in dockerfile)
+
+from command_center.backend.services.calendar_service import CORE_AVAILABLE
+check("und er lässt sich wirklich importieren", CORE_AVAILABLE)
+
+print("\n19. Ein 401 von n8n heißt nicht von selbst 'abgelaufen'")
+# Auf der laufenden Instanz stand n8n auf OFFLINE mit dem Rat, den Schlüssel
+# neu zu erzeugen. Der Schlüssel war aber in Ordnung — er gehörte zur
+# n8n-Cloud, während N8N_BASE_URL auf einen Container nebenan zeigte. Beide
+# heißen n8n, beide antworten, und ein n8n-Schlüssel gilt nur bei der
+# Instanz, die ihn ausgestellt hat. Der alte Rat schickte zum zweiten Mal
+# an dieselbe falsche Stelle.
+import base64 as _b64x
+import json as _jsonx
+import time as _timex
+
+from command_center.backend.adapters.integrations import (
+    IntegrationRegistry, jwt_claims, key_verdict)
+from command_center.backend.db import now_iso as _now_iso
+from command_center.backend.events import EventBus as _Bus
+
+
+def _jwt(exp_offset_days: int) -> str:
+    payload = {"exp": int(_timex.time()) + 86400 * exp_offset_days}
+    seg = _b64x.urlsafe_b64encode(_jsonx.dumps(payload).encode()).decode().rstrip("=")
+    return f"header.{seg}.signature"
+
+
+check("ein abgelaufener Schlüssel wird als abgelaufen benannt",
+      "abgelaufen." in key_verdict(_jwt(-30)), key_verdict(_jwt(-30)))
+check("ein gültiger Schlüssel widerspricht dem 'abgelaufen'",
+      "NICHT abgelaufen" in key_verdict(_jwt(+300)), key_verdict(_jwt(+300)))
+check("was kein JWT ist, wird nicht gedeutet", key_verdict("irgendein-string") == "")
+check("und ergibt keine Angaben", jwt_claims("zu.wenig") == {})
+check("der Schlüssel selbst steht nirgends im Urteil",
+      _jwt(+300).split(".")[1] not in key_verdict(_jwt(+300)))
+
+_alt_base, _alt_key = os.environ.get("N8N_BASE_URL"), os.environ.get("N8N_API_KEY")
+os.environ["N8N_BASE_URL"] = "http://n8n:5678"
+os.environ["N8N_API_KEY"] = _jwt(+300)
+
+
+class Fake401:
+    def __init__(self, *a, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def get(self, url, headers=None, params=None):
+        return FakeResponse({"message": "unauthorized"}, status=401)
+
+
+_n8n_state = build_state()
+_reg = IntegrationRegistry(_n8n_state.db, _Bus())
+_n8n = _reg.get("n8n")
+check("der n8n-Adapter bekommt die Datenbank, sonst kann er nichts vergleichen",
+      _n8n.db is not None)
+
+_n8n_state.db.execute(
+    "INSERT INTO mcp_servers (id,slug,name,url,token,enabled,requires_approval,created_at)"
+    " VALUES (?,?,?,?,?,?,?,?)",
+    ["mcp-n8n-test", "n8ncloud", "n8n Cloud",
+     "https://beispiel.app.n8n.cloud/mcp-server/http", "", 1, 0, _now_iso()])
+
+import command_center.backend.adapters.integrations as _INT
+_int_client = _INT.httpx.AsyncClient
+_INT.httpx.AsyncClient = Fake401
+try:
+    detail = run(_n8n.check())["detail"]
+finally:
+    _INT.httpx.AsyncClient = _int_client
+    for k, v in (("N8N_BASE_URL", _alt_base), ("N8N_API_KEY", _alt_key)):
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
+check("die Meldung nennt die Adresse, die abgelehnt hat", "http://n8n:5678" in detail, detail)
+check("sie behauptet nicht, der Schlüssel sei abgelaufen",
+      "NICHT abgelaufen" in detail, detail)
+check("sie rät nicht zum Neuerzeugen, wenn der Schlüssel gilt",
+      "Neu erzeugen" not in detail, detail)
+check("sie nennt die andere Instanz beim Namen",
+      "beispiel.app.n8n.cloud" in detail, detail)
+check("und sagt, dass ein Schlüssel nur bei seiner eigenen Instanz gilt",
+      "ausgestellt hat" in detail, detail)
+check("der Schlüssel steht nicht in der Meldung", os.environ.get("N8N_API_KEY", "x") not in detail)
+
+print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
+sys.exit(1 if fails else 0)

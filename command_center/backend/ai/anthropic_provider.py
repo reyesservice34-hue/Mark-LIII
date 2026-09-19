@@ -1,0 +1,143 @@
+"""Anthropic provider — official SDK, streaming, tool use."""
+from __future__ import annotations
+
+from typing import AsyncIterator, Callable
+
+from .base import ProviderInfo, ToolDef, ToolNameMap
+
+
+def _explain(status: int, message: str) -> str:
+    """Turn the API's own wording into something that names the fix.
+
+    Passing the raw SDK text through is honest but useless: the operator sees
+    a 400 and has no idea which of their settings caused it. Only cases whose
+    remedy is unambiguous are translated; everything else stays verbatim.
+    """
+    low = (message or "").lower()
+    if "workspace" in low and "scoped" in low:
+        return ("Anthropic refused the key: it belongs to the organisation, not to a workspace, "
+                "so every request must name one. Either set ANTHROPIC_WORKSPACE_ID in "
+                "command_center/.env, or create a new key inside a workspace at "
+                "console.anthropic.com/settings/keys.")
+    if "credit balance" in low or "insufficient" in low:
+        return ("Anthropic refused the request: the account has no credit left. "
+                "Top up at console.anthropic.com/settings/billing.")
+    if status == 404 and "model" in low:
+        return (f"Anthropic does not know that model. Check JARVIS_AI_MODEL in "
+                f"command_center/.env — {message}")
+    return f"Anthropic API error {status}: {message}"
+
+
+class AnthropicProvider:
+    def __init__(self, api_key: str, model: str = "claude-opus-5", workspace_id: str = ""):
+        import anthropic
+        self._anthropic = anthropic
+        # An API key created at organisation level rather than inside a
+        # workspace carries no workspace of its own, and every request is
+        # rejected with 400 until one is named. The alternative — creating the
+        # key inside a workspace — is not always the user's to make, so the
+        # header is supported here.
+        headers = {"anthropic-workspace-id": workspace_id} if workspace_id else None
+        self._client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=2,
+                                                default_headers=headers)
+        self.info = ProviderInfo(id="anthropic", model=model, label=f"Anthropic · {model}")
+
+    @staticmethod
+    def _convert_messages(messages: list[dict], wire: "Callable[[str], str]" = lambda n: n) -> list[dict]:
+        out = []
+        for m in messages:
+            blocks = []
+            for b in m["content"]:
+                t = b.get("type")
+                if t == "text":
+                    if b.get("text"):
+                        blocks.append({"type": "text", "text": b["text"]})
+                elif t == "image":
+                    blocks.append({"type": "image", "source": {
+                        "type": "base64", "media_type": b["media_type"], "data": b["data"]}})
+                elif t == "tool_use":
+                    # The history is validated against the same name rule as the
+                    # declarations, so an earlier call has to be renamed too.
+                    blocks.append({"type": "tool_use", "id": b["id"], "name": wire(b["name"]),
+                                   "input": b.get("input") or {}})
+                elif t == "tool_result":
+                    blocks.append({"type": "tool_result", "tool_use_id": b["tool_use_id"],
+                                   "content": b.get("content") or "", "is_error": bool(b.get("is_error"))})
+            if blocks:
+                out.append({"role": m["role"], "content": blocks})
+        return out
+
+    async def stream(self, *, system: str, messages: list[dict], tools: list[ToolDef],
+                     max_tokens: int = 16000) -> AsyncIterator[dict]:
+        anthropic = self._anthropic
+        # Anthropic accepts only [a-zA-Z0-9_-]{1,128} as a tool name, and every
+        # name in this registry is dotted. Translated here and back again below.
+        names = ToolNameMap((t.name for t in tools), limit=128)
+        kwargs: dict = {
+            "model": self.info.model,
+            "max_tokens": max_tokens,
+            "messages": self._convert_messages(messages, names.wire),
+        }
+        if system:
+            kwargs["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        if tools:
+            kwargs["tools"] = [{"name": names.wire(t.name), "description": t.description,
+                                "input_schema": t.input_schema} for t in tools]
+        try:
+            async with self._client.messages.stream(**kwargs) as stream:
+                async for event in stream:
+                    if event.type == "text":
+                        yield {"type": "text_delta", "text": event.text}
+                final = await stream.get_final_message()
+        except anthropic.AuthenticationError as e:
+            yield {"type": "error", "message": f"Anthropic rejected the API key: {e.message}", "retryable": False}
+            return
+        except anthropic.RateLimitError as e:
+            yield {"type": "error", "message": f"Anthropic rate limit: {e.message}", "retryable": True}
+            return
+        except anthropic.APIStatusError as e:
+            yield {"type": "error", "message": _explain(e.status_code, e.message),
+                   "retryable": e.status_code >= 500}
+            return
+        except anthropic.APIConnectionError as e:
+            yield {"type": "error", "message": f"Cannot reach Anthropic: {e}", "retryable": True}
+            return
+
+        content: list[dict] = []
+        for block in final.content:
+            if block.type == "text":
+                content.append({"type": "text", "text": block.text})
+            elif block.type == "tool_use":
+                content.append({"type": "tool_use", "id": block.id,
+                                "name": names.real(block.name),
+                                "input": dict(block.input or {})})
+        stop = final.stop_reason or "end_turn"
+        if stop == "refusal":
+            detail = ""
+            sd = getattr(final, "stop_details", None)
+            if sd is not None:
+                detail = f" ({getattr(sd, 'category', '') or ''} {getattr(sd, 'explanation', '') or ''})".rstrip()
+            yield {"type": "error", "message": "The model declined this request" + detail, "retryable": False}
+            return
+        if stop == "max_tokens" and any(b["type"] == "tool_use" for b in content):
+            yield {"type": "error", "message": "Tool input was cut off by the token limit", "retryable": False}
+            return
+        for b in content:
+            if b["type"] == "tool_use":
+                yield {"type": "tool_use", "id": b["id"], "name": b["name"], "input": b["input"]}
+        usage = {"input_tokens": getattr(final.usage, "input_tokens", 0),
+                 "output_tokens": getattr(final.usage, "output_tokens", 0)}
+        yield {"type": "message_end", "stop_reason": stop, "content": content, "usage": usage}
+
+    async def health(self) -> dict:
+        try:
+            await self._client.with_options(timeout=8.0, max_retries=0).models.retrieve(self.info.model)
+            return {"status": "healthy", "detail": f"model {self.info.model} available"}
+        except self._anthropic.AuthenticationError:
+            return {"status": "offline", "detail": "API key rejected"}
+        except self._anthropic.NotFoundError:
+            return {"status": "degraded", "detail": f"model {self.info.model} not found"}
+        except self._anthropic.APIConnectionError:
+            return {"status": "offline", "detail": "cannot reach api.anthropic.com"}
+        except Exception as e:  # noqa: BLE001
+            return {"status": "degraded", "detail": str(e)[:200]}

@@ -1,0 +1,133 @@
+"""Health + global status bar data."""
+from __future__ import annotations
+
+import time
+from functools import lru_cache
+
+from fastapi import APIRouter, Depends
+
+from ...auth import Principal
+from ...deps import AppState, current_principal, get_state
+from .. import ModuleSpec
+
+router = APIRouter(prefix="/api", tags=["health"])
+
+
+@lru_cache(maxsize=1)
+def build_rev() -> str:
+    """Welcher Stand hier wirklich läuft.
+
+    „Ist der neue Code drauf?" war bisher nicht zu beantworten, ohne sich auf
+    den Server zu setzen — und ein `git pull`, der wegen lokaler Änderungen
+    nicht durchging, sieht von außen genauso aus wie ein geglückter. Der
+    Commit wird beim Bauen ins Bild geschrieben; steht er nicht drin, wird er
+    aus dem Arbeitsverzeichnis gelesen, und sonst heißt es ehrlich „unbekannt".
+    """
+    import os
+    import subprocess
+    from pathlib import Path
+
+    rev = os.environ.get("JARVIS_CC_BUILD", "").strip()
+    if rev:
+        return rev[:12]
+    try:
+        root = Path(__file__).resolve().parents[4]
+        out = subprocess.run(["git", "-C", str(root), "rev-parse", "--short=10", "HEAD"],
+                             capture_output=True, text=True, timeout=3)
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return "unbekannt"
+
+
+def _overall(parts: dict) -> str:
+    statuses = [p.get("status") for p in parts.values()]
+    if any(s == "offline" for s in statuses):
+        return "degraded" if parts["application"]["status"] == "healthy" else "offline"
+    if any(s == "degraded" for s in statuses):
+        return "degraded"
+    return "healthy"
+
+
+@router.get("/health")
+async def health(state: AppState = Depends(get_state)):
+    """Unauthenticated liveness/readiness summary — structure only, no secrets."""
+    try:
+        state.db.scalar("SELECT 1")
+        db_status = {"status": "healthy", "detail": "sqlite ok"}
+    except Exception as e:  # noqa: BLE001
+        db_status = {"status": "offline", "detail": str(e)[:100]}
+    master = state.runtime.status()
+    ph = master["provider_health"].get("status", "unknown")
+    # „degraded" mit dem Text „JARVIS READY" daneben ist keine Auskunft: es
+    # sagt, dass etwas klemmt, und verschweigt was. Klemmt es, steht hier,
+    # woran — das ist die einzige Stelle, an der man ohne Anmeldung nachsehen
+    # kann, und genau dort wird gesucht, wenn er nicht antwortet.
+    healthy = master["online"] and ph in ("healthy", "unknown")
+    trouble = str(master["provider_health"].get("detail") or master.get("error") or "").strip()
+    gateway = {"status": "healthy" if healthy else "degraded" if master["online"] else "offline",
+               "detail": master["label"] if healthy else (trouble[:200] or master["label"]),
+               "mode": master["mode"]}
+    if not healthy and master["provider_health"].get("status"):
+        gateway["provider"] = master["provider_health"]["status"]
+    integ = state.integrations.summary()
+    integrations = {"status": "healthy" if integ["degraded"] == 0 else "degraded",
+                    "detail": f"{integ['connected']} connected, {integ['degraded']} with problems, "
+                              f"{integ['total'] - integ['configured']} not configured"}
+    metrics = state.services["metrics"]
+    svc = metrics.service_status()
+    server = {"status": "offline" if any(s["status"] == "offline" for s in svc) else
+              ("degraded" if any(s["status"] == "degraded" for s in svc) else "healthy"),
+              "detail": f"{len(svc)} monitored services" if svc else "no monitored services configured",
+              "docker": metrics.overview()["docker"]}
+    parts = {"application": {"status": "healthy", "detail": f"v{state.version} · {build_rev()}",
+                             "build": build_rev(),
+                             "uptime_seconds": int(time.time() - state.started_at)},
+             "database": db_status, "agent_gateway": gateway, "integrations": integrations,
+             "server_services": server}
+    return {"status": _overall(parts), "components": parts, "version": state.version}
+
+
+@router.get("/architecture")
+async def architecture_view(state: AppState = Depends(get_state),
+                            _: Principal = Depends(current_principal)):
+    """Der Aufbau, wie er gerade wirklich ist — für die Zeichnung im Dashboard."""
+    from ...services.inventory import architecture
+    return architecture(state)
+
+
+@router.get("/inventory")
+async def inventory_view(state: AppState = Depends(get_state),
+                         _: Principal = Depends(current_principal)):
+    """Derselbe Bestand in Zahlen. Dasselbe sieht der Master Agent über system.inventory."""
+    from ...services.inventory import inventory
+    return inventory(state)
+
+
+@router.get("/status")
+async def status(state: AppState = Depends(get_state), principal: Principal = Depends(current_principal)):
+    """Everything the top status bar shows, in one call."""
+    metrics = state.services["metrics"]
+    sample = metrics.latest() or metrics.sample()
+    master = state.runtime.status()
+    tasks = state.services["tasks"].counts()
+    return {
+        "jarvis": {"online": True, "label": master["label"], "version": state.version,
+                   "uptime_seconds": int(time.time() - state.started_at)},
+        "master": master,
+        "server": {"connected": True, "hostname": metrics.overview()["hostname"], "cpu": sample["cpu"],
+                   "ram": sample["ram"], "disk": sample["disk"], "load": sample["load"],
+                   "net_rx": sample["net_rx"], "net_tx": sample["net_tx"], "uptime": sample["uptime"],
+                   "docker": metrics.overview()["docker"]},
+        "tasks": tasks,
+        "agents": state.agents.counts(),
+        "approvals_pending": state.services["approvals"].pending_count(),
+        "notifications_unread": state.services["notifications"].unread_count(principal.id),
+        "integrations": state.integrations.summary(),
+        "events_subscribers": state.bus.subscriber_count,
+        "user": principal.public(),
+    }
+
+
+MODULE = ModuleSpec(id="health", title="Zustand", router=router, nav=False, order=1)

@@ -1,0 +1,142 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "@/lib/api";
+import { toast } from "@/lib/toast";
+import { Mic, Square } from "@/lib/icons";
+import { type LiveState } from "@/app/voice/live";
+import { closeLine, openLine, useLive } from "@/app/voice/liveStore";
+import "./voice-console.css";
+
+const PHASE_LABEL: Record<LiveState, string> = {
+  connecting: "Verbinde",
+  listening: "Ich höre",
+  thinking: "Denke nach",
+  speaking: "Antworte",
+  closed: "Bereit",
+};
+
+interface LiveCaps {
+  available: boolean;
+  detail: string;
+  model: string;
+  voice: string;
+  tools: number;
+}
+
+/**
+ * Die Sprachkonsole: eine offene Leitung, kein Knopfdruck-Betrieb.
+ *
+ * Einmal auf „Leitung öffnen", danach bleibt das Mikrofon offen. Wann eine
+ * Äußerung zu Ende ist, entscheidet das Modell; man kann ihm ins Wort fallen
+ * und er hört sofort auf zu reden.
+ *
+ * Sie täuscht nichts vor: fehlt der Schlüssel oder läuft die Seite nicht über
+ * HTTPS, steht genau das da, statt eines Knopfes, der nichts tut.
+ */
+export function VoiceConsole() {
+  const [caps, setCaps] = useState<LiveCaps | null>(null);
+  // Zustand und Leitung liegen im Speicher der Anwendung. Diese Konsole ist
+  // nur das Fenster darauf — sie wird beim Seitenwechsel abgebaut, das
+  // Gespräch nicht.
+  const live = useLive();
+  const state: LiveState = live.phase;
+  const { heard, said, tools } = live;
+  const alive = useRef(true);
+  const shown = useRef("");
+
+  useEffect(() => {
+    alive.current = true;
+    api.get<LiveCaps>("/api/voice/live/capabilities")
+      .then((c) => alive.current && setCaps(c))
+      .catch(() => alive.current && setCaps({ available: false, detail: "Der Server hat auf die Anfrage "
+        + "nach der Live-Leitung nicht geantwortet.", model: "", voice: "", tools: 0 }));
+    return () => { alive.current = false; };
+  }, []);
+
+  // Fehler kommen aus dem Speicher und sollen einmal auffallen, nicht bei
+  // jedem Neuzeichnen erneut.
+  useEffect(() => {
+    if (live.error && live.error !== shown.current) {
+      shown.current = live.error;
+      toast({ title: "Live-Leitung", body: live.error, tone: "err" });
+    }
+    if (!live.error) shown.current = "";
+  }, [live.error]);
+
+  // Der Browser gibt das Mikrofon nur auf sicherem Ursprung frei. Das ist
+  // keine Servereinstellung — also hier benannt, statt den Nutzer rätseln zu
+  // lassen, warum nichts passiert.
+  const insecure = typeof window !== "undefined" && !window.isSecureContext;
+  const blocked = !caps ? "Prüfe die Leitung …"
+    : insecure ? "Das Mikrofon gibt der Browser nur über HTTPS frei. Ruf das Dashboard über deine Domain auf, nicht über die IP-Adresse."
+      : !caps.available ? caps.detail
+        : "";
+
+  const open = state !== "closed";
+
+  const start = useCallback(async () => {
+    if (blocked || open) return;
+    try {
+      await openLine();
+    } catch {
+      // Der Grund steht schon im Speicher und wird oben angezeigt.
+    }
+  }, [blocked, open]);
+
+  const stop = useCallback(async () => { await closeLine(); }, []);
+
+  return (
+    <section className={`voice-console phase-${state}`} aria-label="Sprachkonsole">
+      <div className="vc-core" aria-hidden>
+        <span className="vc-ring r1" />
+        <span className="vc-ring r2" />
+        <span className="vc-ring r3" />
+        <span className="vc-nucleus" />
+      </div>
+
+      <div className="vc-body">
+        <div className="vc-phase">
+          <span className={`dot ${open ? "live" : ""} ${blocked ? "err" : open ? "info" : ""}`} />
+          {blocked ? "Nicht verfügbar" : PHASE_LABEL[state]}
+          {caps?.available && !blocked && (
+            <span className="vc-meta">{caps.voice} · {caps.tools} Werkzeuge</span>
+          )}
+        </div>
+
+        {blocked ? (
+          <p className="vc-blocked">{blocked}</p>
+        ) : (
+          <>
+            {heard && <p className="vc-heard">„{heard}"</p>}
+            {said ? <p className="vc-answer">{said}</p>
+              : !heard && (
+                <p className="vc-hint">
+                  {open ? "Sprich einfach los. Das Mikrofon bleibt offen, du kannst ihm jederzeit ins "
+                        + "Wort fallen, und die Leitung bleibt bestehen, auch wenn du im Dashboard "
+                        + "woanders hingehst — sie endet erst, wenn du sie schließt."
+                    : "Öffne die Leitung und sprich. Er hört durchgehend zu, antwortet mit Stimme und "
+                      + "greift dabei auf seine echten Werkzeuge zu."}
+                </p>
+              )}
+            {tools.length > 0 && (
+              <div className="vc-tools">
+                {tools.map((t, i) => (
+                  <span key={`${t.name}-${i}`} className={`vc-tool ${t.ok ? "ok" : "err"}`}>
+                    <span className={`dot ${t.ok ? "ok" : "err"}`} />{t.name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="vc-actions">
+          <button className={`btn ${open ? "danger" : "primary"}`} onClick={open ? stop : start}
+            disabled={!!blocked || state === "connecting"} title={blocked || undefined}>
+            {open ? <Square size={15} /> : <Mic size={15} />}
+            {state === "connecting" ? "Verbinde …" : open ? "Leitung schließen" : "Leitung öffnen"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}

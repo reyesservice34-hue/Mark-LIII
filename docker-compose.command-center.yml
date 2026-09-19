@@ -1,0 +1,131 @@
+# JARVIS Command Center — standalone compose file so it can be added next to an
+# existing stack without touching it:
+#   docker compose -f docker-compose.command-center.yml up -d --build
+#
+# Configure through command_center/.env (copy command_center/.env.example).
+# Put a reverse proxy (Caddy / Traefik / nginx) with TLS in front of port 8080
+# and set JARVIS_CC_SECURE_COOKIES=true (or leave "auto" with X-Forwarded-Proto).
+services:
+  jarvis-command-center:
+    build:
+      context: .
+      dockerfile: command_center/Dockerfile
+      args:
+        # install.sh und setup-keys.sh setzen das auf den ausgecheckten Commit.
+        # Steht es leer, liest die Anwendung ihn beim Start selbst aus dem
+        # Arbeitsverzeichnis — im Container gibt es das nicht, dann sagt
+        # /api/health ehrlich "unbekannt".
+        JARVIS_CC_BUILD: "${JARVIS_CC_BUILD:-}"
+        # Chromium für die browser.*-Werkzeuge. Kostet mehrere hundert MB,
+        # deshalb aus; einschalten mit JARVIS_CC_BROWSER=true in der .env.
+        JARVIS_CC_BROWSER: "${JARVIS_CC_BROWSER:-false}"
+    image: jarvis-command-center:latest
+    container_name: jarvis-command-center
+    restart: unless-stopped
+    env_file:
+      - command_center/.env
+    environment:
+      JARVIS_CC_DATA_DIR: /data
+      JARVIS_CC_WORKSPACE_DIR: /data/workspace
+    ports:
+      - "${JARVIS_CC_BIND:-127.0.0.1}:${JARVIS_CC_PORT:-8080}:8080"
+    # The container runs as a non-root user, but the docker socket is
+    # root:docker 660 — without that group it cannot read it, and the Server
+    # page honestly but uselessly says "offline". The host's docker group id
+    # differs per machine, so setup-keys.sh detects it and writes it to .env.
+    # The default is nogroup, which grants nothing.
+    group_add:
+      - "${JARVIS_CC_DOCKER_GID:-65534}"
+    networks:
+      - default
+      # Reaches a neighbouring stack (n8n, a database) by container name.
+      # Set JARVIS_CC_SHARED_NETWORK in command_center/.env to that stack's
+      # network; unset it falls back to the always-present default bridge,
+      # which changes nothing.
+      - shared
+    # Damit ein Dienst, der auf dem Host selbst lauscht (Ollama, LM Studio,
+    # eine Datenbank), unter host.docker.internal erreichbar ist. Unter Linux
+    # gibt es diesen Namen sonst nicht — man müsste die Bridge-IP raten.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - jarvis-cc-data:/data
+      # Optional: let the Server page see and (with JARVIS_CC_ALLOW_DOCKER_ACTIONS=true) restart containers.
+      # Read-only mount still allows list/stats/logs; restarts need :rw. Remove the line to disable docker entirely.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Am eigenen Quelltext arbeiten (source.*). Das Verzeichnis ist dasselbe,
+      # aus dem gebaut wird, also wirkt eine Änderung beim nächsten Bauen —
+      # anders als im Abbild, wo sie verschwände. Ohne JARVIS_CC_SOURCE_DIR in
+      # der .env sind die Werkzeuge aus und sagen das auch; der Mount allein
+      # schaltet nichts frei. Zum Abschalten die Zeile entfernen.
+      - ${JARVIS_CC_SOURCE_MOUNT:-.}:/repo
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── Ollama im selben Netz ───────────────────────────────────────────────
+  # Aus, bis man es ausdrücklich will:
+  #   docker compose --env-file command_center/.env \
+  #     -f docker-compose.command-center.yml --profile ollama up -d
+  #
+  # Warum als Container und nicht auf dem Host: Ein Ollama, das auf dem Host
+  # läuft, lauscht standardmäßig auf 127.0.0.1 und ist damit aus JEDEM
+  # Container unerreichbar — auch über host.docker.internal. Man muss dann
+  # systemd überschreiben, die Firewall öffnen und die Bridge-Adresse raten.
+  # Hier stehen beide im selben Netz und reden über den Namen: kein Umweg,
+  # keine Firewall, nichts zu raten.
+  #
+  # Dazu in command_center/.env:
+  #   JARVIS_AI_PROVIDER=local
+  #   LOCAL_LLM_URL=http://ollama:11434
+  #   LOCAL_LLM_MODEL=qwen2.5:7b
+  #
+  # Das Modell einmal holen (sonst antwortet Ollama, kennt aber nichts):
+  #   docker compose ... exec ollama ollama pull qwen2.5:7b
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jarvis-ollama
+    profiles: ["ollama"]
+    restart: unless-stopped
+    # Ausdrücklich dasselbe Netz wie der Command Center. Beide lägen ohnehin
+    # im Standardnetz — aber „ohnehin" ist keine Zusicherung, und wenn es
+    # bricht, sucht man zuletzt hier.
+    networks:
+      - default
+    # Kein Port nach außen: Nur der Command Center soll herankommen, und der
+    # steht im selben Netz. Ein offener Port 11434 wäre ein Modellserver ohne
+    # jede Anmeldung im Internet.
+    expose: ["11434"]
+    volumes:
+      # Die Modelle überleben einen Neubau — sonst lädt man mehrere Gigabyte
+      # bei jedem docker compose up erneut herunter.
+      - jarvis-ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  # Joined in addition to this stack's own network, so a container name like
+  # http://n8n:5678 resolves. It must already exist — hence "external" — and
+  # nothing is created or changed in the other stack by joining it.
+  # Find the name with:
+  #   docker inspect n8n --format '{{range $$k,$$v := .NetworkSettings.Networks}}{{$$k}} {{end}}'
+  shared:
+    external: true
+    name: ${JARVIS_CC_SHARED_NETWORK:-bridge}
+
+volumes:
+  jarvis-cc-data:
+  jarvis-ollama-models:

@@ -1,0 +1,202 @@
+/*
+ * Die Sprachkonsole.
+ *
+ * Der Kern ist orange — das ist die Farbe des Denkens in diesem Haus. Blau
+ * bleibt dem Gerät und seinen Zuständen, Grün der Bestätigung, Rot dem
+ * Fehler. Ein Kern in derselben Farbe wie alles andere verschwindet zwischen
+ * den Kacheln; dieser soll das Erste sein, was man sieht.
+ * Der Kern reagiert auf den Zustand, statt immer gleich zu
+ * leuchten: ruhig im Leerlauf, atmend beim Zuhören, schnell beim Denken,
+ * pulsierend beim Sprechen. Ohne diese Rückmeldung weiß niemand, ob er
+ * gerade reden soll oder warten muss.
+ *
+ * Alles hier respektiert prefers-reduced-motion — Bewegung ist Zierde, die
+ * Zustandsfarbe trägt die Information.
+ */
+
+.voice-console {
+  --core: #ff9d2e;
+  --core-hot: #ffd9a0;
+  --core-deep: #d9631a;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 40px;
+  align-items: center;
+  min-height: 340px;
+  padding: 36px 44px;
+  border: 1px solid var(--line-2);
+  border-radius: 18px;
+  background:
+    radial-gradient(760px 340px at 14% 50%, rgba(255, 157, 46, 0.11), transparent 62%),
+    linear-gradient(180deg, var(--bg-2), var(--bg-0));
+  overflow: hidden;
+}
+
+/* Ein feines Raster im Hintergrund — das Gefühl einer Konsole, nicht einer
+   Webseite. Bewusst sehr schwach, damit der Text darauf lesbar bleibt. */
+.voice-console::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(146, 172, 204, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(146, 172, 204, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(660px 320px at 14% 50%, #000 20%, transparent 78%);
+  pointer-events: none;
+}
+
+/* Ein sehr flacher Lichtstreifen, der einmal durchläuft — das Kino-Detail,
+   das die Fläche lebendig macht, ohne vom Text abzulenken. */
+.voice-console::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 157, 46, 0.055) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: vc-sweep 9s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes vc-sweep { 0%, 70% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+/* ── der Kern ──────────────────────────────────────────────────────────── */
+.vc-core {
+  position: relative;
+  width: 230px;
+  height: 230px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.vc-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid var(--core);
+  opacity: 0.35;
+}
+
+/* Eine einzelne kalte Linie gegen das Orange: Ohne sie wirkt der Kern wie
+   eine Warnung, mit ihr wie ein Instrument. */
+.vc-ring.r2 { border-color: rgba(90, 200, 255, 0.55); }
+
+.vc-ring.r1 { inset: 0; border-style: dashed; animation: vc-spin 22s linear infinite; }
+.vc-ring.r2 { inset: 30px; opacity: 0.5; animation: vc-spin 14s linear infinite reverse; }
+.vc-ring.r3 { inset: 62px; opacity: 0.7; border-width: 1.5px; animation: vc-breathe 4s ease-in-out infinite; }
+
+.vc-nucleus {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, var(--core-hot), var(--core) 45%, var(--core-deep));
+  box-shadow: 0 0 60px rgba(255, 157, 46, 0.55), 0 0 140px rgba(255, 157, 46, 0.22);
+  transition: box-shadow 0.4s ease, background 0.4s ease;
+}
+
+@keyframes vc-spin { to { transform: rotate(360deg); } }
+@keyframes vc-breathe { 0%, 100% { transform: scale(1); opacity: 0.7; } 50% { transform: scale(1.06); opacity: 0.35; } }
+@keyframes vc-pulse {
+  0%, 100% { box-shadow: 0 0 50px rgba(255, 157, 46, 0.45), 0 0 120px rgba(255, 157, 46, 0.18); }
+  50% { box-shadow: 0 0 95px rgba(255, 157, 46, 0.95), 0 0 220px rgba(255, 157, 46, 0.42); }
+}
+
+/* Zuhören: der Kern öffnet sich, die Ringe werden schneller. */
+.voice-console.phase-listening .vc-ring.r1 { animation-duration: 9s; opacity: 0.6; }
+.voice-console.phase-listening .vc-ring.r2 { animation-duration: 6s; opacity: 0.75; }
+.voice-console.phase-listening .vc-ring.r3 { animation-duration: 1.4s; }
+.voice-console.phase-listening .vc-nucleus { animation: vc-pulse 1.4s ease-in-out infinite; }
+
+/* Denken: eng und schnell, ohne Puls — er arbeitet, er hört nicht. */
+.voice-console.phase-connecting, .voice-console.phase-thinking .vc-ring.r1 { animation-duration: 3.5s; opacity: 0.55; }
+.voice-console.phase-connecting, .voice-console.phase-thinking .vc-ring.r2 { animation-duration: 2.2s; opacity: 0.8; }
+.voice-console.phase-connecting, .voice-console.phase-thinking .vc-ring.r3 { animation-duration: 0.9s; opacity: 0.9; }
+.voice-console.phase-connecting, .voice-console.phase-thinking .vc-nucleus {
+  background: radial-gradient(circle at 35% 35%, #ffffff, #ffd9a0 40%, var(--core) 75%);
+  box-shadow: 0 0 80px rgba(255, 217, 160, 0.75), 0 0 180px rgba(255, 157, 46, 0.35);
+}
+
+/* Sprechen: ruhiger, aber hell — die Stimme trägt jetzt. */
+.voice-console.phase-speaking .vc-ring.r2 { animation-duration: 8s; opacity: 0.7; }
+.voice-console.phase-speaking .vc-ring.r3 { animation-duration: 2.2s; }
+.voice-console.phase-speaking .vc-nucleus {
+  animation: vc-pulse 2.2s ease-in-out infinite;
+  background: radial-gradient(circle at 35% 35%, var(--core-hot), var(--core) 40%, var(--core-deep));
+  box-shadow: 0 0 90px rgba(255, 157, 46, 0.8), 0 0 200px rgba(90, 200, 255, 0.28);
+}
+
+/* ── Text ──────────────────────────────────────────────────────────────── */
+.vc-body { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+.vc-phase {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.vc-heard {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 17px;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.vc-answer {
+  margin: 0;
+  color: var(--text);
+  font-size: 19px;
+  line-height: 1.6;
+  max-height: 9em;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.vc-hint, .vc-blocked { margin: 0; color: var(--text-3); font-size: 15px; line-height: 1.6; max-width: 60ch; }
+.vc-blocked { color: var(--warn); }
+
+.vc-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.vc-actions .btn.primary, .vc-actions .btn.danger { height: 44px; padding: 0 22px; font-size: 15px; }
+
+@media (max-width: 1100px) {
+  .voice-console { gap: 28px; padding: 28px; min-height: 300px; }
+  .vc-core { width: 180px; height: 180px; }
+  .vc-ring.r3 { inset: 48px; }
+}
+
+@media (max-width: 720px) {
+  .voice-console { grid-template-columns: 1fr; justify-items: center; text-align: center; padding: 24px 18px; min-height: 0; }
+  .vc-core { width: 150px; height: 150px; }
+  .vc-ring.r2 { inset: 20px; }
+  .vc-ring.r3 { inset: 40px; }
+  .vc-nucleus { width: 40px; height: 40px; }
+  .vc-body { align-items: center; }
+  .vc-actions { justify-content: center; }
+  .vc-answer { font-size: 17px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-console::after,
+  .vc-ring,
+  .vc-nucleus { animation: none !important; }
+}
+
+/* Modell und Werkzeugzahl neben dem Zustand — klein, aber es beantwortet
+   „womit redet er gerade eigentlich". */
+.vc-meta { margin-left: auto; color: var(--text-4); letter-spacing: 0.08em; text-transform: none; }
+
+/* Welche Werkzeuge im Gespräch wirklich liefen. Ohne das bliebe es eine
+   Behauptung. */
+.vc-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.vc-tool {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--line-2); background: var(--bg-3);
+  font-size: 12px; color: var(--text-2);
+}
+.vc-tool.err { border-color: rgba(255, 93, 108, 0.35); }
