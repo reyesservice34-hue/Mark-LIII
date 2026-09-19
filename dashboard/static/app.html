@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JARVIS Dashboard</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#07090f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="JARVIS">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
   <script src="/static/crypto.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -50,6 +56,47 @@
     .enc-badge.on  { display: block; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25); color: var(--green); }
     .enc-badge.off { display: block; background: rgba(255,100,100,0.08); border: 1px solid rgba(255,100,100,0.2); color: #f87171; }
     .url { font-size: 10px; font-family: monospace; color: var(--muted); padding: 4px 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+
+    /* ── Geräte: push / location toggles ── */
+    .icon-toggle {
+      display: flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; border-radius: 8px; font-size: 14px;
+      background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+      cursor: pointer; transition: all 0.2s; flex-shrink: 0;
+    }
+    .icon-toggle.on { background: var(--gdim); border-color: rgba(34,197,94,0.4); color: var(--green); }
+    .icon-toggle:active { transform: scale(0.94); }
+
+    /* ── Incoming call overlay ── */
+    #call-overlay {
+      position: fixed; inset: 0; z-index: 999; display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 18px; background: radial-gradient(circle at 50% 30%, #10131f, #05060a 75%);
+      text-align: center; padding: 32px;
+    }
+    #call-overlay.show { display: flex; }
+    .call-ring {
+      width: 96px; height: 96px; border-radius: 50%;
+      background: var(--adim); border: 2px solid var(--accent);
+      display: flex; align-items: center; justify-content: center; font-size: 40px;
+      animation: call-pulse 1.1s ease-in-out infinite;
+    }
+    @keyframes call-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.5); }
+      50%      { box-shadow: 0 0 0 22px rgba(99,102,241,0); }
+    }
+    .call-label { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+    .call-title { font-size: 20px; font-weight: 700; }
+    .call-body { font-size: 15px; color: var(--text); line-height: 1.5; max-width: 340px; }
+    .call-actions { display: flex; gap: 16px; margin-top: 8px; }
+    .call-btn {
+      width: 64px; height: 64px; border-radius: 50%; border: none; font-size: 24px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: transform 0.1s;
+    }
+    .call-btn:active { transform: scale(0.92); }
+    .call-btn.accept  { background: var(--green); }
+    .call-btn.decline { background: #ef4444; }
 
     /* ── FEED ── */
     main { flex: 1; overflow-y: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
@@ -140,9 +187,22 @@
     <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
     <div class="enc-badge" id="enc">AES-256</div>
     <div class="spacer"></div>
+    <button class="icon-toggle" id="push-toggle" title="Push-Benachrichtigungen (JARVIS ruft an)">🔔</button>
+    <button class="icon-toggle" id="loc-toggle" title="Standort teilen (für Anfahrts-Erinnerungen)">📍</button>
     <div class="url">__IP__:__PORT__</div>
   </header>
   <main id="feed"></main>
+
+  <div id="call-overlay">
+    <div class="call-label" id="call-label">JARVIS RUFT AN</div>
+    <div class="call-ring">📞</div>
+    <div class="call-title" id="call-title">JARVIS</div>
+    <div class="call-body" id="call-body"></div>
+    <div class="call-actions">
+      <button class="call-btn decline" id="call-decline" title="Ablehnen">✕</button>
+      <button class="call-btn accept" id="call-accept" title="Annehmen">📞</button>
+    </div>
+  </div>
   <footer>
     <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
     <label class="btn-attach" for="file-inp" title="Send file">📎</label>
@@ -554,6 +614,225 @@
       }
       _micIdle();
     }
+
+    // ── Geräte: device identity ───────────────────────────────────────────────
+    // Set on first pairing (QR auto-login or manual key login) — see
+    // dashboard/server.py's /auto-login and /login. Identifies THIS phone to
+    // the push-subscribe / location endpoints, independently of the bearer
+    // token, which rotates every reconnect.
+    const _deviceToken = localStorage.getItem('jarvis_device_token') || '';
+
+    function _urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const raw     = atob(base64);
+      const out     = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+      return out;
+    }
+
+    // ── Push notifications ("JARVIS ruft an") ─────────────────────────────────
+    const pushToggle = document.getElementById('push-toggle');
+    let _swReg = null;
+
+    async function _registerSw() {
+      if (!('serviceWorker' in navigator)) return null;
+      try {
+        _swReg = await navigator.serviceWorker.register('/sw.js');
+        return _swReg;
+      } catch (e) {
+        console.warn('SW registration failed', e);
+        return null;
+      }
+    }
+
+    async function _currentPushSubscription() {
+      if (!_swReg) return null;
+      try { return await _swReg.pushManager.getSubscription(); } catch { return null; }
+    }
+
+    async function _refreshPushToggleUI() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || !_deviceToken) {
+        pushToggle.style.display = 'none';
+        return;
+      }
+      const sub = await _currentPushSubscription();
+      pushToggle.classList.toggle('on', !!sub);
+    }
+
+    async function _enablePush() {
+      if (Notification.permission === 'denied') {
+        toast('Benachrichtigungen sind für diese Seite blockiert.');
+        return;
+      }
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { toast('Erlaubnis verweigert.'); return; }
+
+      await _registerSw();
+      if (!_swReg) { toast('Service Worker nicht verfügbar.'); return; }
+
+      let key;
+      try {
+        const r = await fetch('/api/push/vapid-public-key');
+        const d = await r.json();
+        if (!d.available || !d.key) { toast('Push ist auf dem Server nicht verfügbar (pip install pywebpush).'); return; }
+        key = d.key;
+      } catch { toast('Konnte VAPID-Key nicht laden.'); return; }
+
+      let sub;
+      try {
+        sub = await _swReg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: _urlBase64ToUint8Array(key),
+        });
+      } catch (e) { toast('Abo fehlgeschlagen: ' + e.message); return; }
+
+      await _authFetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_token: _deviceToken, subscription: sub.toJSON() }),
+      });
+      toast('🔔 Push aktiviert — JARVIS kann dich jetzt anrufen.');
+      pushToggle.classList.add('on');
+    }
+
+    async function _disablePush() {
+      const sub = await _currentPushSubscription();
+      if (sub) { try { await sub.unsubscribe(); } catch {} }
+      await _authFetch('/api/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_token: _deviceToken }),
+      });
+      pushToggle.classList.remove('on');
+      toast('Push deaktiviert.');
+    }
+
+    pushToggle.addEventListener('click', async () => {
+      if (pushToggle.classList.contains('on')) _disablePush();
+      else _enablePush();
+    });
+
+    // ── Standort teilen (für die Abfahrts-Erinnerung) ─────────────────────────
+    const locToggle = document.getElementById('loc-toggle');
+    let _locWatchId = null;
+    let _lastLocSent = 0;
+
+    function _sendLocation(pos) {
+      const now = Date.now();
+      if (now - _lastLocSent < 45000) return;   // throttle — no need for second-by-second updates
+      _lastLocSent = now;
+      _authFetch('/api/location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_token: _deviceToken,
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        }),
+      }).catch(() => {});
+    }
+
+    function _startLocationShare() {
+      if (!navigator.geolocation || !_deviceToken) return;
+      _locWatchId = navigator.geolocation.watchPosition(
+        _sendLocation,
+        (err) => toast('Standort-Fehler: ' + err.message),
+        { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 },
+      );
+      localStorage.setItem('jarvis_share_location', '1');
+      locToggle.classList.add('on');
+    }
+
+    function _stopLocationShare() {
+      if (_locWatchId !== null) { navigator.geolocation.clearWatch(_locWatchId); _locWatchId = null; }
+      localStorage.setItem('jarvis_share_location', '0');
+      locToggle.classList.remove('on');
+    }
+
+    locToggle.addEventListener('click', () => {
+      if (locToggle.classList.contains('on')) _stopLocationShare();
+      else _startLocationShare();
+    });
+
+    if (!navigator.geolocation || !_deviceToken) locToggle.style.display = 'none';
+    else if (localStorage.getItem('jarvis_share_location') === '1') _startLocationShare();
+
+    // ── Incoming call overlay ("JARVIS ruft an") ──────────────────────────────
+    const callOverlay = document.getElementById('call-overlay');
+    const callTitle   = document.getElementById('call-title');
+    const callBody    = document.getElementById('call-body');
+    let _ringCtx = null, _ringTimer = null;
+
+    function _startRing() {
+      try { _ringCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+      const beep = () => {
+        if (!_ringCtx) return;
+        const osc  = _ringCtx.createOscillator();
+        const gain = _ringCtx.createGain();
+        osc.frequency.value = 880;
+        gain.gain.value = 0.15;
+        osc.connect(gain); gain.connect(_ringCtx.destination);
+        osc.start(); osc.stop(_ringCtx.currentTime + 0.35);
+      };
+      beep();
+      _ringTimer = setInterval(beep, 1000);
+      if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]);
+    }
+
+    function _stopRing() {
+      if (_ringTimer) { clearInterval(_ringTimer); _ringTimer = null; }
+      if (_ringCtx)   { try { _ringCtx.close(); } catch {}; _ringCtx = null; }
+    }
+
+    function _showCall(payload) {
+      callTitle.textContent = payload.title || 'JARVIS';
+      callBody.textContent  = payload.body  || '';
+      callOverlay.classList.add('show');
+      _startRing();
+    }
+
+    function _hideCall() {
+      callOverlay.classList.remove('show');
+      _stopRing();
+      try { speechSynthesis.cancel(); } catch {}
+    }
+
+    document.getElementById('call-accept').addEventListener('click', () => {
+      _stopRing();
+      try {
+        const utter = new SpeechSynthesisUtterance(callBody.textContent);
+        utter.lang = 'de-DE';
+        utter.onend = _hideCall;
+        speechSynthesis.speak(utter);
+      } catch { _hideCall(); }
+    });
+
+    document.getElementById('call-decline').addEventListener('click', _hideCall);
+
+    function _handlePushPayload(payload) {
+      if (payload && payload.type === 'call') _showCall(payload);
+      else if (payload && payload.body) { sys(payload.body); toast(payload.title || 'JARVIS'); }
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (e) => {
+        if (e.data && e.data.source === 'jarvis-push') _handlePushPayload(e.data.payload);
+      });
+      _registerSw().then(_refreshPushToggleUI);
+    } else {
+      pushToggle.style.display = 'none';
+    }
+
+    // Opened from a notification tap while the app wasn't already running
+    (function () {
+      const params = new URLSearchParams(location.search);
+      const raw = params.get('call');
+      if (!raw) return;
+      try { _handlePushPayload(JSON.parse(raw)); } catch {}
+      history.replaceState(null, '', location.pathname);
+    })();
   </script>
 </body>
 </html>

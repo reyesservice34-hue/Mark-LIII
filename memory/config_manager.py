@@ -179,6 +179,16 @@ def save_output_device(name: str) -> None:
     _patch_config(output_device=(name or "").strip())
 
 
+def get_ors_api_key() -> str | None:
+    """OpenRouteService key — powers the Geräte travel-time / departure reminder.
+    Free at https://openrouteservice.org/dev/#/signup, no credit card needed."""
+    return load_api_keys().get("ors_api_key") or None
+
+
+def save_ors_api_key(key: str) -> None:
+    _patch_config(ors_api_key=(key or "").strip())
+
+
 def get_plugin_enabled(plugin_name: str) -> bool:
     """Plugins are enabled by default the moment they're discovered (opt-out model)."""
     return load_api_keys().get("plugins_enabled", {}).get(plugin_name, True)

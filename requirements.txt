@@ -34,6 +34,9 @@ cryptography
 python-multipart
 qrcode[pil]
 
+# ── Geräte: push notifications ("JARVIS calling") to a paired phone ───────────
+pywebpush
+
 # ── Plugin extras: Gmail / Google Calendar (OAuth) ────────────────────────────
 google-api-python-client
 google-auth-oauthlib

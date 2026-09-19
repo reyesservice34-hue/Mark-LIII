@@ -62,9 +62,24 @@ It's not just an assistant — it's an extension of your digital life.
 | 🖱️ Desktop Control | Taskbar, window management, and desktop-level operations |
 | 🧑‍💻 Silent Language Memory | Detects spoken language on first use — all future sessions adapt automatically |
 | 📱 Remote Dashboard | Control the assistant from your phone via QR code pairing |
+| 📞 Geräte — JARVIS Calls You | A paired phone can receive a ringing push notification that JARVIS triggers itself for anything urgent — full-screen alert, vibration, and the message read aloud |
+| 🗺️ Termine & Anfahrt | Give an appointment an address and JARVIS works out the drive time from your phone's shared location, then pings you exactly when it's time to leave |
 | ⚡ Auto-Start on Boot | Registers with the OS startup system (registry / LaunchAgent / .desktop) |
 | 📋 Clipboard Intelligence | Copy any text → floating panel with Translate / Summarise / Explain / Fix |
 | 🪪 Assistant Customization | Change the assistant name, your name, voice, and colour from the UI — takes effect immediately |
+
+---
+
+## 📱 Geräte — pairing your phone for calls, push & travel reminders
+
+Open **⚙ → GERÄTE** (next to Remote Control) to see every phone paired with JARVIS, rename or remove one, and send a test call. Pairing itself still happens through **⚙ → REMOTE CONTROL**'s QR code / key — Geräte is where you manage what's paired.
+
+Once a phone is paired, open the dashboard page on it and tap the two icons in its header to opt in to:
+
+- **🔔 Push notifications** — lets JARVIS ring that phone (full-screen alert, vibration, spoken message) even when the dashboard tab isn't open, either because you asked it to (*"call my phone and tell them I'm running late"*) or automatically for a departure reminder. Delivery goes through Apple's/Google's push service, so the computer running JARVIS needs outbound internet access, but the phone does **not** need to be on the same network once it has subscribed.
+- **📍 Location sharing** — the phone reports its position periodically, which is what makes the next feature possible.
+
+With both enabled, tell JARVIS about an appointment with an address — *"add an appointment: dentist, tomorrow 10:00, at Musterstraße 1, Berlin"* — and it computes the drive time from your phone's last known location and rings you with time to spare. This needs a free **OpenRouteService** API key (no credit card): sign up at [openrouteservice.org/dev](https://openrouteservice.org/dev/#/signup) and add it to `config/api_keys.json` as `"ors_api_key": "..."`. Without a key, appointments still save and JARVIS still tells you about them — it just can't compute a departure time.
 
 ---
 
@@ -224,6 +239,7 @@ python main.py
 | **Speakers** | Required for voice replies |
 | **API Key** | Free Gemini API key (entered on first launch → `config/api_keys.json`) |
 | **Wake word** *(optional)* | One-click download from ⚙ → WAKE WORD (`openwakeword`, a few MB, fully local) |
+| **OpenRouteService key** *(optional)* | Free, no card — powers the Geräte departure reminder's drive-time lookup (`ors_api_key` in `config/api_keys.json`) |
 
 ---
 
@@ -243,6 +259,9 @@ Mark LIII/
 │   ├── background_monitor.py # User-configured topic watching — daily DDG check, no crypto
 │   ├── proactive.py          # Proactive 2.0 — time/context/rotation-aware check-ins
 │   ├── reminder.py           # OS-native scheduled notifications
+│   ├── appointments.py       # Termine — appointments with an address, for travel_reminder.py
+│   ├── travel_reminder.py    # Drive-time departure reminders (OpenRouteService + Geräte location)
+│   ├── call_device.py        # call_phone tool — JARVIS rings a paired phone for something urgent
 │   ├── system_monitor.py     # CPU / RAM / GPU / temperature telemetry
 │   ├── computer_settings.py  # Volume, brightness, WiFi, power (per-OS)
 │   ├── computer_control.py   # Keyboard shortcuts, mouse, window management
@@ -270,8 +289,13 @@ Mark LIII/
 │   ├── plugin_loader.py      # Plugin engine — discovery, validation, crash isolation
 │   ├── action_loader.py      # Bundled-action engine — the built-in twin of plugin_loader
 │   └── wake_word.py          # Local "Hey Jarvis" detector — own thread, offline, opt-in
+├── dashboard/
+│   ├── server.py             # FastAPI remote dashboard — pairing, Geräte registry, push, location
+│   ├── push.py               # VAPID keypair + Web Push sending (dashboard/static/sw.js is the receiver)
+│   └── static/                # Phone-side PWA: app.html, sw.js, manifest.json, icons/
 └── config/
-    └── api_keys.json         # API key, OS setting, assistant name, user name, voice, UI colour, toggles
+    └── api_keys.json         # API key, OS setting, assistant name, user name, voice, UI colour,
+                              # toggles, ors_api_key
 ```
 
 ---

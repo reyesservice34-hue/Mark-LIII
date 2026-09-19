@@ -28,8 +28,8 @@ from PyQt6.QtGui import (
     QPen, QPixmap, QRadialGradient, QShortcut,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSplitter,
+    QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QInputDialog, QLabel,
+    QLineEdit, QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSplitter,
     QStackedWidget, QTextEdit, QVBoxLayout, QWidget, QProgressBar,
 )
 
@@ -2506,6 +2506,285 @@ class PluginSettingsOverlay(QWidget):
         lbl.setStyleSheet(f"color: {color}; background: transparent;")
 
 
+def _relative_time(secs_ago: float) -> str:
+    if secs_ago < 90:
+        return "gerade eben"
+    mins = secs_ago / 60
+    if mins < 60:
+        return f"vor {int(mins)} Min"
+    hours = mins / 60
+    if hours < 24:
+        return f"vor {int(hours)} Std"
+    return f"vor {int(hours / 24)} Tagen"
+
+
+class DevicesOverlay(_HudOverlay):
+    """Geräte — every phone paired with JARVIS via Remote Control: name, last
+    seen, whether push notifications + location sharing are active, plus
+    rename / remove / test-call actions.
+
+    Reuses MemoryOverlay's rebuild-in-place machinery (_clear_layout /
+    _settle) so an action like "remove" redraws the list without flicker or a
+    stale ghost frame, exactly like the memory panel's ✕ buttons."""
+
+    _OW = 520
+
+    def __init__(self, action_cb, open_remote_cb, parent=None):
+        super().__init__(parent)
+        self._action_cb      = action_cb        # (action:str, payload:dict) -> dict|None
+        self._open_remote_cb = open_remote_cb    # () -> None, opens RemoteKeyOverlay to pair
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            DevicesOverlay {{
+                background: rgba(0, 6, 10, 246);
+                border: 1px solid {C.BORDER_B};
+                border-radius: 6px;
+            }}
+        """)
+        self.setFixedWidth(self._OW)
+
+        self._lay = QVBoxLayout(self)
+        self._lay.setContentsMargins(20, 16, 20, 16)
+        self._lay.setSpacing(5)
+        self._rebuild()
+
+    def _clear_layout(self):
+        while self._lay.count():
+            item = self._lay.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.hide()
+                w.deleteLater()
+                continue
+            sub = item.layout()
+            if sub is not None:
+                while sub.count():
+                    si = sub.takeAt(0)
+                    sw = si.widget()
+                    if sw is not None:
+                        sw.hide()
+                        sw.deleteLater()
+                sub.deleteLater()
+
+    def _settle(self, before):
+        self._lay.invalidate()
+        self._lay.activate()
+        self.updateGeometry()
+        self.adjustSize()
+        p = self.parentWidget()
+        if p is None:
+            self.update()
+            return
+        self.move(max(0, (p.width()  - self.width())  // 2),
+                  max(0, (p.height() - self.height()) // 2))
+        p.update(before.united(self.geometry()))
+        self.update()
+
+    def _call_action(self, action: str, payload: dict | None = None) -> dict:
+        if not self._action_cb:
+            return {"ok": False, "error": "Dashboard not running."}
+        try:
+            return self._action_cb(action, payload or {}) or {"ok": False}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def _rebuild(self):
+        before = self.geometry()
+        self._clear_layout()
+
+        hdr = QLabel("📱  GERÄTE")
+        hdr.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
+        hdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        self._lay.addWidget(hdr)
+
+        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
+        self._lay.addWidget(sep)
+
+        cap = QLabel("Mit JARVIS gekoppelte Telefone. Ein gekoppeltes Gerät kann "
+                     "Push-Benachrichtigungen empfangen ('JARVIS ruft an') und "
+                     "seinen Standort teilen, damit JARVIS die Anfahrt zu einem "
+                     "Termin berechnen kann.")
+        cap.setWordWrap(True)
+        cap.setFont(QFont("Courier New", 7))
+        cap.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        self._lay.addWidget(cap)
+
+        pair_btn = QPushButton("＋  NEUES GERÄT KOPPELN")
+        pair_btn.setFixedHeight(30)
+        pair_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        pair_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        pair_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {C.PRI};
+                border: 1px solid {C.PRI_DIM}; border-radius: 3px; }}
+            QPushButton:hover {{ background: {C.PRI_GHO}; border-color: {C.PRI}; }}
+        """)
+        pair_btn.clicked.connect(self._on_pair_clicked)
+        self._lay.addWidget(pair_btn)
+
+        result  = self._call_action("list")
+        devices = result.get("devices", []) if result.get("ok") else []
+
+        if not result.get("ok"):
+            err = QLabel(result.get("error", "Dashboard nicht verfügbar."))
+            err.setWordWrap(True)
+            err.setFont(QFont("Courier New", 8))
+            err.setStyleSheet(f"color: {C.RED}; background: transparent;")
+            self._lay.addWidget(err)
+        elif not devices:
+            empty = QLabel("Noch kein Gerät gekoppelt.")
+            empty.setFont(QFont("Courier New", 9))
+            empty.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
+            self._lay.addWidget(empty)
+        else:
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFixedHeight(min(360, 62 * len(devices) + 10))
+            scroll.setStyleSheet(
+                f"QScrollArea {{ border: 1px solid {C.BORDER}; border-radius: 3px; "
+                f"background: transparent; }}"
+            )
+            inner = QWidget()
+            ilay  = QVBoxLayout(inner)
+            ilay.setContentsMargins(6, 6, 6, 6)
+            ilay.setSpacing(6)
+
+            for dev in devices:
+                ilay.addWidget(self._device_row(dev))
+
+            ilay.addStretch()
+            scroll.setWidget(inner)
+            self._lay.addWidget(scroll)
+
+        close = QPushButton("CLOSE")
+        close.setFixedHeight(30)
+        close.setFont(QFont("Courier New", 9))
+        close.setCursor(Qt.CursorShape.PointingHandCursor)
+        close.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {C.TEXT_MED};
+                border: 1px solid {C.BORDER}; border-radius: 3px; }}
+            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
+        """)
+        close.clicked.connect(self.hide)
+        self._lay.addWidget(close)
+
+        self._settle(before)
+        QTimer.singleShot(0, lambda g=before: self._settle(g))
+
+    def _device_row(self, dev: dict) -> QWidget:
+        holder = QWidget()
+        holder.setStyleSheet(
+            f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 4px;"
+        )
+        v = QVBoxLayout(holder)
+        v.setContentsMargins(8, 6, 8, 6)
+        v.setSpacing(2)
+
+        top = QHBoxLayout(); top.setSpacing(6)
+        name = QLabel(dev.get("name") or "Gerät")
+        name.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        name.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+        top.addWidget(name, 1)
+
+        push_ok = dev.get("has_push")
+        badge = QLabel("🔔" if push_ok else "🔕")
+        badge.setToolTip("Push-Benachrichtigungen aktiv" if push_ok else "Keine Push-Benachrichtigungen")
+        badge.setFont(QFont("Courier New", 10))
+        badge.setStyleSheet("background: transparent;")
+        top.addWidget(badge)
+
+        loc = dev.get("location")
+        if loc:
+            loc_badge = QLabel("📍")
+            loc_badge.setToolTip(f"{loc.get('lat'):.4f}, {loc.get('lon'):.4f}")
+            loc_badge.setFont(QFont("Courier New", 10))
+            loc_badge.setStyleSheet("background: transparent;")
+            top.addWidget(loc_badge)
+        v.addLayout(top)
+
+        meta = QLabel(f"Zuletzt aktiv: {_relative_time(dev.get('online_secs_ago', 0))}")
+        meta.setFont(QFont("Courier New", 7))
+        meta.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        v.addWidget(meta)
+
+        row = QHBoxLayout(); row.setSpacing(6)
+        token = dev.get("token", "")
+
+        def _mk_btn(label: str, tooltip: str, on_click) -> QPushButton:
+            b = QPushButton(label)
+            b.setFixedHeight(24)
+            b.setFont(QFont("Courier New", 8))
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setToolTip(tooltip)
+            b.setStyleSheet(f"""
+                QPushButton {{ background: transparent; color: {C.TEXT_MED};
+                    border: 1px solid {C.BORDER}; border-radius: 3px; padding: 0 8px; }}
+                QPushButton:hover {{ color: {C.PRI}; border-color: {C.PRI_DIM}; }}
+            """)
+            b.clicked.connect(on_click)
+            return b
+
+        rename_btn = _mk_btn("✎ Umbenennen", "Gerät umbenennen", lambda: self._on_rename(token, dev.get("name", "")))
+        row.addWidget(rename_btn)
+
+        call_btn = _mk_btn("📞 Testanruf", "Sendet einen Testanruf an dieses Gerät", lambda: self._on_test_call(token))
+        row.addWidget(call_btn)
+
+        remove_btn = QPushButton("✕")
+        remove_btn.setFixedSize(24, 24)
+        remove_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_btn.setToolTip("Gerät entfernen")
+        remove_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {C.TEXT_DIM};
+                border: 1px solid {C.BORDER}; border-radius: 3px; }}
+            QPushButton:hover {{ color: {C.RED}; border-color: {C.RED}; }}
+        """)
+        remove_btn.clicked.connect(lambda: self._on_remove(token))
+        row.addWidget(remove_btn)
+        row.addStretch()
+        v.addLayout(row)
+
+        return holder
+
+    def _on_pair_clicked(self):
+        self.hide()
+        if self._open_remote_cb:
+            self._open_remote_cb()
+
+    def _on_rename(self, token: str, current: str):
+        name, ok = QInputDialog.getText(self, "Gerät umbenennen", "Neuer Name:", text=current)
+        if ok and name.strip():
+            self._call_action("rename", {"token": token, "name": name.strip()})
+            QTimer.singleShot(0, self._rebuild)
+
+    def _on_remove(self, token: str):
+        self._call_action("remove", {"token": token})
+        QTimer.singleShot(0, self._rebuild)
+
+    def _on_test_call(self, token: str):
+        result = self._call_action(
+            "test_call",
+            {"token": token, "message": "Dies ist ein Testanruf von JARVIS."},
+        )
+        info = result.get("result", {}) if result.get("ok") else {}
+        if info.get("sent"):
+            self._flash_status("✓ Testanruf gesendet.")
+        elif info.get("total_devices", 0) and not info.get("pushable"):
+            self._flash_status("⚠ Push nicht aktiviert auf diesem Gerät.")
+        else:
+            self._flash_status("✕ Testanruf fehlgeschlagen.")
+
+    def _flash_status(self, text: str):
+        # Cheap, self-contained feedback — a full row rebuild isn't warranted
+        # for a one-line confirmation.
+        lbl = QLabel(text)
+        lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        lbl.setStyleSheet(f"color: {C.GREEN}; background: transparent;")
+        self._lay.insertWidget(self._lay.count() - 1, lbl)
+        QTimer.singleShot(2500, lambda: (lbl.hide(), lbl.deleteLater()))
+
+
 class RemoteKeyOverlay(QWidget):
     """Floating overlay — QR code for instant phone pairing + manual key fallback."""
 
@@ -2773,6 +3052,7 @@ class MainWindow(QMainWindow):
 
         self.on_text_command   = None
         self.on_remote_clicked = None   # callable: () -> (url, key) | None
+        self.on_devices_action = None   # callable: (action: str, payload: dict) -> dict | None
         self.on_interrupt      = None   # callable: () -> None — stop JARVIS mid-speech
         self.on_voice_change   = None   # callable: () -> None — rebuild session with new voice
         self.on_audio_device_change = None  # callable: () -> None — reopen audio streams
@@ -2785,6 +3065,7 @@ class MainWindow(QMainWindow):
         self._muted            = False
         self._current_file: str | None = None
         self._remote_overlay: RemoteKeyOverlay | None = None
+        self._devices_overlay: "DevicesOverlay | None" = None
         self._customize_overlay: CustomizeOverlay | None = None
 
         central = QWidget()
@@ -3694,6 +3975,14 @@ class MainWindow(QMainWindow):
         remote_btn.clicked.connect(self._open_remote)
         lay.addWidget(remote_btn)
 
+        devices_btn = QPushButton("📱  GERÄTE")
+        devices_btn.setFixedHeight(26)
+        devices_btn.setFont(QFont("Courier New", 7))
+        devices_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        devices_btn.setStyleSheet(_BTN_STYLE_DIM)
+        devices_btn.clicked.connect(self._open_devices)
+        lay.addWidget(devices_btn)
+
         fs_btn = QPushButton("⛶  FULLSCREEN  [F11]")
         fs_btn.setFixedHeight(26)
         fs_btn.setFont(QFont("Courier New", 7))
@@ -4347,6 +4636,13 @@ class MainWindow(QMainWindow):
         self._centre_overlay(ov)
         self._memory_overlay = ov
 
+    # ── Geräte (paired phones) ───────────────────────────────────────────────
+
+    def _open_devices(self):
+        ov = DevicesOverlay(self.on_devices_action, self._open_remote, parent=self.centralWidget())
+        self._centre_overlay(ov)
+        self._devices_overlay = ov
+
     # ── Irreversible-action confirmation ─────────────────────────────────────
 
     def _show_confirm_banner(self, title: str, detail: str):
@@ -4529,6 +4825,8 @@ class JarvisUI:
         self._app.setStyle("Fusion")
         self._win = MainWindow(face_path)
         self.root = _RootShim(self._app)
+        self.dashboard = None   # set by JarvisLive to the DashboardServer instance,
+                                 # so actions (call_phone, etc.) can reach it via `player.dashboard`
         self._win.show()
 
     @property
@@ -4559,6 +4857,14 @@ class JarvisUI:
     @on_remote_clicked.setter
     def on_remote_clicked(self, cb):
         self._win.on_remote_clicked = cb
+
+    @property
+    def on_devices_action(self):
+        return self._win.on_devices_action
+
+    @on_devices_action.setter
+    def on_devices_action(self, cb):
+        self._win.on_devices_action = cb
 
     @property
     def on_interrupt(self):

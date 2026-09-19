@@ -368,6 +368,7 @@ class JarvisLive:
         self._interrupted          = False   # True while draining audio after user interrupt
         self.ui.on_text_command   = self._on_text_command
         self.ui.on_remote_clicked = self._make_remote_key
+        self.ui.on_devices_action = self._devices_action
         self.ui.on_interrupt      = self.interrupt
         self.ui.on_voice_change   = self._on_voice_change     # voice picker → rebuild session
         self.ui.on_audio_device_change = self._on_audio_device_change
@@ -607,6 +608,31 @@ class JarvisLive:
         url    = self._dashboard.get_url()
         manual = self._dashboard.get_manual_url()
         return url, key, f"{url}/auto-login?key={key}", manual
+
+    def _devices_action(self, action: str, payload: dict) -> dict:
+        """Called from the Qt thread by the Geräte overlay — same-process
+        direct calls into the dashboard's device registry, exactly like
+        _make_remote_key() already does for new_key()."""
+        if self._dashboard is None:
+            return {"ok": False, "error": "Dashboard unavailable."}
+        d = self._dashboard
+        try:
+            if action == "list":
+                return {"ok": True, "devices": d.list_devices()}
+            if action == "rename":
+                return {"ok": d.rename_device(payload.get("token", ""), payload.get("name", ""))}
+            if action == "remove":
+                return {"ok": d.remove_device(payload.get("token", ""))}
+            if action == "test_call":
+                result = d.send_call(
+                    "JARVIS",
+                    payload.get("message") or "Dies ist ein Testanruf von JARVIS.",
+                    payload.get("token") or None,
+                )
+                return {"ok": True, "result": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": "Unknown action."}
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
@@ -1418,6 +1444,26 @@ class JarvisLive:
                         print(f"[Monitor] ⚠️ Background check error: {e}")
             await asyncio.sleep(1800)     # check every 30 minutes
 
+    # ── Travel-time / departure reminders (Geräte: Termine) ──────────────────────
+
+    async def _run_travel_reminder_monitor(self) -> None:
+        """Background task: for each upcoming appointment with an address, works
+        out the drive time from the phone's last known location and pings the
+        paired phone (ringing push) when it's time to leave. Independent of
+        whether a Gemini session is connected — this has to fire even while
+        JARVIS is asleep or reconnecting."""
+        await asyncio.sleep(30)
+        while True:
+            if self._dashboard is not None:
+                try:
+                    from actions.travel_reminder import check_and_notify
+                    messages = await asyncio.to_thread(check_and_notify, self._dashboard)
+                    for m in messages:
+                        self.ui.write_log(m)
+                except Exception as e:
+                    print(f"[Travel] ⚠️ Background check error: {e}")
+            await asyncio.sleep(120)      # leave-by windows are tight — check every 2 min
+
     # ── Proactive mode ──────────────────────────────────────────────────────────
 
     async def _run_proactive_mode(self) -> None:
@@ -1548,6 +1594,7 @@ class JarvisLive:
             from dashboard.server import DashboardServer
             self._dashboard = DashboardServer()
             self._dashboard.set_connect_callback(self._on_phone_connected)
+            self.ui.dashboard = self._dashboard   # actions (call_phone) reach it via player.dashboard
             asyncio.create_task(self._dashboard.serve())
             # Runs for the whole lifetime, not just inside an active session
             asyncio.create_task(self._process_dashboard_commands())
@@ -1617,6 +1664,7 @@ class JarvisLive:
                     tg.create_task(self._play_audio())
                     tg.create_task(self._run_system_monitor())
                     tg.create_task(self._run_background_monitor())
+                    tg.create_task(self._run_travel_reminder_monitor())
                     tg.create_task(self._run_proactive_mode())
                     tg.create_task(self._run_sleep_watch())
                     if self._dashboard:

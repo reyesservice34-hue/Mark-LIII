@@ -22,6 +22,7 @@ _DEPS_OK = False
 try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
     from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+    from fastapi.staticfiles import StaticFiles
     import uvicorn
     _DEPS_OK = True
 except ImportError:
@@ -34,6 +35,8 @@ try:
     _UPLOAD_OK = True
 except Exception:
     pass
+
+from dashboard.push import get_public_key_b64, push_available, send_web_push
 
 BASE_DIR    = Path(__file__).resolve().parent.parent
 STATIC_DIR  = Path(__file__).parent / "static"
@@ -364,6 +367,22 @@ def _read(name: str) -> str:
     return (STATIC_DIR / name).read_text(encoding="utf-8")
 
 
+def _device_name_from_ua(ua: str) -> str:
+    """A sane default name for the Geräte list — the user can rename it later."""
+    u = (ua or "").lower()
+    if "iphone" in u:
+        return "iPhone"
+    if "ipad" in u:
+        return "iPad"
+    if "android" in u:
+        return "Android-Gerät"
+    if "macintosh" in u:
+        return "Mac"
+    if "windows" in u:
+        return "Windows-PC"
+    return "Gerät"
+
+
 # ── DashboardServer ───────────────────────────────────────────────────────────
 
 class DashboardServer:
@@ -446,6 +465,77 @@ class DashboardServer:
                 dead.add(ws)
         self._clients -= dead
 
+    # ── Geräte management — called directly from the Qt thread (the drawer's
+    # devices overlay) and from action handlers running in executor threads.
+    # Same relaxed-consistency contract as new_key()/_pending_keys above: this
+    # is a single-user LAN app, plain dict ops under the GIL are enough. ─────
+
+    def list_devices(self) -> list[dict]:
+        now = time.time()
+        out = []
+        for tok, dev in list(self._device_sessions.items()):
+            out.append({
+                "token":            tok,
+                "name":             dev.get("name") or "Gerät",
+                "created":          dev.get("created", 0),
+                "last_seen":        dev.get("last_seen", 0),
+                "online_secs_ago":  max(0.0, now - dev.get("last_seen", 0)),
+                "has_push":         bool(dev.get("push")),
+                "location":         dev.get("location"),
+            })
+        out.sort(key=lambda d: d["last_seen"], reverse=True)
+        return out
+
+    def rename_device(self, token: str, name: str) -> bool:
+        dev = self._device_sessions.get(token)
+        if not dev:
+            return False
+        dev["name"] = (name or "").strip()[:40] or dev.get("name", "Gerät")
+        return True
+
+    def remove_device(self, token: str) -> bool:
+        dev = self._device_sessions.pop(token, None)
+        if not dev:
+            return False
+        for tok in dev.get("tokens", ()):
+            self._tokens.discard(tok)
+            self._token_keys.pop(tok, None)
+        return True
+
+    def get_current_location(self) -> dict | None:
+        """Most recently reported location across all paired devices — used
+        by the travel-time reminder to know where the user is right now."""
+        best = None
+        for dev in self._device_sessions.values():
+            loc = dev.get("location")
+            if loc and (best is None or loc.get("ts", 0) > best.get("ts", 0)):
+                best = loc
+        return best
+
+    def send_call(self, title: str, message: str, device_token: str | None = None) -> dict:
+        """Push a ringing 'incoming call' alert to one or all paired devices.
+        The phone shows a full-screen call UI and reads `message` aloud —
+        see dashboard/static/app.html's push handler and call overlay."""
+        if device_token:
+            devices = [self._device_sessions[device_token]] if device_token in self._device_sessions else []
+        else:
+            devices = list(self._device_sessions.values())
+        payload = {"type": "call", "title": title or "JARVIS", "body": message, "ts": time.time()}
+        sent = failed = pushable = 0
+        for dev in devices:
+            sub = dev.get("push")
+            if not sub:
+                continue
+            pushable += 1
+            ok, dead = send_web_push(sub, payload)
+            if ok:
+                sent += 1
+            else:
+                failed += 1
+                if dead:
+                    dev["push"] = None
+        return {"total_devices": len(devices), "pushable": pushable, "sent": sent, "failed": failed}
+
     # ── FastAPI app ───────────────────────────────────────────────────────
 
     def _build_app(self) -> "FastAPI":
@@ -468,6 +558,21 @@ class DashboardServer:
         async def login_page():
             return HTMLResponse(self._login_html)
 
+        # ── PWA: installable app + service worker (push notifications) ────────
+        # Served at the root, not under /static, so the service worker's default
+        # scope covers the whole origin — a push arriving while the phone shows
+        # any page of the dashboard still reaches it.
+
+        @app.get("/manifest.json")
+        async def manifest():
+            return FileResponse(str(STATIC_DIR / "manifest.json"),
+                                media_type="application/manifest+json")
+
+        @app.get("/sw.js")
+        async def service_worker():
+            return FileResponse(str(STATIC_DIR / "sw.js"),
+                                media_type="application/javascript")
+
         @app.get("/", response_class=HTMLResponse)
         async def index():
             # Auth is handled client-side via sessionStorage bearer token.
@@ -485,22 +590,34 @@ class DashboardServer:
             now     = time.time()
             if entered in self._pending_keys and self._pending_keys[entered] > now:
                 del self._pending_keys[entered]          # one-time use
-                tok = secrets.token_urlsafe(32)
+                tok     = secrets.token_urlsafe(32)
+                dev_tok = secrets.token_urlsafe(32)
                 self._tokens.add(tok)
                 self._token_keys[tok] = entered
                 self._aes_key(entered)                   # pre-derive & cache
+                # Same persistent Geräte entry the QR flow creates — a manually
+                # typed key must be just as capable of push/location as a scan.
+                self._device_sessions[dev_tok] = {
+                    "session_key": entered,
+                    "name":        _device_name_from_ua(req.headers.get("user-agent", "")),
+                    "created":     now,
+                    "last_seen":   now,
+                    "push":        None,
+                    "location":    None,
+                    "tokens":      {tok},
+                }
                 if self._connect_callback:
                     self._connect_callback()
                 asyncio.create_task(self.broadcast(
                     {"type": "sys", "text": "Remote connection established."}
                 ))
                 # Bearer token in response body — no cookies needed (works on any browser/HTTP)
-                return JSONResponse({"ok": True, "token": tok})
+                return JSONResponse({"ok": True, "token": tok, "device_token": dev_tok})
             return JSONResponse({"ok": False, "error": "Invalid or expired key"},
                                 status_code=401)
 
         @app.get("/auto-login")
-        async def auto_login(key: str = ""):
+        async def auto_login(request: Request, key: str = ""):
             """QR code target — validates one-time key, creates session, redirects phone."""
             now = time.time()
             if not key or key not in self._pending_keys or self._pending_keys[key] <= now:
@@ -521,7 +638,15 @@ class DashboardServer:
             self._tokens.add(tok)
             self._token_keys[tok] = key
             self._aes_key(key)
-            self._device_sessions[dev_tok] = {"session_key": key}
+            self._device_sessions[dev_tok] = {
+                "session_key": key,
+                "name":        _device_name_from_ua(request.headers.get("user-agent", "")),
+                "created":     now,
+                "last_seen":   now,
+                "push":        None,
+                "location":    None,
+                "tokens":      {tok},
+            }
 
             if self._connect_callback:
                 self._connect_callback()
@@ -556,11 +681,14 @@ class DashboardServer:
             dev_tok = (body.get("device_token") or "").strip()
             if not dev_tok or dev_tok not in self._device_sessions:
                 return JSONResponse({"ok": False}, status_code=401)
-            session_key = self._device_sessions[dev_tok]["session_key"]
+            dev         = self._device_sessions[dev_tok]
+            session_key = dev["session_key"]
             tok = secrets.token_urlsafe(32)
             self._tokens.add(tok)
             self._token_keys[tok] = session_key
             self._aes_key(session_key)
+            dev["last_seen"] = time.time()
+            dev.setdefault("tokens", set()).add(tok)
             if self._connect_callback:
                 self._connect_callback()
             asyncio.create_task(self.broadcast(
@@ -576,6 +704,78 @@ class DashboardServer:
             count = len(self._device_sessions)
             self._device_sessions.clear()
             return JSONResponse({"ok": True, "revoked": count})
+
+        # ── Geräte: push notifications + location (phone → JARVIS) ────────────
+
+        @app.get("/api/push/vapid-public-key")
+        async def push_vapid_key():
+            return JSONResponse({"key": get_public_key_b64(), "available": push_available()})
+
+        @app.post("/api/push/subscribe")
+        async def push_subscribe(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                body = await req.json()
+            except Exception:
+                return JSONResponse({"error": "Bad request"}, status_code=400)
+            dev_tok = (body.get("device_token") or "").strip()
+            sub     = body.get("subscription")
+            dev     = self._device_sessions.get(dev_tok)
+            if not dev or not isinstance(sub, dict):
+                return JSONResponse({"error": "Unknown device"}, status_code=400)
+            dev["push"]      = sub
+            dev["last_seen"] = time.time()
+            return JSONResponse({"ok": True})
+
+        @app.post("/api/push/unsubscribe")
+        async def push_unsubscribe(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                body = await req.json()
+            except Exception:
+                return JSONResponse({"error": "Bad request"}, status_code=400)
+            dev = self._device_sessions.get((body.get("device_token") or "").strip())
+            if dev:
+                dev["push"] = None
+            return JSONResponse({"ok": True})
+
+        @app.post("/api/location")
+        async def update_location(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                body = await req.json()
+                lat  = float(body["lat"])
+                lon  = float(body["lon"])
+            except Exception:
+                return JSONResponse({"error": "Bad request"}, status_code=400)
+            dev = self._device_sessions.get((body.get("device_token") or "").strip())
+            if not dev:
+                return JSONResponse({"error": "Unknown device"}, status_code=400)
+            dev["location"] = {
+                "lat": lat, "lon": lon,
+                "accuracy": body.get("accuracy"),
+                "ts": time.time(),
+            }
+            dev["last_seen"] = time.time()
+            return JSONResponse({"ok": True})
+
+        @app.post("/api/device-name")
+        async def rename_device_ep(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                body = await req.json()
+            except Exception:
+                return JSONResponse({"error": "Bad request"}, status_code=400)
+            dev  = self._device_sessions.get((body.get("device_token") or "").strip())
+            name = str(body.get("name") or "").strip()[:40]
+            if not dev or not name:
+                return JSONResponse({"error": "Bad request"}, status_code=400)
+            dev["name"] = name
+            return JSONResponse({"ok": True})
 
         @app.post("/api/command")
         async def command(req: Request):
@@ -747,6 +947,11 @@ class DashboardServer:
                 pass
             finally:
                 self._clients.discard(websocket)
+
+        # Registered last so it never shadows the explicit routes above
+        # (e.g. /static/crypto.js, whose file is actually named
+        # crypto-js.min.js) — Starlette matches routes in registration order.
+        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
         return app
 
