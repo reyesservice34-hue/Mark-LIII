@@ -145,8 +145,6 @@ def _run(command: str) -> str:
 
 
 def _restart() -> str:
-    # Prefer the systemd unit from scripts/mark-liii.service when present —
-    # it's what actually keeps the dashboard reachable on the phone.
     check = subprocess.run(
         ["systemctl", "is-enabled", "mark-liii"],
         capture_output=True, text=True,
@@ -224,12 +222,6 @@ TOOL = {
         "when asked to change something that already lives there — actions/ "
         "uses TOOL + a handler= entry instead of PLUGIN, see any existing "
         "actions/*.py file for that shape.)\n\n"
-        "NEEDING A NEW PYTHON PACKAGE for a plugin/tool you're writing: use "
-        "action='run' with command='.venv/bin/pip install <package>' — this "
-        "installs into JARVIS's own virtual environment only, never system-wide "
-        "and never on the rest of the machine. Also add the package to "
-        "requirements.txt (action='read' it first, then 'write' it back with "
-        "the new line appended) so a fresh setup reinstalls it too.\n\n"
         "APPLYING CHANGES: a write only takes effect after action='restart'. "
         "Every write auto-commits to git first — nothing is ever unrecoverable, "
         "`git log`/`git revert` always gets a bad change back. Do the smallest "
