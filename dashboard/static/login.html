@@ -270,6 +270,9 @@
       if (data.ok && data.token) {
         sessionStorage.setItem('jarvis_key', key);
         sessionStorage.setItem('jarvis_token', data.token);
+        if (data.device_token) {
+          localStorage.setItem('jarvis_device_token', data.device_token);
+        }
         location.href = '/';
       } else {
         inp.value = '';

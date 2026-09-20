@@ -551,16 +551,20 @@ class DashboardServer:
             if entered in self._pending_keys and self._pending_keys[entered] > now:
                 del self._pending_keys[entered]          # one-time use
                 tok = secrets.token_urlsafe(32)
+                dev_tok = secrets.token_urlsafe(32)
                 self._tokens.add(tok)
                 self._token_keys[tok] = entered
                 self._aes_key(entered)                   # pre-derive & cache
+                self._device_sessions[dev_tok] = {"session_key": entered}
                 if self._connect_callback:
                     self._connect_callback()
                 asyncio.create_task(self.broadcast(
                     {"type": "sys", "text": "Remote connection established."}
                 ))
                 # Bearer token in response body — no cookies needed (works on any browser/HTTP)
-                return JSONResponse({"ok": True, "token": tok})
+                # device_token lets the phone skip re-entering a PIN next time —
+                # same pairing this login page already does for the QR/auto-login path.
+                return JSONResponse({"ok": True, "token": tok, "device_token": dev_tok})
             return JSONResponse({"ok": False, "error": "Invalid or expired key"},
                                 status_code=401)
 
