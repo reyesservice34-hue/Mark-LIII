@@ -20,7 +20,7 @@ Type=simple
 User=root
 WorkingDirectory=/root/Mark-LIII
 Environment=QT_QPA_PLATFORM=offscreen
-ExecStart=/usr/bin/python3 main.py
+ExecStart=/root/Mark-LIII/.venv/bin/python3 main.py
 Restart=on-failure
 RestartSec=5
 
