@@ -923,6 +923,14 @@ class JarvisLive:
             )
 
     async def _listen_audio(self):
+        # A headless server with no sound hardware at all has no "system
+        # default" device for PortAudio to fall back to — opening one raises
+        # instead of degrading, which used to take the whole session down in
+        # a crash-reconnect loop. The phone mic (relayed in via the dashboard)
+        # is a complete substitute here, so just skip the local stream.
+        if not audio_devices.list_devices("input"):
+            print("[JARVIS] 🎤 No local microphone — using phone mic only.")
+            return
         print("[JARVIS] 🎤 Mic started")
         loop = asyncio.get_event_loop()
 
@@ -1132,6 +1140,16 @@ class JarvisLive:
             raise
 
     async def _play_audio(self):
+        # Same reasoning as _listen_audio: no local speaker to fall back to on
+        # a headless server, and JARVIS's replies already stream to the phone
+        # via the dashboard's broadcast_audio — nothing is lost by skipping.
+        if not audio_devices.list_devices("output"):
+            print("[JARVIS] 🔊 No local speaker — audio goes to the phone only.")
+            # _receive_audio() still fills audio_in_queue for local playback
+            # regardless of whether anything drains it — keep draining it
+            # here so it doesn't grow without bound for the life of the session.
+            while True:
+                await self.audio_in_queue.get()
         print("[JARVIS] 🔊 Play started")
 
         _spk_name = get_output_device()
