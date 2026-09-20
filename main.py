@@ -647,6 +647,10 @@ class JarvisLive:
                     break
             if drained:
                 print(f"[JARVIS] ✋ Interrupted — {drained} audio chunks discarded")
+        if self._dashboard and self._loop:
+            asyncio.run_coroutine_threadsafe(
+                self._dashboard.broadcast_audio_stop(), self._loop
+            )
         self.set_speaking(False)
         if self._turn_done_event:
             self._turn_done_event.clear()
@@ -1023,6 +1027,11 @@ class JarvisLive:
                             # Split into ~50 ms chunks so interrupt() stops audio within 50 ms
                             # (24000 Hz × 2 bytes/sample × 0.05 s = 2400 bytes per slice)
                             _audio_data = response.data
+                            # Local playback (PC speaker) is chunked for fast interrupt;
+                            # the dashboard/phone relay gets the whole piece as one
+                            # message — the browser does its own scheduling.
+                            if self._dashboard:
+                                asyncio.create_task(self._dashboard.broadcast_audio(_audio_data))
                             _SLICE = 2400
                             for _i in range(0, len(_audio_data), _SLICE):
                                 self.audio_in_queue.put_nowait(_audio_data[_i : _i + _SLICE])
@@ -1378,6 +1387,7 @@ class JarvisLive:
             if speaking or (time.monotonic() - self._last_user_speech) < 10:
                 continue
             try:
+                self._ring_phone_if_idle()
                 await self.session.send_client_content(
                     turns={"role": "user", "parts": [{"text": alert}]},
                     turn_complete=True,
@@ -1408,6 +1418,7 @@ class JarvisLive:
                                 f"Inform the user about this development naturally in {lang}. "
                                 "One brief sentence only."
                             )
+                            self._ring_phone_if_idle()
                             await self.session.send_client_content(
                                 turns={"role": "user", "parts": [{"text": msg}]},
                                 turn_complete=True,
@@ -1451,6 +1462,7 @@ class JarvisLive:
                     monitors     = monitors or None,
                     recent_turns = recent_turns or None,
                 )
+                self._ring_phone_if_idle()
                 await self.session.send_client_content(
                     turns={"role": "user", "parts": [{"text": prompt}]},
                     turn_complete=True,
@@ -1483,6 +1495,17 @@ class JarvisLive:
     def _on_phone_connected(self) -> None:
         self.ui.write_log("SYS: Phone connected via Remote Dashboard.")
         self.ui.notify_phone_connected()
+
+    def _ring_phone_if_idle(self) -> None:
+        """Signal connected dashboard clients to ring, for speech JARVIS is
+        about to say on its own initiative (monitor alerts, proactive
+        check-ins). Skipped when the phone mic is already open — the user is
+        already on the line, nothing to announce."""
+        if not self._dashboard or self._phone_active:
+            return
+        if not self._dashboard._clients:
+            return
+        asyncio.create_task(self._dashboard.broadcast_call())
 
     # ── dashboard command relay ─────────────────────────────────────────────
 
