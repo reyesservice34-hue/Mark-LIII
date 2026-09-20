@@ -862,6 +862,16 @@ class DashboardServer:
             finally:
                 self._clients.discard(websocket)
 
+        # Optional: calendar + ETA companion. Silently absent until
+        # config/companion-calendar.json exists — nothing else here depends
+        # on it, and there's no cost or external call unless that file is
+        # actually configured with a real bridge.
+        try:
+            from dashboard.companion import install_companion
+            install_companion(app, _auth, BASE_DIR)
+        except Exception as e:
+            print(f"[Companion] Disabled: {e}")
+
         return app
 
     # ── serve ─────────────────────────────────────────────────────────────
