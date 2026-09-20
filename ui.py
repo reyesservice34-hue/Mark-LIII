@@ -2061,7 +2061,34 @@ class MemoryOverlay(_HudOverlay):
         before = self.geometry()
         self._clear_layout()
 
-        from memory.memory_manager import all_entries_for_ui
+        from memory.memory_manager import all_entries_for_ui, recent_sessions_for_ui
+
+        sessions = recent_sessions_for_ui()
+        if sessions:
+            shdr = QLabel("🗓  LAST SESSION")
+            shdr.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
+            shdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+            self._lay.addWidget(shdr)
+
+            last = sessions[0]
+            line = QLabel(f"<b>{last.get('date', '—')}</b> "
+                          f"<span style='color:{C.TEXT_MED}'>— {last.get('summary', '')}</span>")
+            line.setWordWrap(True)
+            line.setFont(QFont("Courier New", 8))
+            line.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+            self._lay.addWidget(line)
+
+            for prev in sessions[1:]:
+                pline = QLabel(f"{prev.get('date', '—')} "
+                               f"<span style='color:{C.TEXT_DIM}'>— {prev.get('summary', '')}</span>")
+                pline.setWordWrap(True)
+                pline.setFont(QFont("Courier New", 7))
+                pline.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+                self._lay.addWidget(pline)
+
+            ssep = QFrame(); ssep.setFrameShape(QFrame.Shape.HLine)
+            ssep.setStyleSheet(f"color: {C.BORDER}; margin: 6px 0 2px 0;")
+            self._lay.addWidget(ssep)
 
         hdr = QLabel("🧠  WHAT JARVIS REMEMBERS")
         hdr.setFont(QFont("Courier New", 12, QFont.Weight.Bold))

@@ -454,6 +454,19 @@ def save_session_summary(summary: str, language: str = "") -> None:
     print(f"[Memory] 📝 Session saved ({entry['date']}): {summary[:60]}…")
 
 
+def recent_sessions_for_ui() -> list[dict]:
+    """Read-only view of stored session summaries, newest first.
+
+    Unlike pop_last_session(), this does not consume entries — it backs the
+    memory panel, which must be able to show what's there without erasing the
+    greeting flow's own copy."""
+    memory   = load_memory()
+    sessions = memory.get("sessions", [])
+    if not isinstance(sessions, list):
+        return []
+    return list(reversed(sessions))
+
+
 def pop_last_session() -> dict | None:
     """
     Return AND remove the most recent session entry.

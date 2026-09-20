@@ -167,6 +167,23 @@
     }
     #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
+    /* ── INCOMING CALL ── */
+    #callBanner {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+      display: none; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 12px 16px; background: rgba(171,139,245,0.16);
+      border-bottom: 1px solid rgba(171,139,245,0.4);
+      backdrop-filter: blur(24px) saturate(140%);
+      animation: pop 0.18s ease;
+    }
+    #callBanner.show { display: flex; }
+    #callBanner .cb-txt { font-size: 13px; font-weight: 700; letter-spacing: .3px; color: #f3ecff; }
+    #callBanner .cb-txt small { display: block; font-size: 10px; font-weight: 500; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; margin-top: 2px; }
+    #callBanner .cb-btns { display: flex; gap: 8px; flex-shrink: 0; }
+    #callBanner button { border: none; border-radius: 99px; padding: 8px 16px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    #callBanner .cb-answer { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); color: var(--green); animation: mic-pulse 1s ease-in-out infinite; }
+    #callBanner .cb-decline { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
+
     @media (prefers-reduced-motion: reduce) {
       .brain-node, .brain-halo, .dot, #mic-btn.recording { animation: none !important; }
     }
@@ -174,6 +191,13 @@
 </head>
 <body>
   <div id="toast"></div>
+  <div id="callBanner">
+    <div class="cb-txt">📞 JARVIS ruft an<small>Eingehender Anruf</small></div>
+    <div class="cb-btns">
+      <button class="cb-answer" id="cb-answer">Annehmen</button>
+      <button class="cb-decline" id="cb-decline">Ablehnen</button>
+    </div>
+  </div>
   <header>
     <div class="brain" id="brain" data-state="idle" aria-hidden="true">
       <svg viewBox="0 0 100 92">
@@ -302,6 +326,9 @@
       if (m.type === 'wake')          sys('Wake word detected — connecting…');
       if (m.type === 'sys')           sys(m.text);
       if (m.type === 'file_received') _onFileReceived(m);
+      if (m.type === 'audio')         _playPcm16(m.data, m.rate);
+      if (m.type === 'audio_stop')    _stopPlayback();
+      if (m.type === 'incoming_call') _showIncomingCall();
     };
 
     function setStatus(s) {
@@ -491,6 +518,75 @@
       clearTimeout(_toastTimer);
       _toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
     }
+
+    // ── Playback — JARVIS's spoken replies, streamed as PCM16 @ 24 kHz ───────
+    let _playCtx    = null;
+    let _playCursor = 0;      // ctx.currentTime cursor for gapless scheduling
+    let _playNodes  = [];     // scheduled sources, so audio_stop can cut them off
+
+    function _ensurePlayCtx() {
+      if (!_playCtx) {
+        try { _playCtx = new AudioContext({ sampleRate: 24000 }); }
+        catch (_) { _playCtx = new AudioContext(); }
+      }
+      if (_playCtx.state === 'suspended') _playCtx.resume().catch(() => {});
+      return _playCtx;
+    }
+
+    function _playPcm16(b64, rate) {
+      const ctx  = _ensurePlayCtx();
+      const raw  = atob(b64);
+      const buf  = new ArrayBuffer(raw.length);
+      const view = new Uint8Array(buf);
+      for (let i = 0; i < raw.length; i++) view[i] = raw.charCodeAt(i);
+      const pcm = new Int16Array(buf);
+      if (!pcm.length) return;
+
+      const audioBuf = ctx.createBuffer(1, pcm.length, rate || 24000);
+      const ch = audioBuf.getChannelData(0);
+      for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+
+      const src = ctx.createBufferSource();
+      src.buffer = audioBuf;
+      src.connect(ctx.destination);
+
+      const startAt = Math.max(ctx.currentTime, _playCursor);
+      src.start(startAt);
+      _playCursor = startAt + audioBuf.duration;
+      _playNodes.push(src);
+      src.onended = () => { _playNodes = _playNodes.filter(n => n !== src); };
+    }
+
+    function _stopPlayback() {
+      for (const n of _playNodes) { try { n.stop(); } catch (_) {} }
+      _playNodes = [];
+      if (_playCtx) _playCursor = _playCtx.currentTime;
+    }
+
+    // ── Incoming call — JARVIS wants to talk on its own initiative and
+    // nobody's mic is open to hear it ─────────────────────────────────────────
+    const callBanner = document.getElementById('callBanner');
+    let _callTimer = null;
+
+    function _showIncomingCall() {
+      if (_voiceWs) return;   // already on the line — nothing to announce
+      callBanner.classList.add('show');
+      toast('📞 JARVIS ruft an');
+      clearTimeout(_callTimer);
+      _callTimer = setTimeout(_dismissCall, 30000);   // missed call after 30s
+    }
+
+    function _dismissCall() {
+      callBanner.classList.remove('show');
+      clearTimeout(_callTimer);
+    }
+
+    document.getElementById('cb-answer').addEventListener('click', () => {
+      _ensurePlayCtx();   // unlock playback on this user gesture
+      _dismissCall();
+      doMic();
+    });
+    document.getElementById('cb-decline').addEventListener('click', _dismissCall);
 
     // ── Real-time Voice — PCM16 WebSocket → Gemini Live ──────────────────────
     const micBtn  = document.getElementById('mic-btn');
