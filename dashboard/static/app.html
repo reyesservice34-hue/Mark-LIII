@@ -92,6 +92,22 @@
     .url { font-size: 10px; font-family: monospace; color: var(--muted); padding: 4px 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
     @media (max-width: 380px) { .url { display: none; } }
 
+    /* ── COMPANION (next calendar event + optional ETA) ── */
+    .companion { display: none; flex-shrink: 0; padding: 10px 16px; gap: 4px; flex-direction: column;
+                 border-bottom: 1px solid var(--border); background: var(--surface); font-size: 12px; }
+    .companion.show { display: flex; }
+    .companion-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .companion-title { font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .companion-when { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .companion-eta { font-size: 11px; color: var(--muted); }
+    .companion-eta.warn { color: #f87171; font-weight: 700; }
+    .companion-eta.soon { color: #fbbf24; font-weight: 700; }
+    .companion-share {
+      align-self: flex-start; margin-top: 4px; font-size: 10px; padding: 4px 10px;
+      border-radius: 99px; background: var(--adim); border: 1px solid rgba(171,139,245,0.3);
+      color: var(--accent); font-weight: 700; letter-spacing: 0.5px; cursor: pointer;
+    }
+
     /* ── FEED ── */
     main { flex: 1; overflow-y: auto; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
     main::-webkit-scrollbar { width: 4px; }
@@ -245,6 +261,14 @@
     <div class="spacer"></div>
     <div class="url">__IP__:__PORT__</div>
   </header>
+  <div class="companion" id="companion">
+    <div class="companion-row">
+      <span class="companion-title" id="companion-title"></span>
+      <span class="companion-when" id="companion-when"></span>
+    </div>
+    <div class="companion-eta" id="companion-eta"></div>
+    <button class="companion-share" id="companion-share" onclick="companionShareLocation()">📍 Standort teilen für Ankunftsprognose</button>
+  </div>
   <main id="feed"></main>
   <footer>
     <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
@@ -756,6 +780,89 @@
       }
       _micIdle();
     }
+
+    // ── Companion: next calendar event + optional ETA ─────────────────────────
+    // Silently does nothing if the server has no companion-calendar.json
+    // configured (companionRefresh's fetch just returns non-ok and the card
+    // stays hidden) — no separate feature flag needed.
+    let _companionEvent = null;
+
+    async function companionRefresh() {
+      const box = document.getElementById('companion');
+      try {
+        const r = await _authFetch('/api/companion/calendar');
+        if (!r.ok) { box.classList.remove('show'); return; }
+        const data = await r.json();
+        const now  = new Date();
+        const next = (data.events || [])
+          .filter(e => !e.allDay && new Date(e.start) > now)
+          .sort((a, b) => new Date(a.start) - new Date(b.start))[0];
+        if (!next) { box.classList.remove('show'); _companionEvent = null; return; }
+        _companionEvent = next;
+        document.getElementById('companion-title').textContent = next.title;
+        const mins = Math.round((new Date(next.start) - now) / 60000);
+        document.getElementById('companion-when').textContent =
+          mins >= 60 ? `in ${Math.floor(mins / 60)}h ${mins % 60}m` : `in ${mins}m`;
+        const etaEl = document.getElementById('companion-eta');
+        const shareBtn = document.getElementById('companion-share');
+        if (next.location) {
+          etaEl.textContent = '';
+          etaEl.className = 'companion-eta';
+          shareBtn.style.display = 'inline-block';
+        } else {
+          etaEl.textContent = 'Kein Ort für diesen Termin hinterlegt.';
+          etaEl.className = 'companion-eta';
+          shareBtn.style.display = 'none';
+        }
+        box.classList.add('show');
+      } catch (_) { box.classList.remove('show'); }
+    }
+
+    function _companionRenderEta(d) {
+      const el = document.getElementById('companion-eta');
+      if (d.error) { el.textContent = d.error; el.className = 'companion-eta'; return; }
+      el.textContent = `${d.destination}: ${d.durationMinutes} Min Fahrt · ${d.uncertainty}`;
+      el.className = 'companion-eta' +
+        (d.level === 'spaet' ? ' warn' : (d.level === 'los' || d.level === 'bald') ? ' soon' : '');
+    }
+
+    function companionShareLocation() {
+      if (!navigator.geolocation || !_companionEvent) return;
+      const etaEl = document.getElementById('companion-eta');
+      etaEl.textContent = 'Standort wird ermittelt…';
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const body = {
+          eventId: _companionEvent.id,
+          lat: pos.coords.latitude, lon: pos.coords.longitude,
+          accuracy: pos.coords.accuracy, timestamp: pos.timestamp / 1000,
+        };
+        try {
+          let r = await _authFetch('/api/companion/eta', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          let data = await r.json();
+          if (data.needsConfirmation && data.destinations && data.destinations.length) {
+            // Ambiguous address match — take the closest-named candidate rather
+            // than showing a picker, keeping this card minimal; the full label
+            // is still visible in the result if the user wants to double check.
+            body.destinationId = data.destinations[0].id;
+            r = await _authFetch('/api/companion/eta', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            data = await r.json();
+          }
+          _companionRenderEta(data);
+        } catch (_) {
+          etaEl.textContent = 'Prognose derzeit nicht möglich.';
+        }
+      }, () => { etaEl.textContent = 'Standort nicht verfügbar — Berechtigung erteilt?'; },
+         { enableHighAccuracy: true, timeout: 15000 });
+    }
+
+    companionRefresh();
+    setInterval(companionRefresh, 120000);
   </script>
 </body>
 </html>
