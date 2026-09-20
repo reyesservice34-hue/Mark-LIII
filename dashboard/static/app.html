@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>JARVIS Dashboard</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#000000">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="JARVIS">
+  <link rel="apple-touch-icon" href="/static/icons/icon-180.png">
+  <link rel="icon" href="/static/icons/icon-192.png">
   <script src="/static/crypto.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -253,7 +261,16 @@
     const _sessionKey = sessionStorage.getItem('jarvis_key');
 
     if (!_authToken) {
-      location.replace('/login');
+      // Installed home-screen launches (PWA) get a fresh session token
+      // automatically from a previously paired device — no QR re-scan needed.
+      const _devTok = localStorage.getItem('jarvis_device_token');
+      location.replace(_devTok
+        ? `/auto-device-login?device_token=${encodeURIComponent(_devTok)}`
+        : '/login');
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
 
     function _authHeader() { return { 'Authorization': `Bearer ${_authToken}` }; }

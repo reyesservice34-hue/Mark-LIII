@@ -512,6 +512,23 @@ class DashboardServer:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(_CRYPTOJS_CDN)
 
+        # ── PWA assets — installable "Add to Home Screen" on iOS/Android ───────
+        @app.get("/manifest.json")
+        async def pwa_manifest():
+            return FileResponse(str(STATIC_DIR / "manifest.json"),
+                                media_type="application/manifest+json")
+
+        @app.get("/sw.js")
+        async def pwa_service_worker():
+            return FileResponse(str(STATIC_DIR / "sw.js"),
+                                media_type="application/javascript")
+
+        @app.get("/static/icons/{name}")
+        async def pwa_icon(name: str):
+            if not re.fullmatch(r"icon-(180|192|512)\.png", name):
+                return JSONResponse({"error": "Not found"}, status_code=404)
+            return FileResponse(str(STATIC_DIR / "icons" / name), media_type="image/png")
+
         @app.get("/login", response_class=HTMLResponse)
         async def login_page():
             return HTMLResponse(self._login_html)
@@ -589,6 +606,51 @@ class DashboardServer:
   sessionStorage.setItem('jarvis_token','{tok}');
   sessionStorage.setItem('jarvis_key','{key}');
   localStorage.setItem('jarvis_device_token','{dev_tok}');
+  setTimeout(function(){{location.replace('/')}},400);
+</script>
+<p>Connecting to JARVIS…</p>
+</body></html>""")
+
+        @app.get("/auto-device-login")
+        async def auto_device_login(device_token: str = ""):
+            """Home-screen relaunch target — reuses a previously paired device
+            token to get a fresh session without re-scanning the QR code."""
+            session = self._device_sessions.get(device_token)
+            if not device_token or not session:
+                return HTMLResponse("""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width">
+<style>
+  body{background:#07090f;color:#dde3ed;font-family:sans-serif;
+       display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}
+  h2{color:#f87171;margin-bottom:12px}p{color:#5e6a7e;font-size:14px}
+</style></head>
+<body><div><h2>Device Not Paired</h2>
+<p>Press <strong style="color:#dde3ed">Remote Control</strong> in JARVIS to get a new QR code.</p>
+</div></body></html>""")
+
+            key = session["session_key"]
+            tok = secrets.token_urlsafe(32)
+            self._tokens.add(tok)
+            self._token_keys[tok] = key
+            self._aes_key(key)
+
+            if self._connect_callback:
+                self._connect_callback()
+            asyncio.create_task(self.broadcast(
+                {"type": "sys", "text": "Known device reconnected automatically."}
+            ))
+
+            return HTMLResponse(f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width">
+<style>
+  body{{background:#07090f;color:#dde3ed;font-family:sans-serif;
+       display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}}
+  p{{color:#5e6a7e;font-size:14px}}
+</style></head>
+<body>
+<script>
+  sessionStorage.setItem('jarvis_token','{tok}');
+  sessionStorage.setItem('jarvis_key','{key}');
   setTimeout(function(){{location.replace('/')}},400);
 </script>
 <p>Connecting to JARVIS…</p>
