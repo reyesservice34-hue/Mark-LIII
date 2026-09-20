@@ -643,15 +643,33 @@
       _setBrainState(_baseBrainState);
     }
 
-    // Float32 PCM → resample to 16 kHz + convert to Int16
+    // Float32 PCM → resample to 16 kHz + convert to Int16.
+    // Picking every Nth sample (the old approach) aliases high-frequency
+    // content back into the speech band as noise — audible distortion that
+    // measurably hurts recognition. A short box-filter (cheap anti-aliasing
+    // low-pass, sized to the downsample ratio) followed by linear
+    // interpolation is a large quality step up for negligible CPU cost.
     function _f32toPcm16(f32, srcRate) {
       let s = f32;
       if (srcRate !== 16000) {
         const ratio = srcRate / 16000;
-        const len   = Math.round(f32.length / ratio);
+        const filterLen = Math.max(1, Math.round(ratio));
+        const filtered = new Float32Array(f32.length);
+        let sum = 0;
+        for (let i = 0; i < f32.length; i++) {
+          sum += f32[i];
+          if (i >= filterLen) sum -= f32[i - filterLen];
+          filtered[i] = sum / Math.min(i + 1, filterLen);
+        }
+        const len = Math.round(f32.length / ratio);
         s = new Float32Array(len);
-        for (let i = 0; i < len; i++)
-          s[i] = f32[Math.min(Math.round(i * ratio), f32.length - 1)];
+        for (let i = 0; i < len; i++) {
+          const pos = i * ratio;
+          const i0 = Math.floor(pos);
+          const i1 = Math.min(i0 + 1, filtered.length - 1);
+          const frac = pos - i0;
+          s[i] = filtered[i0] * (1 - frac) + filtered[i1] * frac;
+        }
       }
       const out = new Int16Array(s.length);
       for (let i = 0; i < s.length; i++)
