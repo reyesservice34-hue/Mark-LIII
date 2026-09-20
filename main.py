@@ -608,6 +608,19 @@ class JarvisLive:
         manual = self._dashboard.get_manual_url()
         return url, key, f"{url}/auto-login?key={key}", manual
 
+    async def _log_pairing_link(self) -> None:
+        """On a headless server there's no visible 'Remote Control' button to
+        click, and new_key() expires after 10 minutes — so print a fresh
+        pairing link to the log on startup and keep refreshing it before it
+        expires, so there's always a working one to copy from journalctl."""
+        while True:
+            result = self._make_remote_key()
+            if result:
+                _url, key, auto_url, manual = result
+                print(f"[Dashboard] Pairing link (open in phone Safari, valid ~10 min): {auto_url}")
+                print(f"[Dashboard] Or open {manual} manually and enter code: {key}")
+            await asyncio.sleep(480)  # refresh comfortably before the 10-minute expiry
+
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
             return
@@ -1662,6 +1675,7 @@ class JarvisLive:
                     tg.create_task(self._run_sleep_watch())
                     if self._dashboard:
                         tg.create_task(self._relay_phone_audio())
+                        tg.create_task(self._log_pairing_link())
 
                     # Morning briefing — fires once per process launch (if enabled).
                     # Skipped in wake-word mode: it comes up asleep, and a briefing
