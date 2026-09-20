@@ -20,6 +20,12 @@
 # don't use that feature; the action loader disables it gracefully without
 # it, everything else still runs).
 #
+# Uses a venv (.venv/), not a system-wide pip install: Ubuntu 24.04 marks its
+# system Python "externally managed" (PEP 668) and refuses `pip install`
+# outright — every package, not just the odd optional one, so don't mistake
+# that failure for something benign. A venv sidesteps it cleanly and is the
+# officially recommended fix anyway.
+#
 # Usage:  sudo bash scripts/setup_headless_server.sh <server-hostname-or-ip>
 
 set -euo pipefail
@@ -32,6 +38,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
+VENV_DIR="$SCRIPT_DIR/.venv"
 
 echo "== 1/5  System libraries (PortAudio + headless Qt) =="
 apt-get update -qq
@@ -42,12 +49,18 @@ apt-get install -y --quiet \
   libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
   libxcb-xinerama0 libdbus-1-3 libxcb1 libx11-xcb1
 
-echo "== 2/5  Python dependencies =="
-# --ignore-installed avoids fighting distro-packaged versions of the same libs.
-pip install --ignore-installed -r requirements.txt || {
+echo "== 2/5  Python dependencies (venv at $VENV_DIR) =="
+if [ ! -d "$VENV_DIR" ]; then
+  python3 -m venv "$VENV_DIR"
+fi
+"$VENV_DIR/bin/pip" install --quiet --upgrade pip
+"$VENV_DIR/bin/pip" install -r requirements.txt || {
   echo "!! Some optional packages failed to build (commonly pygetwindow/pyautogui" \
-       "on a headless box with no desktop to control). This is expected here and" \
-       "does not stop JARVIS from starting — continuing."
+       "on a headless box with no desktop to control). If the line above this one" \
+       "names pygetwindow/pytweening/mouseinfo/pyrect/python3-Xlib specifically," \
+       "that's expected here and does not stop JARVIS from starting — continuing." \
+       "Any OTHER failure here (e.g. PyQt6, fastapi, google-genai) is NOT benign —" \
+       "scroll up, fix that package's error, and re-run this script before going on."
 }
 
 echo "== 3/5  Gemini API key =="
@@ -65,13 +78,13 @@ fi
 
 echo "== 4/5  TLS certificate for the dashboard (required for iPhone Safari) =="
 if [ ! -f config/certs/jarvis.key ]; then
-  python3 dashboard/generate_cert.py "$HOSTNAME_OR_IP"
+  "$VENV_DIR/bin/python3" dashboard/generate_cert.py "$HOSTNAME_OR_IP"
 else
   echo "config/certs/jarvis.key already exists — leaving it as is."
 fi
 
 echo "== 5/5  Done. Start JARVIS with: =="
-echo "  QT_QPA_PLATFORM=offscreen python3 main.py"
+echo "  QT_QPA_PLATFORM=offscreen $VENV_DIR/bin/python3 main.py"
 echo
 echo "To keep it running after you disconnect SSH, use the systemd service"
 echo "in scripts/mark-liii.service (see its header comment for install steps)."
