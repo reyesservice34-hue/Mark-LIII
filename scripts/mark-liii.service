@@ -1,0 +1,28 @@
+# scripts/mark-liii.service — keep JARVIS running after you close the SSH session,
+# and restart it automatically if it crashes.
+#
+# Install (adjust User= and WorkingDirectory= to match your setup):
+#
+#   sudo cp scripts/mark-liii.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mark-liii
+#
+# Logs:      journalctl -u mark-liii -f
+# Restart:   sudo systemctl restart mark-liii
+
+[Unit]
+Description=Mark-LIII (JARVIS) assistant + remote dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Mark-LIII
+Environment=QT_QPA_PLATFORM=offscreen
+ExecStart=/usr/bin/python3 main.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
