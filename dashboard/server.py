@@ -466,6 +466,22 @@ class DashboardServer:
                 dead.add(ws)
         self._clients -= dead
 
+    async def broadcast_log_delta(self, speaker: str, text: str) -> None:
+        """Stream one partial-transcript chunk to currently connected clients
+        only. Deliberately skips _history — unlike broadcast(), storing every
+        chunk there would flood the 300-entry reconnect replay with word
+        fragments instead of the final assembled message."""
+        if not self._clients:
+            return
+        msg = {"type": "log_delta", "speaker": speaker, "text": text}
+        dead: set[WebSocket] = set()
+        for ws in list(self._clients):
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                dead.add(ws)
+        self._clients -= dead
+
     async def broadcast_call(self) -> None:
         """Ring connected clients — JARVIS wants to speak on its own initiative
         (a monitor alert, a proactive check-in) and there's nobody on the line

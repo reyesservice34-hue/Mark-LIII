@@ -365,7 +365,14 @@
     ws.onerror   = () => sys('Connection error.');
     ws.onmessage = (e) => {
       const m = JSON.parse(e.data);
-      if (m.type === 'log')           append(m.speaker, m.text);
+      if (m.type === 'log') {
+        // A streamed reply already ends up on screen chunk by chunk (below) —
+        // once the final, complete message arrives just close out that bubble
+        // instead of appending the whole text again as a duplicate.
+        if (m.speaker === 'jarvis' && _streamEl) _streamFinish();
+        else append(m.speaker, m.text);
+      }
+      if (m.type === 'log_delta' && m.speaker === 'jarvis') _streamAppendJarvis(m.text);
       if (m.type === 'status')        setStatus(m.state);
       if (m.type === 'wake')          sys('Wake word detected — connecting…');
       if (m.type === 'sys')           sys(m.text);
@@ -399,6 +406,31 @@
       }
       feed.appendChild(d);
       feed.scrollTop = feed.scrollHeight;
+    }
+
+    // JARVIS's reply is generated (and spoken) in real time, chunk by chunk —
+    // showing it only once the whole turn is done would leave the feed silent
+    // for as long as the full answer takes to speak. Stream each chunk into
+    // one growing bubble instead, closed out when the final 'log' arrives.
+    let _streamEl = null, _streamChunks = [];
+
+    function _streamAppendJarvis(txt) {
+      if (!_streamEl) {
+        _streamEl = document.createElement('div');
+        _streamEl.className = 'msg msg-j';
+        _streamEl.innerHTML = '<div class="lbl">Jarvis</div><span class="stream-text"></span>';
+        feed.appendChild(_streamEl);
+        _streamChunks = [];
+      }
+      _streamChunks.push(txt);
+      _streamEl.querySelector('.stream-text').textContent = _streamChunks.join(' ');
+      feed.scrollTop = feed.scrollHeight;
+      _pulseBrain('speaking', 1800);
+    }
+
+    function _streamFinish() {
+      _streamEl = null;
+      _streamChunks = [];
     }
 
     function sys(text) {
