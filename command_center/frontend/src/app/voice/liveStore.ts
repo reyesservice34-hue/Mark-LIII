@@ -11,7 +11,6 @@
  * schließt, der Server sie schließt oder die Seite wirklich verlassen wird.
  */
 import { useSyncExternalStore } from "react";
-import { api } from "@/lib/api";
 import { LiveLine, type LiveState } from "./live";
 
 export interface LiveSnapshot {
@@ -93,22 +92,4 @@ export function sayOnLine(text: string): void {
 // die niemand mehr hört — und die kostet Geld, solange sie läuft.
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => { void closeLine(); });
-}
-
-let autoOpenTried = false;
-
-/**
- * Jarvis soll immer an sein — kein Knopf, der erst gedrückt werden muss.
- * Vom Shell einmal aufgerufen, sobald jemand angemeldet ist (siehe
- * JarvisShell.tsx); vorher wäre die Anfrage sowieso nur ein 401. Einmal
- * geöffnet bleibt die Leitung über jeden Seitenwechsel im Dashboard hinweg
- * bestehen (siehe oben) — ein Tabwechsel oder ein Blick in ein anderes
- * Browser-Fenster schließt sie ohnehin nicht.
- */
-export function ensureLineOpen(): void {
-  if (autoOpenTried || snapshot.open) return;
-  autoOpenTried = true;
-  api.get<{ available: boolean }>("/api/voice/live/capabilities")
-    .then((caps) => { if (caps.available) void openLine(); })
-    .catch(() => { /* kein Schlüssel, Server nicht erreichbar o. ä. — die Konsole zeigt den Grund selbst */ });
 }

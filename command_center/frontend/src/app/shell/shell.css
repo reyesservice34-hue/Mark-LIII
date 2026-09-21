@@ -21,6 +21,16 @@
 .sidebar-foot { padding: 8px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
 .nav-item.collapse { color: var(--text-3); }
 
+/* Live-Zähler in der Seitenleiste: wie viel gerade läuft (Aufgaben) oder
+   wartet (Freigaben) — ohne erst hineinklicken zu müssen. Gleiche Farben wie
+   .icon-btn .count in der Topbar, nur inline statt als Kreis auf dem Icon,
+   weil hier neben dem Icon schon der Titel steht. */
+.nav-badge { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--accent); color: #06111c; font-size: 11px; font-weight: 700;
+  display: grid; place-items: center; font-family: var(--mono); }
+.nav-badge.warn { background: var(--warn); }
+.sidebar.collapsed .nav-badge { position: absolute; top: 4px; right: 4px; min-width: 14px; height: 14px; font-size: 9px; padding: 0 3px; }
+
 /* ── topbar ──────────────────────────────────────────────────────────── */
 .topbar { position: relative; display: flex; align-items: center; gap: 14px; padding: 0 18px; border-bottom: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(14px); min-width: 0; overflow: hidden; }
 .topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: linear-gradient(90deg, transparent, rgba(90,200,255,0.45), transparent); }

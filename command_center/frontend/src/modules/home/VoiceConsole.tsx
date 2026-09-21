@@ -23,11 +23,10 @@ interface LiveCaps {
 }
 
 /**
- * Die Sprachkonsole: eine offene Leitung, kein Knopfdruck-Betrieb.
- *
- * Die Leitung öffnet sich von selbst, sobald man angemeldet ist (siehe
- * JarvisShell), und bleibt über jeden Seitenwechsel im Dashboard hinweg
- * bestehen — kein Knopf, der erst gedrückt werden muss, bevor irgendetwas geht.
+ * Die Sprachkonsole: Push-to-Talk. Erst auf Knopfdruck hört Jarvis zu; die
+ * Leitung bleibt dann offen (man kann ihm ins Wort fallen, mehrere Sätze
+ * hintereinander sagen), bis man selbst wieder auf "Beenden" drückt — sie
+ * schaltet sich nie von selbst ein.
  *
  * Sie täuscht nichts vor: fehlt der Schlüssel oder läuft die Seite nicht über
  * HTTPS, steht genau das da, statt eines Knopfes, der nichts tut.
@@ -118,12 +117,6 @@ export function VoiceConsole() {
           {caps?.available && !blocked && (
             <span className="vc-meta">{caps.voice} · {caps.tools} Werkzeuge</span>
           )}
-          {caps?.available && !blocked && !local && (
-            <button className="btn sm ghost vc-mute" onClick={open ? stop : start}
-              disabled={state === "connecting"} title={open ? "Stummschalten" : "Wieder zuhören"}>
-              {open ? <Square size={13} /> : <Mic size={13} />}
-            </button>
-          )}
         </div>
 
         {blocked ? (
@@ -139,10 +132,9 @@ export function VoiceConsole() {
             {said ? <p className="vc-answer">{said}</p>
               : !heard && (
                 <p className="vc-hint">
-                  {!open ? "Stummgeschaltet — klick auf das Mikrofon oben, um wieder zuzuhören."
-                    : "Sprich einfach los. Das Mikrofon bleibt offen, du kannst ihm jederzeit ins Wort fallen, "
-                      + "und die Leitung bleibt bestehen, auch wenn du im Dashboard woanders hingehst oder den "
-                      + "Tab wechselst."}
+                  {open ? "Sprich einfach los. Das Mikrofon bleibt offen, du kannst ihm jederzeit ins Wort fallen, "
+                        + "bis du auf „Beenden“ drückst."
+                    : "Drück auf das Mikrofon und sprich. Er hört zu, bis du wieder auf „Beenden“ drückst."}
                 </p>
               )}
             {tools.length > 0 && (
@@ -156,13 +148,20 @@ export function VoiceConsole() {
             )}
           </>
         )}
-        {local && !blocked && (
-          <div className="vc-actions">
+
+        <div className="vc-actions">
+          {local && !blocked ? (
             <a className="btn primary" href="/live/" target="_blank" rel="noopener">
               <Mic size={15} />Live-Gespräch öffnen
             </a>
-          </div>
-        )}
+          ) : (
+            <button className={`btn ${open ? "danger" : "primary"}`} onClick={open ? stop : start}
+              disabled={!!blocked || state === "connecting"} title={blocked || undefined}>
+              {open ? <Square size={15} /> : <Mic size={15} />}
+              {state === "connecting" ? "Verbinde …" : open ? "Beenden" : "Drücken zum Sprechen"}
+            </button>
+          )}
+        </div>
       </div>
     </section>
   );
