@@ -562,19 +562,33 @@
     });
 
     // ── Commands ──────────────────────────────────────────────────────────────
-    function doSend() {
+    // No local echo here: the server broadcasts the typed text back over the
+    // same WebSocket every connected client already listens on (mirroring how
+    // spoken input is echoed via transcription). One source of truth means a
+    // second open tab (or the phone, at the same time) sees it too, and it
+    // survives a reconnect instead of only ever existing in the sender's tab.
+    async function doSend() {
       const inp = document.getElementById('inp');
       const txt = inp.value.trim();
       if (!txt) return;
+      if (doSend.pending) return;
+      doSend.pending = true;
       inp.value = '';
-      append('user', txt);
       const enc  = _encrypt(txt);
       const body = enc ? { enc } : { text: txt };
-      _authFetch('/api/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
+      try {
+        const response = await _authFetch('/api/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (!response.ok) throw new Error();
+      } catch {
+        sys('Senden fehlgeschlagen — Text wiederhergestellt.');
+        if (!inp.value) inp.value = txt;
+      } finally {
+        doSend.pending = false;
+      }
     }
 
     function doWake() {
