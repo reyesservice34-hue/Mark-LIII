@@ -159,3 +159,22 @@ def pending_title() -> str:
         if time.monotonic() - _pending.at > TIMEOUT_SECONDS:
             return ""
         return _pending.title
+
+
+def pending_info() -> Optional[dict]:
+    """Full detail on the current pending confirmation, or None. The HUD only
+    ever needed the title (pending_title); a remote interface with no shared
+    screen — the dashboard — needs the detail text and an age to show too."""
+    with _lock:
+        if _pending is None:
+            return None
+        age = time.monotonic() - _pending.at
+        if age > TIMEOUT_SECONDS:
+            return None
+        return {
+            "key": _pending.key,
+            "title": _pending.title,
+            "detail": _pending.detail,
+            "ageSeconds": round(age, 1),
+            "timeoutSeconds": TIMEOUT_SECONDS,
+        }
