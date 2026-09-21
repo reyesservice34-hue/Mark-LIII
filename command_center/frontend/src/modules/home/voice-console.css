@@ -152,7 +152,9 @@
   color: var(--text);
   font-size: 19px;
   line-height: 1.6;
-  max-height: 9em;
+  /* Ohne den Knopf, der früher hier unten stand, darf das Gespräch selbst
+     die Fläche haben statt eines festen, kleinen Fensters. */
+  max-height: min(22em, 44vh);
   overflow-y: auto;
   white-space: pre-wrap;
 }
@@ -189,6 +191,17 @@
 /* Modell und Werkzeugzahl neben dem Zustand — klein, aber es beantwortet
    „womit redet er gerade eigentlich". */
 .vc-meta { margin-left: auto; color: var(--text-4); letter-spacing: 0.08em; text-transform: none; }
+.vc-meta + .vc-mute { margin-left: 8px; }
+
+/* Der einzige Knopf, der bleibt: stummschalten. Die Leitung selbst öffnet
+   sich von selbst, also braucht sie keinen großen Knopf mehr, der erst
+   gedrückt werden muss, bevor irgendetwas geht. */
+.vc-mute {
+  margin-left: auto;
+  width: 26px; height: 26px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+}
 
 /* Welche Werkzeuge im Gespräch wirklich liefen. Ohne das bliebe es eine
    Behauptung. */

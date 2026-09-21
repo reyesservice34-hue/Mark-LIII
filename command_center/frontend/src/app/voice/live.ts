@@ -25,6 +25,8 @@ export interface LiveHandlers {
   onTool?: (name: string, ok: boolean) => void;
   onError?: (detail: string) => void;
   onClose?: () => void;
+  /** Beim Namens-Gate: wach, weil "Jarvis" gefallen ist, oder wieder eingeschlafen. */
+  onAwake?: (awake: boolean) => void;
 }
 
 function floatToPcm16(input: Float32Array): Int16Array {
@@ -147,8 +149,20 @@ export class LiveLine {
         this.h.onError?.(ev.detail || "Die Live-Leitung ist nicht verfügbar.");
         void this.stop();
         break;
+      case "jarvis.ready":
+        // Nur eine "ambient" Leitung (siehe capabilities().ambient — bislang
+        // nur Gemini) kennt das Namens-Gate und startet schlafend. Eine
+        // Leitung ohne das antwortet sofort, gilt hier also von Anfang an als wach.
+        this.h.onAwake?.(!ev.ambient);
+        break;
       case "jarvis.tool":
         this.h.onTool?.(ev.name, !!ev.ok);
+        break;
+      case "jarvis.awake":
+        this.h.onAwake?.(true);
+        break;
+      case "jarvis.asleep":
+        this.h.onAwake?.(false);
         break;
       case "input_audio_buffer.speech_started":
         // Dazwischenreden: alles Ungespielte sofort verwerfen.

@@ -8,6 +8,7 @@ import { Skeleton, Toaster } from "@/components/ui";
 import { CommandPalette } from "@/app/commands/CommandPalette";
 import { registerCommands } from "@/app/commands/commands";
 import { ApprovalDialog } from "@/modules/approvals/ApprovalDialog";
+import { ensureLineOpen } from "@/app/voice/liveStore";
 import { Sidebar } from "./Sidebar";
 import { TopStatusBar } from "./TopStatusBar";
 import { LiveBar } from "./LiveBar";
@@ -18,6 +19,12 @@ export function JarvisShell() {
   const nav = useNavigate();
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("jcc.sidebar") === "1"; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem("jcc.sidebar", collapsed ? "1" : "0"); } catch { /* ignore */ } }, [collapsed]);
+
+  // Jarvis soll immer an sein: die Shell bleibt über jede Seite im Dashboard
+  // hinweg gemountet (siehe App.tsx), also ist das hier der eine richtige Ort,
+  // die Leitung einmal zu öffnen, statt auf einen Klick auf der Startseite zu
+  // warten. ensureLineOpen() selbst sorgt dafür, dass das nur einmal passiert.
+  useEffect(() => { ensureLineOpen(); }, []);
 
   // Commands from backend modules + shell-level ones.
   useEffect(() => registerCommands([

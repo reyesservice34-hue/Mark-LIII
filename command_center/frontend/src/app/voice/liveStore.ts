@@ -11,6 +11,7 @@
  * schließt, der Server sie schließt oder die Seite wirklich verlassen wird.
  */
 import { useSyncExternalStore } from "react";
+import { api } from "@/lib/api";
 import { LiveLine, type LiveState } from "./live";
 
 export interface LiveSnapshot {
@@ -23,9 +24,16 @@ export interface LiveSnapshot {
   /** Warum die Leitung nicht zustande kam — leer, solange alles geht. */
   error: string;
   open: boolean;
+  /**
+   * Namens-Gate: hört zu, reagiert aber erst, sobald "Jarvis" gefallen ist.
+   * Vor der ersten Antwort vom Server (jarvis.ready) optimistisch true, damit
+   * die Oberfläche nicht kurz "wartet auf deinen Namen" zeigt und es dann
+   * gleich wieder zurücknimmt, falls die Leitung das Gate gar nicht kennt.
+   */
+  awake: boolean;
 }
 
-const EMPTY: LiveSnapshot = { phase: "closed", heard: "", said: "", tools: [], error: "", open: false };
+const EMPTY: LiveSnapshot = { phase: "closed", heard: "", said: "", tools: [], error: "", open: false, awake: true };
 
 let snapshot: LiveSnapshot = EMPTY;
 let line: LiveLine | null = null;
@@ -56,13 +64,14 @@ export function isLineOpen(): boolean {
  */
 export async function openLine(): Promise<void> {
   if (snapshot.open || snapshot.phase === "connecting") return;
-  set({ heard: "", said: "", tools: [], error: "", phase: "connecting", open: true });
+  set({ heard: "", said: "", tools: [], error: "", phase: "connecting", open: true, awake: true });
   const l = new LiveLine({
     onState: (phase) => set({ phase, open: phase !== "closed" }),
     onHeard: (heard) => set({ heard, said: "" }),
     onSaid: (said) => set({ said }),
     onTool: (name, ok) => set({ tools: [...snapshot.tools.slice(-4), { name, ok }] }),
     onError: (error) => set({ error }),
+    onAwake: (awake) => set({ awake }),
     onClose: () => { line = null; set({ phase: "closed", open: false }); },
   });
   line = l;
@@ -92,4 +101,24 @@ export function sayOnLine(text: string): void {
 // die niemand mehr hört — und die kostet Geld, solange sie läuft.
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => { void closeLine(); });
+}
+
+let autoOpenTried = false;
+
+/**
+ * Jarvis soll immer an sein — kein Knopf, der erst gedrückt werden muss.
+ * Vom Shell einmal aufgerufen, sobald jemand angemeldet ist (siehe
+ * JarvisShell.tsx); vorher wäre die Anfrage sowieso nur ein 401. Einmal
+ * geöffnet bleibt die Leitung über jeden Seitenwechsel im Dashboard hinweg
+ * bestehen (siehe oben) — ein Tabwechsel oder ein Blick in ein anderes
+ * Browser-Fenster schließt sie ohnehin nicht. Reagiert wird trotzdem erst,
+ * wenn jemand Jarvis beim Namen nennt — das entscheidet der Server (siehe
+ * jarvis.awake/asleep), nicht das bloße Offenstehen der Leitung.
+ */
+export function ensureLineOpen(): void {
+  if (autoOpenTried || snapshot.open) return;
+  autoOpenTried = true;
+  api.get<{ available: boolean }>("/api/voice/live/capabilities")
+    .then((caps) => { if (caps.available) void openLine(); })
+    .catch(() => { /* kein Schlüssel, Server nicht erreichbar o. ä. — die Konsole zeigt den Grund selbst */ });
 }

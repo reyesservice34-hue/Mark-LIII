@@ -20,14 +20,20 @@ interface LiveCaps {
   model: string;
   voice: string;
   tools: number;
+  ambient?: boolean;
+  wake_word?: string;
 }
 
 /**
  * Die Sprachkonsole: eine offene Leitung, kein Knopfdruck-Betrieb.
  *
- * Einmal auf „Leitung öffnen", danach bleibt das Mikrofon offen. Wann eine
- * Äußerung zu Ende ist, entscheidet das Modell; man kann ihm ins Wort fallen
- * und er hört sofort auf zu reden.
+ * Die Leitung öffnet sich von selbst, sobald man angemeldet ist (siehe
+ * JarvisShell), und bleibt über jeden Seitenwechsel im Dashboard hinweg
+ * bestehen — kein Knopf, der erst gedrückt werden muss, bevor irgendetwas
+ * geht. Bei einer Gemini-Leitung (ambient: true) hört das Mikrofon zwar
+ * durchgehend zu, Jarvis antwortet aber erst, sobald sein Name fällt — bis
+ * dahin bleibt die Fläche für das Gespräch selbst reserviert, statt für einen
+ * Zustand, der sowieso schon vorbei ist, bevor man ihn sieht.
  *
  * Sie täuscht nichts vor: fehlt der Schlüssel oder läuft die Seite nicht über
  * HTTPS, steht genau das da, statt eines Knopfes, der nichts tut.
@@ -39,7 +45,7 @@ export function VoiceConsole() {
   // Gespräch nicht.
   const live = useLive();
   const state: LiveState = live.phase;
-  const { heard, said, tools } = live;
+  const { heard, said, tools, awake } = live;
   const alive = useRef(true);
   const shown = useRef("");
 
@@ -112,11 +118,19 @@ export function VoiceConsole() {
 
       <div className="vc-body">
         <div className="vc-phase">
-          <span className={`dot ${open ? "live" : ""} ${blocked ? "err" : open ? "info" : ""}`} />
-          {blocked ? "Nicht verfügbar" : local ? "Lokale Live-Leitung" : PHASE_LABEL[state]}
+          <span className={`dot ${open ? (awake ? "live" : "info") : ""} ${blocked ? "err" : ""}`} />
+          {blocked ? "Nicht verfügbar" : local ? "Lokale Live-Leitung"
+            : state === "listening" && !awake ? `Hört zu — sag „${caps?.wake_word || "Jarvis"}“`
+            : PHASE_LABEL[state]}
           {local && !blocked && <span className="vc-meta">läuft auf diesem Server · kostenlos</span>}
           {caps?.available && !blocked && (
             <span className="vc-meta">{caps.voice} · {caps.tools} Werkzeuge</span>
+          )}
+          {caps?.available && !blocked && !local && (
+            <button className="btn sm ghost vc-mute" onClick={open ? stop : start}
+              disabled={state === "connecting"} title={open ? "Stummschalten" : "Wieder zuhören"}>
+              {open ? <Square size={13} /> : <Mic size={13} />}
+            </button>
           )}
         </div>
 
@@ -129,15 +143,17 @@ export function VoiceConsole() {
           </p>
         ) : (
           <>
-            {heard && <p className="vc-heard">„{heard}"</p>}
+            {heard && awake && <p className="vc-heard">„{heard}"</p>}
             {said ? <p className="vc-answer">{said}</p>
               : !heard && (
                 <p className="vc-hint">
-                  {open ? "Sprich einfach los. Das Mikrofon bleibt offen, du kannst ihm jederzeit ins "
-                        + "Wort fallen, und die Leitung bleibt bestehen, auch wenn du im Dashboard "
-                        + "woanders hingehst — sie endet erst, wenn du sie schließt."
-                    : "Öffne die Leitung und sprich. Er hört durchgehend zu, antwortet mit Stimme und "
-                      + "greift dabei auf seine echten Werkzeuge zu."}
+                  {!open ? "Stummgeschaltet — klick auf das Mikrofon oben, um wieder zuzuhören."
+                    : caps?.ambient && !awake
+                      ? `Er hört durchgehend mit, reagiert aber erst, wenn du „${caps.wake_word || "Jarvis"}“ sagst. `
+                        + "Die Leitung bleibt bestehen, auch wenn du im Dashboard woanders hingehst oder den Tab wechselst."
+                      : "Sprich einfach los. Das Mikrofon bleibt offen, du kannst ihm jederzeit ins Wort fallen, "
+                        + "und die Leitung bleibt bestehen, auch wenn du im Dashboard woanders hingehst oder den "
+                        + "Tab wechselst."}
                 </p>
               )}
             {tools.length > 0 && (
@@ -151,20 +167,13 @@ export function VoiceConsole() {
             )}
           </>
         )}
-
-        <div className="vc-actions">
-          {local && !blocked ? (
+        {local && !blocked && (
+          <div className="vc-actions">
             <a className="btn primary" href="/live/" target="_blank" rel="noopener">
               <Mic size={15} />Live-Gespräch öffnen
             </a>
-          ) : (
-          <button className={`btn ${open ? "danger" : "primary"}`} onClick={open ? stop : start}
-            disabled={!!blocked || state === "connecting"} title={blocked || undefined}>
-            {open ? <Square size={15} /> : <Mic size={15} />}
-            {state === "connecting" ? "Verbinde …" : open ? "Leitung schließen" : "Leitung öffnen"}
-          </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </section>
   );

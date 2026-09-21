@@ -13,7 +13,7 @@ import type { LiveState } from "@/app/voice/live";
 
 const LABEL: Record<LiveState, string> = {
   connecting: "Verbinde …",
-  listening: "Leitung offen — er hört zu",
+  listening: "Hört zu",
   thinking: "Denkt nach",
   speaking: "Antwortet",
   closed: "",
@@ -25,13 +25,17 @@ export function LiveBar() {
   if (!live.open) return null;
 
   const spoken = live.said || live.heard;
+  // Zuhören heißt hier nicht "wartet auf eine Antwort", sondern "wartet auf
+  // seinen Namen" — sonst sähe eine Leitung, die einfach nur mithört, wie
+  // eine aus, die gleich losredet.
+  const label = !live.awake && live.phase === "listening" ? "Hört zu — sag „Jarvis“" : LABEL[live.phase];
   return (
-    <div className={`live-bar phase-${live.phase}`} role="status" aria-live="polite">
+    <div className={`live-bar phase-${live.phase} ${live.awake ? "awake" : "asleep"}`} role="status" aria-live="polite">
       <span className="live-bar-dot" aria-hidden />
       <button className="live-bar-label" onClick={() => nav("/")}
         title="Zur Sprachkonsole">
         <Mic size={14} />
-        {LABEL[live.phase]}
+        {label}
       </button>
       {spoken && <span className="live-bar-text">{spoken}</span>}
       <button className="btn sm danger" onClick={() => void closeLine()}>
