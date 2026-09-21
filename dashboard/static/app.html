@@ -216,6 +216,24 @@
     #callBanner .cb-answer { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); color: var(--green); animation: mic-pulse 1s ease-in-out infinite; }
     #callBanner .cb-decline { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
 
+    /* ── CONFIRMATION (irreversible action awaiting approval) ── */
+    #confirmBanner {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 60;
+      display: none; flex-direction: column; gap: 8px;
+      padding: 14px 16px; background: rgba(251,191,36,0.14);
+      border-bottom: 1px solid rgba(251,191,36,0.4);
+      backdrop-filter: blur(24px) saturate(140%);
+      animation: pop 0.18s ease;
+    }
+    #confirmBanner.show { display: flex; }
+    #confirmBanner .cf-lbl { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #fbbf24; }
+    #confirmBanner .cf-title { font-size: 14px; font-weight: 700; color: #f3ecff; }
+    #confirmBanner .cf-detail { font-size: 12px; color: var(--muted); line-height: 1.4; }
+    #confirmBanner .cf-btns { display: flex; gap: 8px; margin-top: 2px; }
+    #confirmBanner button { border: none; border-radius: 99px; padding: 8px 18px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    #confirmBanner .cf-approve { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); color: var(--green); }
+    #confirmBanner .cf-reject  { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
+
     @media (prefers-reduced-motion: reduce) {
       .brain-node, .brain-halo, .dot, #mic-btn.recording { animation: none !important; }
     }
@@ -228,6 +246,15 @@
     <div class="cb-btns">
       <button class="cb-answer" id="cb-answer">Annehmen</button>
       <button class="cb-decline" id="cb-decline">Ablehnen</button>
+    </div>
+  </div>
+  <div id="confirmBanner">
+    <div class="cf-lbl">⚠ Bestätigung nötig</div>
+    <div class="cf-title" id="cf-title"></div>
+    <div class="cf-detail" id="cf-detail"></div>
+    <div class="cf-btns">
+      <button class="cf-approve" id="cf-approve">Bestätigen</button>
+      <button class="cf-reject" id="cf-reject">Ablehnen</button>
     </div>
   </div>
   <header>
@@ -386,6 +413,8 @@
       if (m.type === 'audio')         _playPcm16(m.data, m.rate);
       if (m.type === 'audio_stop')    _stopPlayback();
       if (m.type === 'incoming_call') _showIncomingCall();
+      if (m.type === 'confirm_pending') _showConfirm(m.title, m.detail);
+      if (m.type === 'confirm_resolved') _hideConfirm();
     };
 
     function setStatus(s) {
@@ -709,6 +738,42 @@
       doMic();
     });
     document.getElementById('cb-decline').addEventListener('click', _dismissCall);
+
+    // ── Confirmation — an irreversible action is waiting for approval ────────
+    // core/confirm.py's HUD gate has nobody to render to on a headless
+    // server; without this it just times out unanswered. This mirrors it
+    // over the dashboard so any connected device can approve or reject.
+    const confirmBanner = document.getElementById('confirmBanner');
+
+    function _showConfirm(title, detail) {
+      document.getElementById('cf-title').textContent = title || '';
+      document.getElementById('cf-detail').textContent = detail || '';
+      confirmBanner.classList.add('show');
+      toast('⚠ Bestätigung nötig');
+    }
+
+    function _hideConfirm() {
+      confirmBanner.classList.remove('show');
+    }
+
+    async function _decideConfirm(accepted) {
+      _hideConfirm();   // optimistic — confirm_resolved will also arrive via WS
+      try {
+        await _authFetch('/api/confirm/decide', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accepted }),
+        });
+      } catch { sys('Entscheidung konnte nicht gesendet werden.'); }
+    }
+
+    document.getElementById('cf-approve').addEventListener('click', () => _decideConfirm(true));
+    document.getElementById('cf-reject').addEventListener('click', () => _decideConfirm(false));
+
+    // Catch a confirmation that was already pending before this page loaded
+    // (e.g. it fired while nobody had the dashboard open).
+    _authFetch('/api/confirm/pending').then(r => r.json()).then(d => {
+      if (d && d.title) _showConfirm(d.title, d.detail);
+    }).catch(() => {});
 
     // ── Real-time Voice — PCM16 WebSocket → Gemini Live ──────────────────────
     const micBtn  = document.getElementById('mic-btn');

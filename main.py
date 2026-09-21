@@ -1603,9 +1603,35 @@ class JarvisLive:
         # The confirmation gate is useless without a way to ask, and a memory
         # trim is invisible without a way to say so. Both are bound once here
         # rather than passed down through every action signature.
+        #
+        # On a headless server the Qt HUD (show/hide_confirm) renders to
+        # nobody — QT_QPA_PLATFORM=offscreen means there is no screen for it
+        # to appear on, so without the dashboard broadcasts below, a
+        # confirmation would sit unseen until it times out and is silently
+        # abandoned. request()/resolve() run off the asyncio loop's thread
+        # (actions execute in a worker thread), hence run_coroutine_threadsafe
+        # rather than create_task.
+        def _confirm_show(title: str, detail: str) -> None:
+            self.ui.show_confirm(title, detail)
+            if self._dashboard and self._loop:
+                asyncio.run_coroutine_threadsafe(
+                    self._dashboard.broadcast({
+                        "type": "confirm_pending", "title": title, "detail": detail,
+                    }),
+                    self._loop,
+                )
+
+        def _confirm_hide() -> None:
+            self.ui.hide_confirm()
+            if self._dashboard and self._loop:
+                asyncio.run_coroutine_threadsafe(
+                    self._dashboard.broadcast({"type": "confirm_resolved"}),
+                    self._loop,
+                )
+
         confirm_gate.bind(
-            show = self.ui.show_confirm,
-            hide = self.ui.hide_confirm,
+            show = _confirm_show,
+            hide = _confirm_hide,
             log  = self.ui.write_log,
         )
         set_trim_notifier(self.ui.write_log)
