@@ -7,6 +7,8 @@
 # ── Secrets. Committing any of these publishes them. ──────────────────────────
 config/api_keys.json          # your Gemini API key, plus per-plugin credentials
 config/certs/                 # the dashboard's TLS private key and certificate
+config/device_sessions.json   # paired-device tokens; each one doubles as AES
+                              # key material for that device's dashboard traffic
 config/whatsapp_web/          # a LINKED WhatsApp session — committing it hands
                               # somebody your WhatsApp account, not just a key
 **/token*.json                # Google OAuth tokens (Gmail / Calendar plugins)
