@@ -87,15 +87,24 @@ def capabilities() -> dict:
 
 
 def _tool_declarations(state) -> tuple[list[dict], ToolNameMap]:
-    """The same tools the chat has, in the shape Gemini's function-calling expects
-    (name/description/parameters — the same JSON-schema shape OpenAI's Realtime
-    API takes, so this mirrors realtime.py's helper exactly)."""
+    """The same tools the chat has, in the shape Gemini's function-calling expects.
+
+    Deliberately `parameters_json_schema`, not `parameters`: google-genai
+    validates `parameters` against its own `Schema` type, a strict subset of
+    JSON Schema with extra="forbid" — real tool schemas here (n8n's node
+    definitions especially) carry plain JSON-Schema-2020-12 keys like `$schema`
+    and a numeric `exclusiveMinimum` that `Schema` rejects outright, one bad
+    tool taking the whole live line down with it (every declaration is
+    validated together). `parameters_json_schema` is untyped (`Any`) on the
+    google-genai side and passed through to the API as real JSON Schema, so
+    the same sanitize_schema() output every other provider already gets here
+    works unchanged."""
     tools = [t for t in state.tools.all() if t.available and t.handler]
     names = ToolNameMap((t.name for t in tools), limit=64)
     decls = [{
         "name": names.wire(t.name),
         "description": t.description,
-        "parameters": sanitize_schema(t.input_schema),
+        "parameters_json_schema": sanitize_schema(t.input_schema),
     } for t in tools]
     return decls, names
 
