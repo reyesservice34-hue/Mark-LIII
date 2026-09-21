@@ -108,8 +108,13 @@ def capabilities() -> dict:
     }
 
 
-def _tool_declarations(state) -> tuple[list[dict], ToolNameMap]:
+def _tool_declarations(state, principal) -> tuple[list[dict], ToolNameMap]:
     """The same tools the chat has, in the shape Gemini's function-calling expects.
+
+    Role-scoped via runtime.live_tools() — the same state.tools.for_agent()
+    call chat's master agent goes through — not a bare state.tools.all().
+    A lower-privileged caller must see exactly what chat would have shown
+    them, never more just because they came in by voice instead of typing.
 
     Deliberately `parameters_json_schema`, not `parameters`: google-genai
     validates `parameters` against its own `Schema` type, a strict subset of
@@ -121,7 +126,7 @@ def _tool_declarations(state) -> tuple[list[dict], ToolNameMap]:
     google-genai side and passed through to the API as real JSON Schema, so
     the same sanitize_schema() output every other provider already gets here
     works unchanged."""
-    tools = [t for t in state.tools.all() if t.available and t.handler]
+    tools = state.runtime.live_tools(principal)
     names = ToolNameMap((t.name for t in tools), limit=64)
     decls = [{
         "name": names.wire(t.name),
@@ -169,7 +174,7 @@ class RealtimeSession:
 
         self._types = types
         s = settings()
-        decls, names = _tool_declarations(self.state)
+        decls, names = _tool_declarations(self.state, self.principal)
         self._names = names
 
         # This code enforces the wake-word gate regardless of what the model

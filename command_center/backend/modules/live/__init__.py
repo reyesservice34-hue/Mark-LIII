@@ -40,7 +40,10 @@ async def live_capabilities(state: AppState = Depends(get_state),
                             principal: Principal = Depends(current_principal)):
     """What the live line can do right now — and if it cannot, why."""
     caps = _provider().capabilities()
-    caps["tools"] = sum(1 for t in state.tools.all() if t.available and t.handler)
+    # Same count the line will actually offer (state.runtime.live_tools is
+    # role-scoped) — a bare state.tools.all() would show a viewer a number
+    # bigger than what they can really reach.
+    caps["tools"] = len(state.runtime.live_tools(principal))
     return caps
 
 
@@ -69,7 +72,7 @@ async def live(ws: WebSocket):
         await ws.close(code=1011)
         return
 
-    instructions = state.runtime.live_instructions()
+    instructions = state.runtime.live_instructions(principal)
     session = realtime.RealtimeSession(
         state, principal, instructions=instructions,
         send_down=lambda ev: ws.send_text(json.dumps(ev)))
