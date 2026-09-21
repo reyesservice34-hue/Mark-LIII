@@ -365,6 +365,16 @@ def _read(name: str) -> str:
     return (STATIC_DIR / name).read_text(encoding="utf-8")
 
 
+def _safe_next(next_path: str) -> str:
+    """Validate a post-login redirect target before it's embedded in an
+    HTML response. Whitelisting the character set (rather than trying to
+    block '//', ':', etc.) rules out an open-redirect or script-injection
+    vector entirely, since nothing but a local path can ever match."""
+    if next_path and re.fullmatch(r"/[A-Za-z0-9/_-]*", next_path):
+        return next_path
+    return "/"
+
+
 # ── DashboardServer ───────────────────────────────────────────────────────────
 
 class DashboardServer:
@@ -385,6 +395,7 @@ class DashboardServer:
         self._uploads_dir                 = UPLOADS_DIR
         self._login_html                  = _read("login.html")
         self._app_html                    = _read("app.html")
+        self._desktop_html                = _read("desktop.html")
         self.app                          = self._build_app()
 
     # ── one-time key management ───────────────────────────────────────────
@@ -545,6 +556,14 @@ class DashboardServer:
                 return JSONResponse({"error": "Not found"}, status_code=404)
             return FileResponse(str(STATIC_DIR / "icons" / name), media_type="image/png")
 
+        # Shared client logic behind both app.html (phone) and desktop.html —
+        # one script so a fix lands on both surfaces instead of drifting
+        # between near-duplicate copies (see shared.js's own header comment).
+        @app.get("/static/shared.js")
+        async def dashboard_shared_js():
+            return FileResponse(str(STATIC_DIR / "shared.js"),
+                                media_type="application/javascript")
+
         @app.get("/login", response_class=HTMLResponse)
         async def login_page():
             return HTMLResponse(self._login_html)
@@ -558,6 +577,28 @@ class DashboardServer:
                     .replace("__IP__", self._ip)
                     .replace("__PORT__", str(PORT)))
             return HTMLResponse(html)
+
+        @app.get("/desktop", response_class=HTMLResponse)
+        async def desktop_index():
+            # Same backend, same session, same auth flow as "/" — just a
+            # wider layout with a system-monitor sidebar and command palette
+            # for a PC screen. See shared.js for the logic both pages share.
+            html = (self._desktop_html
+                    .replace("__IP__", self._ip)
+                    .replace("__PORT__", str(PORT)))
+            return HTMLResponse(html)
+
+        @app.get("/api/system/status")
+        async def system_status(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                from actions.system_monitor import get_system_status
+                data = await asyncio.to_thread(get_system_status)
+            except Exception:
+                return JSONResponse({"error": "System-Metriken nicht verfügbar"},
+                                     status_code=503)
+            return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
         @app.post("/login")
         async def login(req: Request):
@@ -585,8 +626,9 @@ class DashboardServer:
                                 status_code=401)
 
         @app.get("/auto-login")
-        async def auto_login(key: str = ""):
+        async def auto_login(key: str = "", next: str = "/"):
             """QR code target — validates one-time key, creates session, redirects phone."""
+            dest = _safe_next(next)
             now = time.time()
             if not key or key not in self._pending_keys or self._pending_keys[key] <= now:
                 return HTMLResponse("""<!DOCTYPE html>
@@ -626,15 +668,16 @@ class DashboardServer:
   sessionStorage.setItem('jarvis_token','{tok}');
   sessionStorage.setItem('jarvis_key','{key}');
   localStorage.setItem('jarvis_device_token','{dev_tok}');
-  setTimeout(function(){{location.replace('/')}},400);
+  setTimeout(function(){{location.replace('{dest}')}},400);
 </script>
 <p>Connecting to JARVIS…</p>
 </body></html>""")
 
         @app.get("/auto-device-login")
-        async def auto_device_login(device_token: str = ""):
+        async def auto_device_login(device_token: str = "", next: str = "/"):
             """Home-screen relaunch target — reuses a previously paired device
             token to get a fresh session without re-scanning the QR code."""
+            dest = _safe_next(next)
             session = self._device_sessions.get(device_token)
             if not device_token or not session:
                 return HTMLResponse("""<!DOCTYPE html>
@@ -671,7 +714,7 @@ class DashboardServer:
 <script>
   sessionStorage.setItem('jarvis_token','{tok}');
   sessionStorage.setItem('jarvis_key','{key}');
-  setTimeout(function(){{location.replace('/')}},400);
+  setTimeout(function(){{location.replace('{dest}')}},400);
 </script>
 <p>Connecting to JARVIS…</p>
 </body></html>""")

@@ -219,6 +219,13 @@
   </div>
 
   <script>
+    // Whatever page redirected here (e.g. /desktop) is passed through so
+    // login lands back where it was actually headed, not always on "/".
+    // Validated the same way the server validates it — a local path only —
+    // so a crafted ?next= can't turn this into an open redirect.
+    const _rawNext = new URLSearchParams(location.search).get('next') || '/';
+    const _next = /^\/[A-Za-z0-9/_-]*$/.test(_rawNext) ? _rawNext : '/';
+
     // Try auto-reconnect with stored device token (set on first QR login)
     (async function() {
       const devTok = localStorage.getItem('jarvis_device_token');
@@ -234,7 +241,7 @@
         if (d.ok && d.token) {
           sessionStorage.setItem('jarvis_key', d.key);
           sessionStorage.setItem('jarvis_token', d.token);
-          location.replace('/');
+          location.replace(_next);
           return;
         }
       } catch (_) {}
@@ -273,7 +280,7 @@
         if (data.device_token) {
           localStorage.setItem('jarvis_device_token', data.device_token);
         }
-        location.href = '/';
+        location.href = _next;
       } else {
         inp.value = '';
         inp.focus();
