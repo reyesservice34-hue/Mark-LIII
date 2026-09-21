@@ -1,0 +1,46 @@
+# scripts/cloudflared-tunnel.service — expose the JARVIS dashboard on the
+# public internet without opening any inbound firewall port. cloudflared
+# makes an OUTBOUND connection from this server to Cloudflare's edge, so
+# whatever inbound firewall/security-group rules the hosting provider has
+# (or doesn't have) never come into play.
+#
+# This is a "quick tunnel": no Cloudflare account needed, but the public
+# URL changes every time this service (re)starts — read it from the log
+# after each start. For a stable, permanent URL under your own domain, a
+# named tunnel (needs a free Cloudflare account with that domain added) is
+# a later upgrade, not required to get going.
+#
+# Install:
+#
+#   curl -L --output /tmp/cloudflared.deb \
+#     https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+#   sudo dpkg -i /tmp/cloudflared.deb
+#   sudo cp scripts/cloudflared-tunnel.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now cloudflared-tunnel
+#
+# Get the current public URL (changes on every restart of this service):
+#
+#   journalctl -u cloudflared-tunnel -n 30 --no-pager | grep trycloudflare.com
+#
+# Logs:      journalctl -u cloudflared-tunnel -f
+# Restart:   sudo systemctl restart cloudflared-tunnel
+
+[Unit]
+Description=Cloudflare Tunnel for the JARVIS dashboard
+After=network-online.target mark-liii.service
+Wants=network-online.target
+BindsTo=mark-liii.service
+
+[Service]
+Type=simple
+# --no-tls-verify: only relevant to the LOCAL hop (cloudflared -> localhost:8000),
+# which uses the dashboard's self-signed cert. The PUBLIC hop (visitor ->
+# Cloudflare's edge) always gets a real, valid certificate from Cloudflare —
+# this flag never touches that.
+ExecStart=/usr/local/bin/cloudflared tunnel --url https://localhost:8000 --no-tls-verify
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
