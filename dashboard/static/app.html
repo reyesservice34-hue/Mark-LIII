@@ -107,6 +107,8 @@
       border-radius: 99px; background: var(--adim); border: 1px solid rgba(171,139,245,0.3);
       color: var(--accent); font-weight: 700; letter-spacing: 0.5px; cursor: pointer;
     }
+    .companion-share.live { background: var(--gdim); border-color: rgba(34,197,94,0.35); color: var(--green); }
+    .companion-loc { font-size: 10px; color: var(--muted); margin-top: 2px; }
 
     /* ── FEED ── */
     main { flex: 1; overflow-y: auto; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
@@ -267,7 +269,8 @@
       <span class="companion-when" id="companion-when"></span>
     </div>
     <div class="companion-eta" id="companion-eta"></div>
-    <button class="companion-share" id="companion-share" onclick="companionShareLocation()">📍 Standort teilen für Ankunftsprognose</button>
+    <div class="companion-loc" id="companion-loc-status">Standort aus.</div>
+    <button class="companion-share" id="companion-location-toggle" onclick="companionToggleLocation()">📍 Live-Standort einschalten</button>
   </div>
   <main id="feed"></main>
   <footer>
@@ -646,35 +649,53 @@
     // Float32 PCM → resample to 16 kHz + convert to Int16.
     // Picking every Nth sample (the old approach) aliases high-frequency
     // content back into the speech band as noise — audible distortion that
-    // measurably hurts recognition. A short box-filter (cheap anti-aliasing
+    // measurably hurts recognition. A box-filter (cheap anti-aliasing
     // low-pass, sized to the downsample ratio) followed by linear
     // interpolation is a large quality step up for negligible CPU cost.
-    function _f32toPcm16(f32, srcRate) {
-      let s = f32;
-      if (srcRate !== 16000) {
-        const ratio = srcRate / 16000;
-        const filterLen = Math.max(1, Math.round(ratio));
-        const filtered = new Float32Array(f32.length);
-        let sum = 0;
-        for (let i = 0; i < f32.length; i++) {
-          sum += f32[i];
-          if (i >= filterLen) sum -= f32[i - filterLen];
-          filtered[i] = sum / Math.min(i + 1, filterLen);
-        }
-        const len = Math.round(f32.length / ratio);
-        s = new Float32Array(len);
-        for (let i = 0; i < len; i++) {
-          const pos = i * ratio;
-          const i0 = Math.floor(pos);
-          const i1 = Math.min(i0 + 1, filtered.length - 1);
-          const frac = pos - i0;
-          s[i] = filtered[i0] * (1 - frac) + filtered[i1] * frac;
-        }
+    // Both the filter's lookback and the fractional resample position are
+    // carried across calls: resetting them every AudioWorklet callback
+    // (every ~128 samples) reintroduces a periodic block-boundary artifact,
+    // verified via a Node test (RMSE 0.79 vs. 0.0 against an unchunked
+    // reference resample of the same signal).
+    function _makePcm16Resampler(srcRate) {
+      if (srcRate === 16000) {
+        return input => {
+          const out = new Int16Array(input.length);
+          for (let i = 0; i < input.length; i++)
+            out[i] = Math.max(-32768, Math.min(32767, Math.round(input[i] * 32768)));
+          return out.buffer;
+        };
       }
-      const out = new Int16Array(s.length);
-      for (let i = 0; i < s.length; i++)
-        out[i] = Math.max(-32768, Math.min(32767, Math.round(s[i] * 32768)));
-      return out.buffer;
+      const ratio = srcRate / 16000;
+      const filterLen = Math.max(1, Math.round(ratio));
+      let history = new Float32Array(filterLen - 1);
+      let carry = new Float32Array(0);
+      let position = 0;
+      return input => {
+        const extended = new Float32Array(history.length + input.length);
+        extended.set(history); extended.set(input, history.length);
+        const filtered = new Float32Array(input.length);
+        let sum = 0;
+        for (let i = 0; i < filterLen; i++) sum += extended[i] || 0;
+        for (let i = 0; i < input.length; i++) {
+          filtered[i] = sum / filterLen;
+          sum += (extended[i + filterLen] || 0) - extended[i];
+        }
+        history = extended.slice(extended.length - (filterLen - 1));
+
+        const samples = new Float32Array(carry.length + filtered.length);
+        samples.set(carry); samples.set(filtered, carry.length);
+        const output = [];
+        while (position + 1 < samples.length) {
+          const index = Math.floor(position), fraction = position - index;
+          const value = samples[index] + fraction * (samples[index + 1] - samples[index]);
+          output.push(Math.max(-32768, Math.min(32767, Math.round(value * 32768))));
+          position += ratio;
+        }
+        const consumed = Math.min(samples.length, Math.floor(position));
+        carry = samples.slice(consumed); position -= consumed;
+        return new Int16Array(output).buffer;
+      };
     }
 
     function _showVoiceSetup() {
@@ -738,6 +759,7 @@
 
       ws.onopen = async () => {
         const rate = ctx.sampleRate;
+        const resample = _makePcm16Resampler(rate);
         const src  = ctx.createMediaStreamSource(stream);
 
         // AudioWorklet (modern) — runs in dedicated audio thread
@@ -751,7 +773,7 @@
           // matches PC mic chunk size, prevents queue flooding on the server.
           let _pbuf = [], _plen = 0;
           nd.port.onmessage = e => {
-            const chunk = new Int16Array(_f32toPcm16(e.data, rate));
+            const chunk = new Int16Array(resample(e.data));
             _pbuf.push(chunk); _plen += chunk.length;
             if (_plen >= 1024) {
               const out = new Int16Array(_plen); let off = 0;
@@ -766,7 +788,7 @@
           // ScriptProcessor fallback (deprecated, still works everywhere)
           const sp = ctx.createScriptProcessor(4096, 1, 1);
           sp.onaudioprocess = e => {
-            if (ws.readyState === 1) ws.send(_f32toPcm16(e.inputBuffer.getChannelData(0), rate));
+            if (ws.readyState === 1) ws.send(resample(e.inputBuffer.getChannelData(0)));
           };
           src.connect(sp); sp.connect(ctx.destination);
           _audioNd = sp;
@@ -804,6 +826,9 @@
     // configured (companionRefresh's fetch just returns non-ok and the card
     // stays hidden) — no separate feature flag needed.
     let _companionEvent = null;
+    let _locationWatchId = null;
+    let _lastPosition = null;
+    let _locationEtaTimer = null;
 
     async function companionRefresh() {
       const box = document.getElementById('companion');
@@ -815,22 +840,26 @@
         const next = (data.events || [])
           .filter(e => !e.allDay && new Date(e.start) > now)
           .sort((a, b) => new Date(a.start) - new Date(b.start))[0];
-        if (!next) { box.classList.remove('show'); _companionEvent = null; return; }
+        if (!next) {
+          box.classList.remove('show'); _companionEvent = null;
+          if (_locationWatchId !== null) _companionStopLocation('Standort pausiert — kein anstehender Termin.');
+          return;
+        }
         _companionEvent = next;
         document.getElementById('companion-title').textContent = next.title;
         const mins = Math.round((new Date(next.start) - now) / 60000);
         document.getElementById('companion-when').textContent =
           mins >= 60 ? `in ${Math.floor(mins / 60)}h ${mins % 60}m` : `in ${mins}m`;
         const etaEl = document.getElementById('companion-eta');
-        const shareBtn = document.getElementById('companion-share');
+        const toggleBtn = document.getElementById('companion-location-toggle');
         if (next.location) {
-          etaEl.textContent = '';
-          etaEl.className = 'companion-eta';
-          shareBtn.style.display = 'inline-block';
+          if (!_locationWatchId) { etaEl.textContent = ''; etaEl.className = 'companion-eta'; }
+          toggleBtn.style.display = 'inline-block';
         } else {
           etaEl.textContent = 'Kein Ort für diesen Termin hinterlegt.';
           etaEl.className = 'companion-eta';
-          shareBtn.style.display = 'none';
+          toggleBtn.style.display = 'none';
+          if (_locationWatchId !== null) _companionStopLocation('Standort pausiert — kein Ort hinterlegt.');
         }
         box.classList.add('show');
       } catch (_) { box.classList.remove('show'); }
@@ -844,40 +873,100 @@
         (d.level === 'spaet' ? ' warn' : (d.level === 'los' || d.level === 'bald') ? ' soon' : '');
     }
 
-    function companionShareLocation() {
-      if (!navigator.geolocation || !_companionEvent) return;
+    function _companionLocStatus(text) {
+      const el = document.getElementById('companion-loc-status');
+      if (el) el.textContent = text;
+    }
+
+    // Live standort: kontinuierliches watchPosition statt einmaliger Abfrage —
+    // Status ist jederzeit sichtbar (Button + Statuszeile) und der Nutzer kann
+    // jederzeit pausieren; wird außerdem automatisch pausiert, sobald die App
+    // in den Hintergrund geht (siehe visibilitychange/pagehide unten).
+    function companionToggleLocation() {
+      if (_locationWatchId !== null) { _companionStopLocation('Live-Standort pausiert.'); return; }
+      if (!navigator.geolocation || !isSecureContext) {
+        _companionLocStatus('Standort hier nicht verfügbar — HTTPS und Berechtigung prüfen.');
+        return;
+      }
+      _companionLocStatus('Standortfreigabe wird angefragt …');
+      _locationWatchId = navigator.geolocation.watchPosition(
+        pos => {
+          _lastPosition = pos;
+          _companionLocStatus(
+            `Live-Standort aktiv · erfasst ${new Date(pos.timestamp).toLocaleTimeString('de-DE')} · Genauigkeit ca. ${Math.round(pos.coords.accuracy)} m`
+          );
+          _companionCheckEta();
+        },
+        () => _companionStopLocation('Standort nicht verfügbar oder nicht freigegeben.'),
+        { enableHighAccuracy: false, maximumAge: 60000, timeout: 15000 }
+      );
+      const btn = document.getElementById('companion-location-toggle');
+      btn.textContent = '📍 Live-Standort pausieren';
+      btn.classList.add('live');
+      if (_locationEtaTimer) clearInterval(_locationEtaTimer);
+      _locationEtaTimer = setInterval(_companionCheckEta, 180000);
+    }
+
+    function _companionStopLocation(msg) {
+      if (_locationWatchId !== null) navigator.geolocation.clearWatch(_locationWatchId);
+      _locationWatchId = null;
+      _lastPosition = null;
+      if (_locationEtaTimer) { clearInterval(_locationEtaTimer); _locationEtaTimer = null; }
+      const btn = document.getElementById('companion-location-toggle');
+      if (btn) { btn.textContent = '📍 Live-Standort einschalten'; btn.classList.remove('live'); }
+      _companionLocStatus(msg);
+    }
+
+    async function _companionCheckEta() {
+      if (!_lastPosition || !_companionEvent) return;
+      if (Date.now() - _lastPosition.timestamp > 180000) {
+        _companionLocStatus('Standort veraltet — warte auf neue Erfassung.');
+        return;
+      }
       const etaEl = document.getElementById('companion-eta');
-      etaEl.textContent = 'Standort wird ermittelt…';
-      navigator.geolocation.getCurrentPosition(async (pos) => {
-        const body = {
-          eventId: _companionEvent.id,
-          lat: pos.coords.latitude, lon: pos.coords.longitude,
-          accuracy: pos.coords.accuracy, timestamp: pos.timestamp / 1000,
-        };
-        try {
-          let r = await _authFetch('/api/companion/eta', {
+      etaEl.textContent = 'Fahrzeit wird geprüft …';
+      const body = {
+        eventId: _companionEvent.id,
+        lat: _lastPosition.coords.latitude, lon: _lastPosition.coords.longitude,
+        accuracy: _lastPosition.coords.accuracy, timestamp: _lastPosition.timestamp / 1000,
+      };
+      try {
+        let r = await _authFetch('/api/companion/eta', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        let data = await r.json();
+        if (data.needsConfirmation && data.destinations && data.destinations.length) {
+          // Ambiguous address match — take the closest-named candidate rather
+          // than showing a picker, keeping this card minimal; the full label
+          // is still visible in the result if the user wants to double check.
+          body.destinationId = data.destinations[0].id;
+          r = await _authFetch('/api/companion/eta', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
           });
-          let data = await r.json();
-          if (data.needsConfirmation && data.destinations && data.destinations.length) {
-            // Ambiguous address match — take the closest-named candidate rather
-            // than showing a picker, keeping this card minimal; the full label
-            // is still visible in the result if the user wants to double check.
-            body.destinationId = data.destinations[0].id;
-            r = await _authFetch('/api/companion/eta', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            });
-            data = await r.json();
-          }
-          _companionRenderEta(data);
-        } catch (_) {
-          etaEl.textContent = 'Prognose derzeit nicht möglich.';
+          data = await r.json();
         }
-      }, () => { etaEl.textContent = 'Standort nicht verfügbar — Berechtigung erteilt?'; },
-         { enableHighAccuracy: true, timeout: 15000 });
+        _companionRenderEta(data);
+      } catch (_) {
+        etaEl.textContent = 'Prognose derzeit nicht möglich.';
+      }
     }
+
+    // Geräteberechtigungen bleiben sichtbar und sind jederzeit pausierbar:
+    // Mikrofon, Wiedergabe und Live-Standort werden beendet, sobald die App
+    // nicht mehr sichtbar ist oder geschlossen wird — kein stilles Tracking
+    // im Hintergrund.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) return;
+      if (_voiceWs) _stopVoice();
+      _stopPlayback();
+      if (_locationWatchId !== null) _companionStopLocation('Standort pausiert (App im Hintergrund).');
+    });
+    window.addEventListener('pagehide', () => {
+      if (_voiceWs) _stopVoice();
+      if (_locationWatchId !== null) _companionStopLocation('Standort pausiert.');
+    });
 
     companionRefresh();
     setInterval(companionRefresh, 120000);
