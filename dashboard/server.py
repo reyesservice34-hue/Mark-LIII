@@ -11,6 +11,7 @@ Install deps:  pip install fastapi "uvicorn[standard]" cryptography
 import asyncio
 import base64
 import hashlib
+import json
 import re
 import secrets
 import socket
@@ -375,6 +376,32 @@ def _safe_next(next_path: str) -> str:
     return "/"
 
 
+# ── device pairing persistence ─────────────────────────────────────────────
+# device_token → {"session_key": ...} used to be in-memory only, so every
+# restart of the process (a crash, a reconnect, or — during active
+# development — a `git pull` + restart to pick up a fix) silently forgot
+# every paired device and forced a fresh PIN on the next visit. The session
+# key doubles as AES key material, same trust level as the Gemini key
+# already sitting in config/api_keys.json, so it lives next to it.
+DEVICE_SESSIONS_PATH = BASE_DIR / "config" / "device_sessions.json"
+
+
+def _load_device_sessions() -> dict:
+    try:
+        data = json.loads(DEVICE_SESSIONS_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_device_sessions(sessions: dict) -> None:
+    try:
+        DEVICE_SESSIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DEVICE_SESSIONS_PATH.write_text(json.dumps(sessions), encoding="utf-8")
+    except Exception as e:
+        print(f"[Dashboard] Could not persist device sessions: {e}")
+
+
 # ── DashboardServer ───────────────────────────────────────────────────────────
 
 class DashboardServer:
@@ -390,7 +417,7 @@ class DashboardServer:
         self._wake_callback               = None
         self._connect_callback            = None
         self._pending_keys: dict[str, float] = {}
-        self._device_sessions: dict[str, dict] = {}  # device_token → {session_key}
+        self._device_sessions: dict[str, dict] = _load_device_sessions()  # device_token → {session_key}
         self._phone_audio_queue: asyncio.Queue    = asyncio.Queue(maxsize=200)
         self._uploads_dir                 = UPLOADS_DIR
         self._login_html                  = _read("login.html")
@@ -613,6 +640,7 @@ class DashboardServer:
                 self._token_keys[tok] = entered
                 self._aes_key(entered)                   # pre-derive & cache
                 self._device_sessions[dev_tok] = {"session_key": entered}
+                _save_device_sessions(self._device_sessions)
                 if self._connect_callback:
                     self._connect_callback()
                 asyncio.create_task(self.broadcast(
@@ -649,6 +677,7 @@ class DashboardServer:
             self._token_keys[tok] = key
             self._aes_key(key)
             self._device_sessions[dev_tok] = {"session_key": key}
+            _save_device_sessions(self._device_sessions)
 
             if self._connect_callback:
                 self._connect_callback()
@@ -748,6 +777,7 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             count = len(self._device_sessions)
             self._device_sessions.clear()
+            _save_device_sessions(self._device_sessions)
             return JSONResponse({"ok": True, "revoked": count})
 
         @app.post("/api/command")
