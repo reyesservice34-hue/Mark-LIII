@@ -608,6 +608,19 @@ class JarvisLive:
         manual = self._dashboard.get_manual_url()
         return url, key, f"{url}/auto-login?key={key}", manual
 
+    async def _log_pairing_link(self) -> None:
+        """On a headless server there's no visible 'Remote Control' button to
+        click, and new_key() expires after 10 minutes — so print a fresh
+        pairing link to the log on startup and keep refreshing it before it
+        expires, so there's always a working one to copy from journalctl."""
+        while True:
+            result = self._make_remote_key()
+            if result:
+                _url, key, auto_url, manual = result
+                print(f"[Dashboard] Pairing link (open in phone Safari, valid ~10 min): {auto_url}")
+                print(f"[Dashboard] Or open {manual} manually and enter code: {key}")
+            await asyncio.sleep(480)  # refresh comfortably before the 10-minute expiry
+
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
             return
@@ -923,6 +936,14 @@ class JarvisLive:
             )
 
     async def _listen_audio(self):
+        # A headless server with no sound hardware at all has no "system
+        # default" device for PortAudio to fall back to — opening one raises
+        # instead of degrading, which used to take the whole session down in
+        # a crash-reconnect loop. The phone mic (relayed in via the dashboard)
+        # is a complete substitute here, so just skip the local stream.
+        if not audio_devices.list_devices("input"):
+            print("[JARVIS] 🎤 No local microphone — using phone mic only.")
+            return
         print("[JARVIS] 🎤 Mic started")
         loop = asyncio.get_event_loop()
 
@@ -1043,6 +1064,15 @@ class JarvisLive:
                             txt = _clean_transcript(sc.output_transcription.text)
                             if txt and txt != (out_buf[-1] if out_buf else ""):
                                 out_buf.append(txt)
+                                # Stream each chunk as it's generated rather than
+                                # waiting for turn_complete — a longer answer takes
+                                # as long to generate as it would to speak aloud,
+                                # so without this the dashboard shows nothing at
+                                # all until the whole reply is done.
+                                if self._dashboard:
+                                    asyncio.create_task(
+                                        self._dashboard.broadcast_log_delta("jarvis", txt)
+                                    )
 
                         if sc.input_transcription and sc.input_transcription.text:
                             txt = _clean_transcript(sc.input_transcription.text)
@@ -1132,6 +1162,16 @@ class JarvisLive:
             raise
 
     async def _play_audio(self):
+        # Same reasoning as _listen_audio: no local speaker to fall back to on
+        # a headless server, and JARVIS's replies already stream to the phone
+        # via the dashboard's broadcast_audio — nothing is lost by skipping.
+        if not audio_devices.list_devices("output"):
+            print("[JARVIS] 🔊 No local speaker — audio goes to the phone only.")
+            # _receive_audio() still fills audio_in_queue for local playback
+            # regardless of whether anything drains it — keep draining it
+            # here so it doesn't grow without bound for the life of the session.
+            while True:
+                await self.audio_in_queue.get()
         print("[JARVIS] 🔊 Play started")
 
         _spk_name = get_output_device()
@@ -1532,6 +1572,19 @@ class JarvisLive:
                         turn_complete=True,
                     )
                     self.ui.write_log(f"[Web]: {text}")
+                    self._session_log.append(f"User: {text}")
+                    if self._dashboard:
+                        # Voice input reaches every connected client via
+                        # transcription broadcasts; a typed command otherwise
+                        # only ever appeared in the sender's own tab (fire-
+                        # and-forget POST, no round trip) — invisible to any
+                        # other open client and lost on reconnect since it
+                        # never entered _history. Broadcasting it here makes
+                        # typed and spoken turns behave the same way.
+                        asyncio.create_task(self._dashboard.broadcast({
+                            "type": "log", "speaker": "user", "text": text,
+                            "ts": datetime.now().isoformat(),
+                        }))
                 else:
                     print(f"[Dashboard] Dropped command (no session): {text}")
             except asyncio.TimeoutError:
@@ -1550,9 +1603,35 @@ class JarvisLive:
         # The confirmation gate is useless without a way to ask, and a memory
         # trim is invisible without a way to say so. Both are bound once here
         # rather than passed down through every action signature.
+        #
+        # On a headless server the Qt HUD (show/hide_confirm) renders to
+        # nobody — QT_QPA_PLATFORM=offscreen means there is no screen for it
+        # to appear on, so without the dashboard broadcasts below, a
+        # confirmation would sit unseen until it times out and is silently
+        # abandoned. request()/resolve() run off the asyncio loop's thread
+        # (actions execute in a worker thread), hence run_coroutine_threadsafe
+        # rather than create_task.
+        def _confirm_show(title: str, detail: str) -> None:
+            self.ui.show_confirm(title, detail)
+            if self._dashboard and self._loop:
+                asyncio.run_coroutine_threadsafe(
+                    self._dashboard.broadcast({
+                        "type": "confirm_pending", "title": title, "detail": detail,
+                    }),
+                    self._loop,
+                )
+
+        def _confirm_hide() -> None:
+            self.ui.hide_confirm()
+            if self._dashboard and self._loop:
+                asyncio.run_coroutine_threadsafe(
+                    self._dashboard.broadcast({"type": "confirm_resolved"}),
+                    self._loop,
+                )
+
         confirm_gate.bind(
-            show = self.ui.show_confirm,
-            hide = self.ui.hide_confirm,
+            show = _confirm_show,
+            hide = _confirm_hide,
             log  = self.ui.write_log,
         )
         set_trim_notifier(self.ui.write_log)
@@ -1644,6 +1723,7 @@ class JarvisLive:
                     tg.create_task(self._run_sleep_watch())
                     if self._dashboard:
                         tg.create_task(self._relay_phone_audio())
+                        tg.create_task(self._log_pairing_link())
 
                     # Morning briefing — fires once per process launch (if enabled).
                     # Skipped in wake-word mode: it comes up asleep, and a briefing

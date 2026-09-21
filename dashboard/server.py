@@ -11,6 +11,7 @@ Install deps:  pip install fastapi "uvicorn[standard]" cryptography
 import asyncio
 import base64
 import hashlib
+import json
 import re
 import secrets
 import socket
@@ -365,6 +366,42 @@ def _read(name: str) -> str:
     return (STATIC_DIR / name).read_text(encoding="utf-8")
 
 
+def _safe_next(next_path: str) -> str:
+    """Validate a post-login redirect target before it's embedded in an
+    HTML response. Whitelisting the character set (rather than trying to
+    block '//', ':', etc.) rules out an open-redirect or script-injection
+    vector entirely, since nothing but a local path can ever match."""
+    if next_path and re.fullmatch(r"/[A-Za-z0-9/_-]*", next_path):
+        return next_path
+    return "/"
+
+
+# ── device pairing persistence ─────────────────────────────────────────────
+# device_token → {"session_key": ...} used to be in-memory only, so every
+# restart of the process (a crash, a reconnect, or — during active
+# development — a `git pull` + restart to pick up a fix) silently forgot
+# every paired device and forced a fresh PIN on the next visit. The session
+# key doubles as AES key material, same trust level as the Gemini key
+# already sitting in config/api_keys.json, so it lives next to it.
+DEVICE_SESSIONS_PATH = BASE_DIR / "config" / "device_sessions.json"
+
+
+def _load_device_sessions() -> dict:
+    try:
+        data = json.loads(DEVICE_SESSIONS_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_device_sessions(sessions: dict) -> None:
+    try:
+        DEVICE_SESSIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DEVICE_SESSIONS_PATH.write_text(json.dumps(sessions), encoding="utf-8")
+    except Exception as e:
+        print(f"[Dashboard] Could not persist device sessions: {e}")
+
+
 # ── DashboardServer ───────────────────────────────────────────────────────────
 
 class DashboardServer:
@@ -380,11 +417,12 @@ class DashboardServer:
         self._wake_callback               = None
         self._connect_callback            = None
         self._pending_keys: dict[str, float] = {}
-        self._device_sessions: dict[str, dict] = {}  # device_token → {session_key}
+        self._device_sessions: dict[str, dict] = _load_device_sessions()  # device_token → {session_key}
         self._phone_audio_queue: asyncio.Queue    = asyncio.Queue(maxsize=200)
         self._uploads_dir                 = UPLOADS_DIR
         self._login_html                  = _read("login.html")
         self._app_html                    = _read("app.html")
+        self._desktop_html                = _read("desktop.html")
         self.app                          = self._build_app()
 
     # ── one-time key management ───────────────────────────────────────────
@@ -466,6 +504,22 @@ class DashboardServer:
                 dead.add(ws)
         self._clients -= dead
 
+    async def broadcast_log_delta(self, speaker: str, text: str) -> None:
+        """Stream one partial-transcript chunk to currently connected clients
+        only. Deliberately skips _history — unlike broadcast(), storing every
+        chunk there would flood the 300-entry reconnect replay with word
+        fragments instead of the final assembled message."""
+        if not self._clients:
+            return
+        msg = {"type": "log_delta", "speaker": speaker, "text": text}
+        dead: set[WebSocket] = set()
+        for ws in list(self._clients):
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                dead.add(ws)
+        self._clients -= dead
+
     async def broadcast_call(self) -> None:
         """Ring connected clients — JARVIS wants to speak on its own initiative
         (a monitor alert, a proactive check-in) and there's nobody on the line
@@ -512,6 +566,31 @@ class DashboardServer:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(_CRYPTOJS_CDN)
 
+        # ── PWA assets — installable "Add to Home Screen" on iOS/Android ───────
+        @app.get("/manifest.json")
+        async def pwa_manifest():
+            return FileResponse(str(STATIC_DIR / "manifest.json"),
+                                media_type="application/manifest+json")
+
+        @app.get("/sw.js")
+        async def pwa_service_worker():
+            return FileResponse(str(STATIC_DIR / "sw.js"),
+                                media_type="application/javascript")
+
+        @app.get("/static/icons/{name}")
+        async def pwa_icon(name: str):
+            if not re.fullmatch(r"icon-(180|192|512)\.png", name):
+                return JSONResponse({"error": "Not found"}, status_code=404)
+            return FileResponse(str(STATIC_DIR / "icons" / name), media_type="image/png")
+
+        # Shared client logic behind both app.html (phone) and desktop.html —
+        # one script so a fix lands on both surfaces instead of drifting
+        # between near-duplicate copies (see shared.js's own header comment).
+        @app.get("/static/shared.js")
+        async def dashboard_shared_js():
+            return FileResponse(str(STATIC_DIR / "shared.js"),
+                                media_type="application/javascript")
+
         @app.get("/login", response_class=HTMLResponse)
         async def login_page():
             return HTMLResponse(self._login_html)
@@ -526,6 +605,28 @@ class DashboardServer:
                     .replace("__PORT__", str(PORT)))
             return HTMLResponse(html)
 
+        @app.get("/desktop", response_class=HTMLResponse)
+        async def desktop_index():
+            # Same backend, same session, same auth flow as "/" — just a
+            # wider layout with a system-monitor sidebar and command palette
+            # for a PC screen. See shared.js for the logic both pages share.
+            html = (self._desktop_html
+                    .replace("__IP__", self._ip)
+                    .replace("__PORT__", str(PORT)))
+            return HTMLResponse(html)
+
+        @app.get("/api/system/status")
+        async def system_status(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                from actions.system_monitor import get_system_status
+                data = await asyncio.to_thread(get_system_status)
+            except Exception:
+                return JSONResponse({"error": "System-Metriken nicht verfügbar"},
+                                     status_code=503)
+            return JSONResponse(data, headers={"Cache-Control": "no-store"})
+
         @app.post("/login")
         async def login(req: Request):
             body    = await req.json()
@@ -534,22 +635,28 @@ class DashboardServer:
             if entered in self._pending_keys and self._pending_keys[entered] > now:
                 del self._pending_keys[entered]          # one-time use
                 tok = secrets.token_urlsafe(32)
+                dev_tok = secrets.token_urlsafe(32)
                 self._tokens.add(tok)
                 self._token_keys[tok] = entered
                 self._aes_key(entered)                   # pre-derive & cache
+                self._device_sessions[dev_tok] = {"session_key": entered}
+                _save_device_sessions(self._device_sessions)
                 if self._connect_callback:
                     self._connect_callback()
                 asyncio.create_task(self.broadcast(
                     {"type": "sys", "text": "Remote connection established."}
                 ))
                 # Bearer token in response body — no cookies needed (works on any browser/HTTP)
-                return JSONResponse({"ok": True, "token": tok})
+                # device_token lets the phone skip re-entering a PIN next time —
+                # same pairing this login page already does for the QR/auto-login path.
+                return JSONResponse({"ok": True, "token": tok, "device_token": dev_tok})
             return JSONResponse({"ok": False, "error": "Invalid or expired key"},
                                 status_code=401)
 
         @app.get("/auto-login")
-        async def auto_login(key: str = ""):
+        async def auto_login(key: str = "", next: str = "/"):
             """QR code target — validates one-time key, creates session, redirects phone."""
+            dest = _safe_next(next)
             now = time.time()
             if not key or key not in self._pending_keys or self._pending_keys[key] <= now:
                 return HTMLResponse("""<!DOCTYPE html>
@@ -570,6 +677,7 @@ class DashboardServer:
             self._token_keys[tok] = key
             self._aes_key(key)
             self._device_sessions[dev_tok] = {"session_key": key}
+            _save_device_sessions(self._device_sessions)
 
             if self._connect_callback:
                 self._connect_callback()
@@ -589,7 +697,53 @@ class DashboardServer:
   sessionStorage.setItem('jarvis_token','{tok}');
   sessionStorage.setItem('jarvis_key','{key}');
   localStorage.setItem('jarvis_device_token','{dev_tok}');
-  setTimeout(function(){{location.replace('/')}},400);
+  setTimeout(function(){{location.replace('{dest}')}},400);
+</script>
+<p>Connecting to JARVIS…</p>
+</body></html>""")
+
+        @app.get("/auto-device-login")
+        async def auto_device_login(device_token: str = "", next: str = "/"):
+            """Home-screen relaunch target — reuses a previously paired device
+            token to get a fresh session without re-scanning the QR code."""
+            dest = _safe_next(next)
+            session = self._device_sessions.get(device_token)
+            if not device_token or not session:
+                return HTMLResponse("""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width">
+<style>
+  body{background:#07090f;color:#dde3ed;font-family:sans-serif;
+       display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}
+  h2{color:#f87171;margin-bottom:12px}p{color:#5e6a7e;font-size:14px}
+</style></head>
+<body><div><h2>Device Not Paired</h2>
+<p>Press <strong style="color:#dde3ed">Remote Control</strong> in JARVIS to get a new QR code.</p>
+</div></body></html>""")
+
+            key = session["session_key"]
+            tok = secrets.token_urlsafe(32)
+            self._tokens.add(tok)
+            self._token_keys[tok] = key
+            self._aes_key(key)
+
+            if self._connect_callback:
+                self._connect_callback()
+            asyncio.create_task(self.broadcast(
+                {"type": "sys", "text": "Known device reconnected automatically."}
+            ))
+
+            return HTMLResponse(f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width">
+<style>
+  body{{background:#07090f;color:#dde3ed;font-family:sans-serif;
+       display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}}
+  p{{color:#5e6a7e;font-size:14px}}
+</style></head>
+<body>
+<script>
+  sessionStorage.setItem('jarvis_token','{tok}');
+  sessionStorage.setItem('jarvis_key','{key}');
+  setTimeout(function(){{location.replace('{dest}')}},400);
 </script>
 <p>Connecting to JARVIS…</p>
 </body></html>""")
@@ -623,6 +777,7 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             count = len(self._device_sessions)
             self._device_sessions.clear()
+            _save_device_sessions(self._device_sessions)
             return JSONResponse({"ok": True, "revoked": count})
 
         @app.post("/api/command")
@@ -795,6 +950,22 @@ class DashboardServer:
                 pass
             finally:
                 self._clients.discard(websocket)
+
+        # Optional: calendar + ETA companion. Silently absent until
+        # config/companion-calendar.json exists — nothing else here depends
+        # on it, and there's no cost or external call unless that file is
+        # actually configured with a real bridge.
+        try:
+            from dashboard.companion import install_companion
+            install_companion(app, _auth, BASE_DIR)
+        except Exception as e:
+            print(f"[Companion] Disabled: {e}")
+
+        try:
+            from dashboard.confirm_api import install_confirm
+            install_confirm(app, _auth)
+        except Exception as e:
+            print(f"[Confirm] Disabled: {e}")
 
         return app
 
