@@ -158,6 +158,27 @@ def _persona_from_repo() -> str:
     return "\n\n".join(k.strip() for k in keep)
 
 
+_WOCHENTAGE = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
+
+
+def _now_de() -> str:
+    """Wochentag, Datum und Uhrzeit in Berlin, in Worten, die das Modell nicht falsch verstehen kann.
+
+    Nur eine UTC-Zeit zu nennen hieße: Zwischen 22 und 24 Uhr UTC ist in Berlin schon der nächste Tag, und
+    „heute", „morgen" und „gleich" würden falsch aufgelöst. Die Zeitzone kommt aus CALENDAR_TIMEZONE
+    (Standard Europe/Berlin), damit sie an einer Stelle steht.
+    """
+    from zoneinfo import ZoneInfo
+    tz_name = os.environ.get("CALENDAR_TIMEZONE", "").strip() or "Europe/Berlin"
+    try:
+        n = datetime.now(ZoneInfo(tz_name))
+    except Exception:  # noqa: BLE001
+        n = datetime.now().astimezone()
+        tz_name = str(n.tzinfo)
+    return (f"JETZT: {_WOCHENTAGE[n.weekday()]}, {n:%d.%m.%Y}, {n:%H:%M} Uhr ({tz_name}, {n.tzname()}). "
+            "Löse „heute\", „morgen\", „gleich\" und Wochentage immer von diesem Zeitpunkt aus auf, nie aus dem Gedächtnis.")
+
+
 def core_memory(state, limit: int = 0) -> str:
     """Das Hauptgedächtnis als Text — für jeden Systemtext, jedes Mal.
 
@@ -555,6 +576,13 @@ class MasterRuntime:
             system += VOICE_HINT
         if agent.kind == "master":
             recalled = recall_memory(st, goal)
+            try:
+                # Nach Bedeutung suchen, nicht nur nach Wörtern. Fällt der Dienst aus, bleibt die Wortsuche.
+                from ..ai import embeddings as _emb
+                semantic = await _emb.recall_text(st.db, goal)
+            except Exception:  # noqa: BLE001
+                semantic = ""
+            recalled = "\n\n".join(part for part in (semantic, recalled) if part)
             if recalled:
                 system += "\n\n" + recalled
         if self.fast_provider is not None and agent.kind == "master":
@@ -779,7 +807,7 @@ class MasterRuntime:
         # getippt gilt und gesprochen nicht, wäre keine Regel.
         standing = str(self.state.db.get_setting("master_instructions", "") or "").strip()
         core = core_memory(self.state)
-        return "\n\n".join(x for x in [persona, core, (
+        return "\n\n".join(x for x in [persona, core, _now_de(), (
             "You are on an open voice line. Speak German unless spoken to in another language.\n"
             "Answer in spoken sentences: short, no lists, no markdown, no headings, no code read "
             "out letter by letter. Two or three sentences unless more is genuinely needed.\n"
@@ -876,6 +904,7 @@ class MasterRuntime:
         parts.append(f"ENVIRONMENT: host={socket.gethostname()} os={platform.system()} "
                      f"workspace={self.settings.workspace_dir} "
                      f"now={datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+        parts.append(_now_de())
         return "\n\n".join(parts)
 
     def _history(self, conversation_id: str, upto_message_id: str, limit: int = 40) -> list[dict]:
