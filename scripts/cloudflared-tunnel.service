@@ -1,44 +1,50 @@
-# scripts/cloudflared-tunnel.service — expose the JARVIS dashboard on the
-# public internet without opening any inbound firewall port. cloudflared
-# makes an OUTBOUND connection from this server to Cloudflare's edge, so
-# whatever inbound firewall/security-group rules the hosting provider has
-# (or doesn't have) never come into play.
+# scripts/cloudflared-tunnel.service — expose the JARVIS dashboard on a
+# permanent, stable hostname via a named Cloudflare Tunnel — no inbound
+# firewall port needed, and unlike a quick tunnel the address never changes
+# or expires.
 #
-# This is a "quick tunnel": no Cloudflare account needed, but the public
-# URL changes every time this service (re)starts — read it from the log
-# after each start. For a stable, permanent URL under your own domain, a
-# named tunnel (needs a free Cloudflare account with that domain added) is
-# a later upgrade, not required to get going.
-#
-# Install:
+# One-time setup (needs a free Cloudflare account with the domain added —
+# jarvis-reyes.de's nameservers point at Cloudflare):
 #
 #   curl -L --output /tmp/cloudflared.deb \
 #     https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
 #   sudo dpkg -i /tmp/cloudflared.deb
+#
+#   cloudflared tunnel login                        # opens a URL — approve the domain in your browser
+#   cloudflared tunnel create jarvis-dashboard       # prints a tunnel ID + writes /root/.cloudflared/<id>.json
+#
+#   mkdir -p /root/.cloudflared
+#   cat > /root/.cloudflared/config.yml << 'CFG'
+#   tunnel: <TUNNEL-ID>
+#   credentials-file: /root/.cloudflared/<TUNNEL-ID>.json
+#
+#   ingress:
+#     - hostname: dashboard.jarvis-reyes.de
+#       service: https://localhost:8000
+#       originRequest:
+#         noTLSVerify: true   # local hop only — the self-signed dashboard cert. The
+#                             # public hop (visitor -> Cloudflare) always gets a real one.
+#     - service: http_status:404
+#   CFG
+#
+#   cloudflared tunnel route dns jarvis-dashboard dashboard.jarvis-reyes.de
+#
 #   sudo cp scripts/cloudflared-tunnel.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now cloudflared-tunnel
-#
-# Get the current public URL (changes on every restart of this service):
-#
-#   journalctl -u cloudflared-tunnel -n 30 --no-pager | grep trycloudflare.com
 #
 # Logs:      journalctl -u cloudflared-tunnel -f
 # Restart:   sudo systemctl restart cloudflared-tunnel
 
 [Unit]
-Description=Cloudflare Tunnel for the JARVIS dashboard
+Description=Cloudflare Tunnel for the JARVIS dashboard (named, fixed hostname)
 After=network-online.target mark-liii.service
 Wants=network-online.target
 BindsTo=mark-liii.service
 
 [Service]
 Type=simple
-# --no-tls-verify: only relevant to the LOCAL hop (cloudflared -> localhost:8000),
-# which uses the dashboard's self-signed cert. The PUBLIC hop (visitor ->
-# Cloudflare's edge) always gets a real, valid certificate from Cloudflare —
-# this flag never touches that.
-ExecStart=/usr/local/bin/cloudflared tunnel --url https://localhost:8000 --no-tls-verify
+ExecStart=/usr/local/bin/cloudflared tunnel run jarvis-dashboard
 Restart=on-failure
 RestartSec=5
 
