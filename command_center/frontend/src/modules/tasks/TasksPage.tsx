@@ -91,7 +91,7 @@ export default function TasksPage() {
                   <button className="btn sm" onClick={() => setEdit({ id: t.id, title: t.title, description: t.description || "", priority: t.priority || "normal" })}>Bearbeiten</button>
                   <button className="btn sm danger" onClick={() => remove(t.id, t.title)} title="Aufgabe endgültig löschen">Löschen</button>
                 </div>}
-                {t.subtasks?.length > 0 && <div><div className="label" style={{ marginBottom: 6 }}>Subtasks</div><div className="panel"><TaskTimeline tasks={t.subtasks} /></div></div>}
+                {t.subtasks?.length > 0 && <div><div className="label" style={{ marginBottom: 6 }}>Subtasks</div><div className="panel"><TaskTimeline tasks={t.subtasks} grouped={false} /></div></div>}
                 {t.approvals?.length > 0 && <div><div className="label" style={{ marginBottom: 6 }}>Approvals</div>{t.approvals.map((a: any) => <div key={a.id} className="row small" style={{ gap: 8 }}><Badge status={a.status} /><a href={`/approvals/${a.id}`}>{a.action} → {a.target}</a></div>)}</div>}
                 {t.files?.length > 0 && <div><div className="label" style={{ marginBottom: 6 }}>Files</div>{t.files.map((f: any) => <div key={f.id} className="small"><a href={`${api.base}/api/files/download?path=${encodeURIComponent(f.path)}`}>{f.path}</a></div>)}</div>}
                 <div><div className="label" style={{ marginBottom: 6 }}>Log</div>

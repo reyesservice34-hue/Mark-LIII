@@ -29,8 +29,6 @@ import base64
 import contextlib
 import json
 import os
-import re
-import time
 from typing import Any, Awaitable, Callable
 
 from ..ai.base import ToolNameMap
@@ -43,21 +41,6 @@ RECEIVE_RATE = 24000   # what Gemini Live produces — matches what the browser 
 # Mirrors realtime.py's TOOL_TIMEOUT: a tool that stops for approval would
 # otherwise hold the line open in silence.
 TOOL_TIMEOUT = 25.0
-
-# ── ambient listening: on all the time, only reacts once addressed ─────────
-# The microphone here is never opened by hand — see modules/live/__init__.py
-# and the frontend's liveStore, which open it once on page load and keep it
-# open across navigation. That only works as an "ambient" line rather than an
-# always-answering one if something decides which speech was actually meant
-# for Jarvis. Mark-LIII's desktop app solves this by never sending audio
-# upstream at all until a local wake-word model fires; a browser microphone
-# can't run that same model, so the gate has to live here instead, on the
-# transcript Gemini already produces — everything still reaches Gemini (it
-# has to, to be transcribed at all), but nothing reaches the browser, and no
-# tool call is allowed to run, until "Jarvis" actually appears in what was
-# said. WAKE_SLEEP_TIMEOUT mirrors main.py's own constant of the same name.
-WAKE_WORD = re.compile(r"\bjarvis\b", re.IGNORECASE)
-WAKE_SLEEP_TIMEOUT = 120.0
 
 
 class RealtimeError(Exception):
@@ -100,16 +83,16 @@ def capabilities() -> dict:
         "voice": s["voice"] if configured() else "",
         "audio": {"format": "pcm16", "sample_rate": RECEIVE_RATE, "channels": 1},
         "machine_tokens": True,
-        # The mic is meant to stay open all the time (see modules/live's
-        # auto-connect); this tells the frontend it doesn't need its own
-        # "open the line" button, and what the mic is actually waiting for.
-        "ambient": True,
-        "wake_word": "Jarvis",
     }
 
 
-def _tool_declarations(state) -> tuple[list[dict], ToolNameMap]:
+def _tool_declarations(state, principal) -> tuple[list[dict], ToolNameMap]:
     """The same tools the chat has, in the shape Gemini's function-calling expects.
+
+    Role-scoped via runtime.live_tools() — the same state.tools.for_agent()
+    call chat's master agent goes through — not a bare state.tools.all().
+    A lower-privileged caller must see exactly what chat would have shown
+    them, never more just because they came in by voice instead of typing.
 
     Deliberately `parameters_json_schema`, not `parameters`: google-genai
     validates `parameters` against its own `Schema` type, a strict subset of
@@ -121,7 +104,7 @@ def _tool_declarations(state) -> tuple[list[dict], ToolNameMap]:
     google-genai side and passed through to the API as real JSON Schema, so
     the same sanitize_schema() output every other provider already gets here
     works unchanged."""
-    tools = [t for t in state.tools.all() if t.available and t.handler]
+    tools = state.runtime.live_tools(principal)
     names = ToolNameMap((t.name for t in tools), limit=64)
     decls = [{
         "name": names.wire(t.name),
@@ -151,11 +134,6 @@ class RealtimeSession:
         self._turn_open = False                # whether response.created was already sent this turn
         self._said = ""
         self._heard: list[str] = []
-        # Ambient wake-word gate — see the module docstring above.
-        self._awake = False                    # starts asleep: nothing plays until addressed
-        self._awake_until = 0.0                # monotonic deadline; past it, back to asleep
-        self._turn_heard = ""                  # this turn's input transcript so far, for the wake check
-        self._turn_pending: list[dict] = []    # this turn's downstream events, held until awake or dropped
 
     # ── upstream ─────────────────────────────────────────────────────────
     async def connect(self) -> None:
@@ -169,28 +147,15 @@ class RealtimeSession:
 
         self._types = types
         s = settings()
-        decls, names = _tool_declarations(self.state)
+        decls, names = _tool_declarations(self.state, self.principal)
         self._names = names
 
-        # This code enforces the wake-word gate regardless of what the model
-        # does (see pump()/_emit below) — but telling the model about it too
-        # means it doesn't spend a turn narrating small talk it will never be
-        # allowed to say out loud.
-        ambient_note = (
-            "\n\nAmbient listening: this microphone is left open all the time, not "
-            "pushed to talk, so you hear everything nearby — not all of it addressed "
-            "to you. Only answer, or use a tool, once the person has actually said "
-            "your name (\"Jarvis\") in what they just said. For anything else, stay "
-            "completely silent: no spoken reply, no filler, no tool call. Once "
-            "addressed, keep responding naturally for the rest of that exchange "
-            "without needing your name repeated every sentence."
-        )
         client = genai.Client(api_key=_gemini_key())
         config = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             output_audio_transcription={},
             input_audio_transcription={},
-            system_instruction=self.instructions + ambient_note,
+            system_instruction=self.instructions,
             tools=[{"function_declarations": decls}] if decls else None,
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
@@ -232,10 +197,6 @@ class RealtimeSession:
                 c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "input_text"
             ).strip()
             if text:
-                # Typing is already an explicit, deliberate address to Jarvis —
-                # the wake-word gate exists for ambient speech, not for this.
-                self._awake = True
-                self._awake_until = time.monotonic() + WAKE_SLEEP_TIMEOUT
                 await self.session.send_client_content(
                     turns={"role": "user", "parts": [{"text": text}]},
                     turn_complete=True,
@@ -246,45 +207,6 @@ class RealtimeSession:
         # Live decides turn boundaries itself from the audio stream — nothing
         # to relay for these.
 
-    # ── ambient wake-word gate ───────────────────────────────────────────
-    # Every downstream event Gemini's turn produces goes through _emit rather
-    # than send_down directly: while asleep it is held (not dropped yet —
-    # the wake word can still turn up later in the same turn, since the
-    # transcript and the spoken reply stream in roughly together), and only
-    # actually reaches the browser once "Jarvis" has been heard. Nothing here
-    # can make Gemini answer faster than it decides to; it only ever holds
-    # back what Gemini already produced.
-    async def _emit(self, ev: dict) -> None:
-        if self._awake:
-            self._awake_until = time.monotonic() + WAKE_SLEEP_TIMEOUT
-            await self.send_down(ev)
-        else:
-            self._turn_pending.append(ev)
-
-    async def _wake(self) -> None:
-        self._awake = True
-        self._awake_until = time.monotonic() + WAKE_SLEEP_TIMEOUT
-        await self.send_down({"type": "jarvis.awake"})
-        pending, self._turn_pending = self._turn_pending, []
-        for ev in pending:
-            await self.send_down(ev)
-
-    async def _maybe_sleep(self) -> None:
-        if self._awake and time.monotonic() > self._awake_until:
-            self._awake = False
-            await self.send_down({"type": "jarvis.asleep"})
-
-    async def _turn_started(self) -> None:
-        if not self._turn_open:
-            self._turn_open = True
-            self._said = ""
-            await self._emit({"type": "response.created"})
-
-    def _end_turn(self) -> None:
-        self._turn_open = False
-        self._turn_heard = ""
-        self._turn_pending = []   # never woken into during this turn — ambient, discard
-
     # ── downstream ───────────────────────────────────────────────────────
     async def pump(self) -> None:
         """Read from Gemini until the line closes, translating each event into
@@ -293,51 +215,48 @@ class RealtimeSession:
         async for response in self.session.receive():
             if self._closed:
                 return
-            await self._maybe_sleep()
 
             sc = getattr(response, "server_content", None)
             if sc and sc.interrupted:
-                await self._emit({"type": "input_audio_buffer.speech_started"})
+                await self.send_down({"type": "input_audio_buffer.speech_started"})
 
             if response.data:
-                await self._turn_started()
-                await self._emit({
+                if not self._turn_open:
+                    self._turn_open = True
+                    self._said = ""
+                    await self.send_down({"type": "response.created"})
+                await self.send_down({
                     "type": "response.output_audio.delta",
                     "delta": base64.b64encode(response.data).decode("ascii"),
                 })
 
             if sc:
                 if sc.output_transcription and sc.output_transcription.text:
-                    await self._turn_started()
+                    if not self._turn_open:
+                        self._turn_open = True
+                        self._said = ""
+                        await self.send_down({"type": "response.created"})
                     self._said += sc.output_transcription.text
-                    await self._emit({
+                    await self.send_down({
                         "type": "response.output_audio_transcript.delta",
                         "delta": sc.output_transcription.text,
                     })
                 if sc.input_transcription and sc.input_transcription.text:
                     self._heard.append(sc.input_transcription.text)
-                    self._turn_heard += sc.input_transcription.text
-                    if not self._awake and WAKE_WORD.search(self._turn_heard):
-                        await self._wake()
                 if sc.turn_complete:
                     full_in = " ".join(self._heard).strip()
                     self._heard = []
                     if full_in:
-                        await self._emit({
+                        await self.send_down({
                             "type": "conversation.item.input_audio_transcription.completed",
                             "transcript": full_in,
                         })
-                    await self._emit({"type": "response.done"})
-                    self._end_turn()
+                    await self.send_down({"type": "response.done"})
+                    self._turn_open = False
 
             if getattr(response, "tool_call", None):
                 for fc in response.tool_call.function_calls:
-                    if not self._awake and WAKE_WORD.search(self._turn_heard):
-                        await self._wake()
-                    if self._awake:
-                        asyncio.create_task(self._run_tool(fc))
-                    else:
-                        asyncio.create_task(self._decline_tool(fc))
+                    asyncio.create_task(self._run_tool(fc))
 
     # ── tools ────────────────────────────────────────────────────────────
     async def _run_tool(self, fc) -> None:
@@ -366,22 +285,6 @@ class RealtimeSession:
                 ])
         await self.send_down({"type": "jarvis.tool", "name": name, "ok": ok,
                               "result": str(text)[:400]})
-
-    async def _decline_tool(self, fc) -> None:
-        """A tool call attempted while nobody had addressed Jarvis yet. This
-        never reaches the executor — no role check or approval gate would make
-        an unaddressed action safe, the action itself must not run at all —
-        and it never reaches the browser either, same as any other ambient
-        chatter. Gemini still needs an answer for the call it made, or the
-        turn is left hanging."""
-        if self.session is not None and not self._closed:
-            with contextlib.suppress(Exception):
-                await self.session.send_tool_response(function_responses=[
-                    self._types.FunctionResponse(id=fc.id, name=fc.name, response={
-                        "ok": False,
-                        "result": "Not addressed — this is ambient listening; say \"Jarvis\" first.",
-                    })
-                ])
 
     async def close(self) -> None:
         self._closed = True

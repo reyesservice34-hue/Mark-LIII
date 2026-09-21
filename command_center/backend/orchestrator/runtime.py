@@ -794,20 +794,42 @@ class MasterRuntime:
                 if a and a.kind != "master" and a.enabled]
 
     # ── prompt & history ─────────────────────────────────────────────────
-    def live_instructions(self) -> str:
+    def live_tools(self, principal) -> list[ToolSpec]:
+        """The exact tools the live line may offer — the same rule chat's
+        master agent uses (state.tools.for_agent, scoped by the master's own
+        roster entry and the caller's role), never a fresh, unscoped
+        state.tools.all(). Public so services/realtime.py and
+        services/realtime_gemini.py build their function declarations from
+        precisely this, instead of keeping their own looser notion of "the
+        tools" that could quietly drift from chat's and, worse, hand a
+        lower-privileged caller a tool chat itself would have hidden from them."""
+        st = self.state
+        master = st.agents.get(st.agents.master_id())
+        allowed = master.tools if master else ["*"]
+        return st.tools.for_agent(allowed, principal.role)
+
+    def live_instructions(self, principal) -> str:
         """The persona for the open line.
 
         Spoken answers are not written answers read aloud: no lists, no
         markdown, no headings, and short enough that the other person can
-        interrupt. The honesty rules are the same ones as everywhere else —
-        they are the point, not a style choice.
+        interrupt. Everything else is deliberately the SAME as chat's
+        _system_prompt (via _capability_briefing, full=True — the live line
+        never delegates a sub-goal itself, but nothing about being spoken to
+        makes it any less "the one steering the conversation" than chat is):
+        same tools, same specialists, same tasks/PC/teach-mode guidance, same
+        skills and knowledge catalogues, same Composio-first routing, same
+        core memory and standing instructions. A request answered by typing
+        and the same request spoken must reach the same JARVIS and get the
+        same result — only the delivery format differs, never the capability.
         """
         persona = _persona_from_repo()
+        core = core_memory(self.state)
+        briefing = self._capability_briefing(full=True, tools=self.live_tools(principal))
         # Dieselben stehenden Anweisungen wie im Chat: Eine Regel, die nur
         # getippt gilt und gesprochen nicht, wäre keine Regel.
         standing = str(self.state.db.get_setting("master_instructions", "") or "").strip()
-        core = core_memory(self.state)
-        return "\n\n".join(x for x in [persona, core, _now_de(), (
+        return "\n\n".join(x for x in [persona, core, _now_de(), *briefing, (
             "You are on an open voice line. Speak German unless spoken to in another language.\n"
             "Answer in spoken sentences: short, no lists, no markdown, no headings, no code read "
             "out letter by letter. Two or three sentences unless more is genuinely needed.\n"
@@ -819,22 +841,24 @@ class MasterRuntime:
             "The other person can interrupt you at any time. When they do, stop and listen."
         ), ("STEHENDE ANWEISUNGEN DES NUTZERS (gelten immer):\n" + standing) if standing else ""] if x)
 
-    def _system_prompt(self, agent, tools: list[ToolSpec]) -> str:
+    def _capability_briefing(self, *, full: bool, tools: list[ToolSpec]) -> list[str]:
+        """Everything that tells an agent what it can reach and how to use it
+        well — shared by chat and the live line on purpose. A request answered
+        by typing and the same request spoken into an open line should reach
+        the same tools, the same specialists, the same memory and get the
+        same result; only the packaging differs (text vs. a spoken sentence),
+        never the capability. `full=True` is the master agent's view (and the
+        live line's — there is no specialist selection over voice, so it
+        always gets the full experience); a delegated specialist gets the
+        rest (catalogues, Composio, inventory) but not the delegation/task/
+        desktop/teach guidance that assumes it IS the one steering the whole
+        conversation. `tools` must already be role-scoped (state.tools.for_agent),
+        the same list actually offered to the model — never a fresh
+        state.tools.all(), which would describe capabilities the caller may
+        not even have."""
         st = self.state
-        parts = []
-        if agent.kind == "master" and self._persona:
-            parts.append(self._persona)
-        core = core_memory(st)
-        if core:
-            parts.append(core)
-        parts.append(
-            "OPERATING CONTEXT: You run inside the JARVIS Command Center on the user's server. The user "
-            "watches a live dashboard: every tool call, task and approval you trigger is visible there. "
-            "Tool results are ground truth — never claim an action happened unless a tool confirmed it. "
-            "If a tool is unavailable or an action is rejected, say so plainly. Use Markdown for structure "
-            "when it helps; keep short answers short.")
-        parts.append(f"AGENT: {agent.name} — {agent.role}\n{agent.instructions}".strip())
-        if agent.kind == "master":
+        parts: list[str] = []
+        if full:
             specs = self._specialists()
             if specs and any(t.name == "agent.delegate" for t in tools):
                 roster = "\n".join(f"- {a.id}: {a.role} (capabilities: {', '.join(a.capabilities) or '—'})"
@@ -871,13 +895,6 @@ class MasterRuntime:
             verzeichnis = wissen.catalogue()
             if verzeichnis:
                 parts.append(verzeichnis)
-        # Was der Nutzer im Dashboard unter Gedächtnis einträgt, gilt in jedem
-        # Gespräch — und zwar über den eingebauten Voreinstellungen. Es steht
-        # weit hinten im Text, weil das Letzte am stärksten wirkt.
-        standing = st.db.get_setting("master_instructions", "") or ""
-        if standing:
-            parts.append("STEHENDE ANWEISUNGEN DES NUTZERS (gelten immer, sie gehen deinen eigenen "
-                         "Gewohnheiten vor):\n" + str(standing).strip())
         # Composio zuerst — aber nur, wenn es wirklich verbunden ist. Eine
         # Regel, die auf einen nicht eingerichteten Dienst zeigt, schickt ihn
         # in eine Sackgasse und kostet zwei Werkzeugaufrufe, bevor er merkt,
@@ -901,6 +918,31 @@ class MasterRuntime:
             parts.append("NOT AVAILABLE right now (integration not connected): " +
                          ", ".join(sorted({t.name.split('.')[0] for t in unavailable})) +
                          ". Say so if the user asks for these instead of pretending.")
+        return parts
+
+    def _system_prompt(self, agent, tools: list[ToolSpec]) -> str:
+        st = self.state
+        parts = []
+        if agent.kind == "master" and self._persona:
+            parts.append(self._persona)
+        core = core_memory(st)
+        if core:
+            parts.append(core)
+        parts.append(
+            "OPERATING CONTEXT: You run inside the JARVIS Command Center on the user's server. The user "
+            "watches a live dashboard: every tool call, task and approval you trigger is visible there. "
+            "Tool results are ground truth — never claim an action happened unless a tool confirmed it. "
+            "If a tool is unavailable or an action is rejected, say so plainly. Use Markdown for structure "
+            "when it helps; keep short answers short.")
+        parts.append(f"AGENT: {agent.name} — {agent.role}\n{agent.instructions}".strip())
+        parts.extend(self._capability_briefing(full=agent.kind == "master", tools=tools))
+        # Was der Nutzer im Dashboard unter Gedächtnis einträgt, gilt in jedem
+        # Gespräch — und zwar über den eingebauten Voreinstellungen. Es steht
+        # weit hinten im Text, weil das Letzte am stärksten wirkt.
+        standing = st.db.get_setting("master_instructions", "") or ""
+        if standing:
+            parts.append("STEHENDE ANWEISUNGEN DES NUTZERS (gelten immer, sie gehen deinen eigenen "
+                         "Gewohnheiten vor):\n" + str(standing).strip())
         parts.append(f"ENVIRONMENT: host={socket.gethostname()} os={platform.system()} "
                      f"workspace={self.settings.workspace_dir} "
                      f"now={datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")

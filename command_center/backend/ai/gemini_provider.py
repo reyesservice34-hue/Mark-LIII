@@ -9,26 +9,6 @@ import httpx
 from .base import ProviderInfo, ToolDef, ToolNameMap
 
 _BASE = "https://generativelanguage.googleapis.com/v1beta"
-_DROP_KEYS = {"additionalProperties", "$schema", "default", "examples", "title"}
-
-
-def _gemini_schema(schema: dict) -> dict:
-    """Gemini accepts an OpenAPI subset with upper-case types."""
-    if not isinstance(schema, dict):
-        return schema
-    out: dict = {}
-    for k, v in schema.items():
-        if k in _DROP_KEYS:
-            continue
-        if k == "type" and isinstance(v, str):
-            out[k] = v.upper()
-        elif k == "properties" and isinstance(v, dict):
-            out[k] = {pk: _gemini_schema(pv) for pk, pv in v.items()}
-        elif k == "items":
-            out[k] = _gemini_schema(v)
-        else:
-            out[k] = v
-    return out
 
 
 class GeminiProvider:
@@ -68,9 +48,19 @@ class GeminiProvider:
         if system:
             body["systemInstruction"] = {"parts": [{"text": system}]}
         if tools:
+            # parametersJsonSchema, not parameters: the latter validates against
+            # Gemini's own Schema type, a strict OpenAPI subset that rejects any
+            # real JSON-Schema-2020-12 keyword it doesn't know (const, $schema,
+            # a numeric exclusiveMinimum, ...) — and one bad tool's schema took
+            # every tool down with it, since the whole tools[] array is validated
+            # together. parametersJsonSchema is untyped on Gemini's side and
+            # passed straight through as JSON Schema (confirmed against the
+            # actual field the official google-genai SDK sends on the wire for
+            # its own parameters_json_schema, since this file talks REST
+            # directly rather than through that SDK) — no local sanitizing needed.
             body["tools"] = [{"functionDeclarations": [
                 {"name": names.wire(t.name), "description": t.description,
-                 "parameters": _gemini_schema(t.input_schema)}
+                 "parametersJsonSchema": t.input_schema}
                 for t in tools]}]
         url = f"{_BASE}/models/{self.info.model}:streamGenerateContent?alt=sse"
         text_parts: list[str] = []

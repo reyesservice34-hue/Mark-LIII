@@ -87,9 +87,14 @@ def capabilities() -> dict:
     }
 
 
-def _tool_declarations(state) -> tuple[list[dict], ToolNameMap]:
-    """The same tools the chat has, in the shape the Realtime API expects."""
-    tools = [t for t in state.tools.all() if t.available and t.handler]
+def _tool_declarations(state, principal) -> tuple[list[dict], ToolNameMap]:
+    """The same tools the chat has, in the shape the Realtime API expects.
+
+    Role-scoped via runtime.live_tools() — the same state.tools.for_agent()
+    call chat's master agent goes through — not a bare state.tools.all().
+    A lower-privileged caller must see exactly what chat would have shown
+    them, never more just because they came in by voice instead of typing."""
+    tools = state.runtime.live_tools(principal)
     names = ToolNameMap((t.name for t in tools), limit=64)
     decls = [{
         "type": "function",
@@ -139,7 +144,7 @@ class RealtimeSession:
         except Exception as e:  # noqa: BLE001
             raise RealtimeError(f"Could not open the live line: {e.__class__.__name__}: {e}") from e
 
-        decls, names = _tool_declarations(self.state)
+        decls, names = _tool_declarations(self.state, self.principal)
         self._names = names
         await self._up({
             "type": "session.update",

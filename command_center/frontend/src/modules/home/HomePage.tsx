@@ -107,7 +107,7 @@ export default function HomePage() {
           <Panel title="Verlauf der Aufgaben" icon={<Zap size={15} />} flush>
             {timeline.error ? <div className="panel-body"><ErrorState error={timeline.error} /></div> : !timeline.data ? <div className="panel-body"><Skeleton /></div> :
               timeline.data.tasks.length === 0 ? <EmptyState icon={<ListChecks size={26} />} title="Noch keine Aufgaben">Ask JARVIS for something that takes a few steps and it will appear here.</EmptyState> :
-                <TaskTimeline tasks={timeline.data.tasks} />}
+                <TaskTimeline tasks={timeline.data.tasks} grouped={false} />}
           </Panel>
         </div>
         <div className="stack" style={{ gap: 16 }}>
