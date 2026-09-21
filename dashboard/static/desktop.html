@@ -2,15 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>JARVIS Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JARVIS Command Center</title>
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#000000">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="JARVIS">
-  <link rel="apple-touch-icon" href="/static/icons/icon-180.png">
   <link rel="icon" href="/static/icons/icon-192.png">
   <script src="/static/crypto.js"></script>
   <style>
@@ -38,10 +33,10 @@
         radial-gradient(ellipse at 50% 100%, #0a0a0c 0%, var(--bg) 60%);
       background-attachment: fixed;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      display: flex; flex-direction: column; overflow: hidden;
+      display: flex; overflow: hidden;
     }
 
-    /* ── BRAIN AVATAR ── */
+    /* ── BRAIN AVATAR (identical to the phone dashboard) ── */
     .brain { position: relative; width: 30px; height: 28px; flex-shrink: 0; filter: drop-shadow(0 0 5px rgba(0,0,0,0.5)); }
     .brain svg { width: 100%; height: 100%; overflow: visible; display: block; }
     .brain-outline path, .brain-outline use { fill: rgba(255,255,255,0.035); stroke: rgba(255,255,255,0.18); stroke-width: 1.4; }
@@ -64,13 +59,31 @@
     .brain[data-state="listening"] .brain-node, .brain[data-state="listening"] .brain-halo { animation-duration: 1s;   }
     .brain[data-state="speaking"]  .brain-node, .brain[data-state="speaking"]  .brain-halo { animation-duration: .5s;  }
 
+    /* ── LAYOUT: chat column + sidebar ── */
+    #main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    #sidebar {
+      width: 320px; flex-shrink: 0; border-left: 1px solid var(--border);
+      background: rgba(255,255,255,0.02); overflow-y: auto;
+      padding: 16px; display: flex; flex-direction: column; gap: 16px;
+    }
+    .side-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+    .side-card h3 { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+    .metric-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 5px 0; }
+    .metric-row .val { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+    .metric-bar-wrap { height: 4px; background: var(--border); border-radius: 2px; margin-top: 3px; overflow: hidden; }
+    .metric-bar { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.4s ease; }
+    .metric-bar.warn { background: #fbbf24; }
+    .metric-bar.crit { background: #f87171; }
+    .side-hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
+    .side-hint kbd { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-family: monospace; }
+
     /* ── HEADER ── */
     header {
       flex-shrink: 0; display: flex; align-items: center; gap: 10px;
-      padding: 13px 16px; border-bottom: 1px solid var(--border);
+      padding: 13px 20px; border-bottom: 1px solid var(--border);
       background: var(--glass); backdrop-filter: blur(24px) saturate(140%);
     }
-    .logo { font-size: 15px; font-weight: 700; letter-spacing: 6px; }
+    .logo { font-size: 16px; font-weight: 700; letter-spacing: 7px; }
     .logo em { color: var(--accent); font-style: normal; }
     .pill {
       display: flex; align-items: center; gap: 6px; padding: 4px 11px;
@@ -90,10 +103,14 @@
     .enc-badge.on  { display: block; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25); color: var(--green); }
     .enc-badge.off { display: block; background: rgba(255,100,100,0.08); border: 1px solid rgba(255,100,100,0.2); color: #f87171; }
     .url { font-size: 10px; font-family: monospace; color: var(--muted); padding: 4px 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
-    @media (max-width: 380px) { .url { display: none; } }
+    .palette-hint {
+      font-size: 10px; color: var(--muted); padding: 4px 9px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+    }
+    .palette-hint:hover { border-color: var(--accent); color: var(--accent); }
 
     /* ── COMPANION (next calendar event + optional ETA) ── */
-    .companion { display: none; flex-shrink: 0; padding: 10px 16px; gap: 4px; flex-direction: column;
+    .companion { display: none; flex-shrink: 0; padding: 10px 20px; gap: 4px; flex-direction: column;
                  border-bottom: 1px solid var(--border); background: var(--surface); font-size: 12px; }
     .companion.show { display: flex; }
     .companion-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -111,10 +128,10 @@
     .companion-loc { font-size: 10px; color: var(--muted); margin-top: 2px; }
 
     /* ── FEED ── */
-    main { flex: 1; overflow-y: auto; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
-    main::-webkit-scrollbar { width: 4px; }
+    main { flex: 1; overflow-y: auto; padding: 20px 24px 8px; display: flex; flex-direction: column; gap: 10px; max-width: 900px; width: 100%; align-self: center; }
+    main::-webkit-scrollbar { width: 6px; }
     main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-    .msg { max-width: 82%; padding: 11px 15px; border-radius: 18px; font-size: 14px; line-height: 1.55; animation: pop 0.18s ease; box-shadow: 0 4px 18px rgba(0,0,0,0.25); }
+    .msg { max-width: 70%; padding: 11px 15px; border-radius: 18px; font-size: 14px; line-height: 1.55; animation: pop 0.18s ease; box-shadow: 0 4px 18px rgba(0,0,0,0.25); }
     @keyframes pop { from { opacity:0; transform:translateY(4px); } }
     .msg-j   { align-self:flex-start; background:var(--adim);   border:1px solid rgba(171,139,245,0.22); border-bottom-left-radius:5px; backdrop-filter: blur(16px); }
     .msg-u   { align-self:flex-end;   background:var(--surface); border:1px solid var(--border);        border-bottom-right-radius:5px; backdrop-filter: blur(16px); }
@@ -129,7 +146,7 @@
       background: var(--surface); border: 1px solid var(--border);
       border-radius: 18px; border-bottom-right-radius: 5px;
       padding: 12px 15px; display: flex; align-items: center; gap: 12px;
-      max-width: 82%; animation: pop 0.18s ease; backdrop-filter: blur(16px);
+      max-width: 70%; animation: pop 0.18s ease; backdrop-filter: blur(16px);
       box-shadow: 0 4px 18px rgba(0,0,0,0.25);
     }
     .fc-icon { font-size: 26px; flex-shrink: 0; }
@@ -146,11 +163,11 @@
     .fc-dl:hover { opacity: 0.8; }
 
     /* ── FOOTER ── */
-    footer { flex-shrink:0; padding:11px 14px; border-top:1px solid var(--border); background:var(--glass); backdrop-filter: blur(24px) saturate(140%); display:flex; gap:8px; align-items:center; }
-    #inp { flex:1; padding:12px 15px; background:var(--surface); border:1.5px solid var(--border); border-radius:14px; color:var(--text); font-size:14px; outline:none; transition:border-color 0.15s, box-shadow 0.15s; }
+    footer { flex-shrink:0; padding:14px 24px 20px; display:flex; gap:8px; align-items:center; max-width: 900px; width: 100%; align-self: center; }
+    #inp { flex:1; padding:13px 16px; background:var(--surface); border:1.5px solid var(--border); border-radius:14px; color:var(--text); font-size:14px; outline:none; transition:border-color 0.15s, box-shadow 0.15s; }
     #inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(171,139,245,0.16); }
     #inp::placeholder { color: var(--muted); }
-    .btn { padding:12px 16px; border:none; border-radius:14px; font-size:11px; font-weight:700; letter-spacing:1.5px; cursor:pointer; transition:opacity 0.15s,transform 0.1s,box-shadow 0.2s; }
+    .btn { padding:13px 18px; border:none; border-radius:14px; font-size:11px; font-weight:700; letter-spacing:1.5px; cursor:pointer; transition:opacity 0.15s,transform 0.1s,box-shadow 0.2s; }
     .btn:active { transform: scale(0.96); }
     .btn:hover  { opacity: 0.85; }
     .btn-send { background: rgba(171,139,245,0.16); border: 1px solid rgba(171,139,245,0.45); color: #f3ecff; }
@@ -159,7 +176,7 @@
     .btn-wake.show { display:block; color:var(--green); border-color:rgba(34,197,94,0.35); }
     .btn-attach {
       background: var(--surface); border: 1px solid var(--border); color: var(--muted);
-      padding: 12px 14px; font-size: 16px; line-height: 1; border-radius: 14px;
+      padding: 13px 16px; font-size: 16px; line-height: 1; border-radius: 14px;
       cursor: pointer; transition: opacity 0.15s, transform 0.1s, border-color .2s, color .2s; display: flex;
       align-items: center; justify-content: center; flex-shrink: 0;
     }
@@ -169,7 +186,7 @@
     /* ── MIC BUTTON ── */
     #mic-btn {
       background: var(--surface); border: 1px solid var(--border); color: var(--muted);
-      padding: 12px 14px; font-size: 16px; line-height: 1; border-radius: 14px;
+      padding: 13px 16px; font-size: 16px; line-height: 1; border-radius: 14px;
       cursor: pointer; transition: opacity 0.15s, transform 0.1s, background 0.2s, border-color 0.2s, color .2s;
       display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
@@ -195,7 +212,7 @@
       color:var(--green); font-size:12px; font-weight:700; letter-spacing:1px;
       padding:7px 18px; border-radius:99px;
       opacity:0; transition:opacity 0.22s,transform 0.22s;
-      pointer-events:none; white-space:nowrap;
+      pointer-events:none; white-space:nowrap; z-index: 100;
     }
     #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
@@ -203,7 +220,7 @@
     #callBanner {
       position: fixed; top: 0; left: 0; right: 0; z-index: 50;
       display: none; align-items: center; justify-content: space-between; gap: 12px;
-      padding: 12px 16px; background: rgba(171,139,245,0.16);
+      padding: 12px 20px; background: rgba(171,139,245,0.16);
       border-bottom: 1px solid rgba(171,139,245,0.4);
       backdrop-filter: blur(24px) saturate(140%);
       animation: pop 0.18s ease;
@@ -220,7 +237,7 @@
     #confirmBanner {
       position: fixed; top: 0; left: 0; right: 0; z-index: 60;
       display: none; flex-direction: column; gap: 8px;
-      padding: 14px 16px; background: rgba(251,191,36,0.14);
+      padding: 14px 20px; background: rgba(251,191,36,0.14);
       border-bottom: 1px solid rgba(251,191,36,0.4);
       backdrop-filter: blur(24px) saturate(140%);
       animation: pop 0.18s ease;
@@ -234,8 +251,35 @@
     #confirmBanner .cf-approve { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); color: var(--green); }
     #confirmBanner .cf-reject  { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
 
+    /* ── COMMAND PALETTE ── */
+    #palette-overlay {
+      position: fixed; inset: 0; z-index: 80; display: none;
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+      align-items: flex-start; justify-content: center; padding-top: 12vh;
+    }
+    #palette-overlay.show { display: flex; }
+    #palette-box {
+      width: min(560px, 90vw); background: rgba(20,18,28,0.95); border: 1px solid var(--border);
+      border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,0.5); overflow: hidden;
+      animation: pop 0.15s ease;
+    }
+    #palette-input {
+      width: 100%; padding: 16px 18px; background: transparent; border: none; outline: none;
+      color: var(--text); font-size: 15px; border-bottom: 1px solid var(--border);
+    }
+    #palette-input::placeholder { color: var(--muted); }
+    .palette-actions { padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+    .palette-action {
+      display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 8px;
+      background: none; border: none; color: var(--text); font-size: 13px; cursor: pointer;
+    }
+    .palette-action:hover { background: var(--surface2); }
+
     @media (prefers-reduced-motion: reduce) {
       .brain-node, .brain-halo, .dot, #mic-btn.recording { animation: none !important; }
+    }
+    @media (max-width: 860px) {
+      #sidebar { display: none; }
     }
   </style>
 </head>
@@ -257,64 +301,168 @@
       <button class="cf-reject" id="cf-reject">Ablehnen</button>
     </div>
   </div>
-  <header>
-    <div class="brain" id="brain" data-state="idle" aria-hidden="true">
-      <svg viewBox="0 0 100 92">
-        <defs>
-          <radialGradient id="brainGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"   style="stop-color:var(--brain-c)" stop-opacity="0.95"/>
-            <stop offset="45%"  style="stop-color:var(--brain-b)" stop-opacity="0.55"/>
-            <stop offset="100%" style="stop-color:var(--brain-a)" stop-opacity="0"/>
-          </radialGradient>
-          <filter id="brainSoft" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="2.4"/>
-          </filter>
-          <filter id="brainHalo" x="-120%" y="-120%" width="340%" height="340%">
-            <feGaussianBlur stdDeviation="7"/>
-          </filter>
-        </defs>
-        <circle class="brain-halo" cx="50" cy="46" r="34" fill="url(#brainGlow)" filter="url(#brainHalo)"/>
-        <g class="brain-outline">
-          <path id="lobe" d="M50,8 C41,3 29,4 21,10 C13,16 8,25 10,35 C5,40 5,50 10,57 C9,65 14,73 23,77 C31,81 42,80 48,74 C51,71 51,66 49,62 C44,63 37,61 33,55 C29,50 30,43 35,39 C30,36 29,29 33,24 C30,21 31,15 37,12 C41,9 46,9 50,8 Z"/>
-          <use href="#lobe" transform="translate(100,0) scale(-1,1)"/>
-          <path class="brain-stem" d="M45,73 C45,80 47,86 50,88 C53,86 55,80 55,73 C53,75 47,75 45,73 Z"/>
-        </g>
-        <path class="brain-groove" d="M50,9 C48,20 51,31 50,42 C49,53 51,64 50,71"/>
-        <g class="brain-nodes" filter="url(#brainSoft)">
-          <circle class="brain-node n1" cx="26" cy="23" r="6"/>
-          <circle class="brain-node n2" cx="17" cy="43" r="5.5"/>
-          <circle class="brain-node n3" cx="27" cy="62" r="6"/>
-          <circle class="brain-node n4" cx="74" cy="23" r="6"/>
-          <circle class="brain-node n5" cx="83" cy="43" r="5.5"/>
-          <circle class="brain-node n6" cx="73" cy="62" r="6"/>
-        </g>
-      </svg>
+
+  <div id="palette-overlay">
+    <div id="palette-box">
+      <input id="palette-input" placeholder="Befehl an JARVIS… (Enter zum Senden, Esc zum Schließen)" autocomplete="off">
+      <div class="palette-actions">
+        <button class="palette-action" data-cmd="__wake">⚡ Wecken</button>
+        <button class="palette-action" data-cmd="__companion-toggle-location">📍 Live-Standort umschalten</button>
+        <button class="palette-action" data-cmd="Was steht heute noch an?">🗓 Was steht heute noch an?</button>
+      </div>
     </div>
-    <div class="logo"><em>J</em>ARVIS</div>
-    <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
-    <div class="enc-badge" id="enc">AES-256</div>
-    <div class="spacer"></div>
-    <div class="url">__IP__:__PORT__</div>
-  </header>
-  <div class="companion" id="companion">
-    <div class="companion-row">
-      <span class="companion-title" id="companion-title"></span>
-      <span class="companion-when" id="companion-when"></span>
-    </div>
-    <div class="companion-eta" id="companion-eta"></div>
-    <div class="companion-loc" id="companion-loc-status">Standort aus.</div>
-    <button class="companion-share" id="companion-location-toggle" onclick="companionToggleLocation()">📍 Live-Standort einschalten</button>
   </div>
-  <main id="feed"></main>
-  <footer>
-    <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
-    <label class="btn-attach" for="file-inp" title="Send file">📎</label>
-    <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
-    <button id="mic-btn" onclick="doMic()" title="Voice command">🎤</button>
-    <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
-    <button class="btn btn-send" onclick="doSend()">SEND</button>
-  </footer>
+
+  <div id="main-col">
+    <header>
+      <div class="brain" id="brain" data-state="idle" aria-hidden="true">
+        <svg viewBox="0 0 100 92">
+          <defs>
+            <radialGradient id="brainGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"   style="stop-color:var(--brain-c)" stop-opacity="0.95"/>
+              <stop offset="45%"  style="stop-color:var(--brain-b)" stop-opacity="0.55"/>
+              <stop offset="100%" style="stop-color:var(--brain-a)" stop-opacity="0"/>
+            </radialGradient>
+            <filter id="brainSoft" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="2.4"/>
+            </filter>
+            <filter id="brainHalo" x="-120%" y="-120%" width="340%" height="340%">
+              <feGaussianBlur stdDeviation="7"/>
+            </filter>
+          </defs>
+          <circle class="brain-halo" cx="50" cy="46" r="34" fill="url(#brainGlow)" filter="url(#brainHalo)"/>
+          <g class="brain-outline">
+            <path id="lobe" d="M50,8 C41,3 29,4 21,10 C13,16 8,25 10,35 C5,40 5,50 10,57 C9,65 14,73 23,77 C31,81 42,80 48,74 C51,71 51,66 49,62 C44,63 37,61 33,55 C29,50 30,43 35,39 C30,36 29,29 33,24 C30,21 31,15 37,12 C41,9 46,9 50,8 Z"/>
+            <use href="#lobe" transform="translate(100,0) scale(-1,1)"/>
+            <path class="brain-stem" d="M45,73 C45,80 47,86 50,88 C53,86 55,80 55,73 C53,75 47,75 45,73 Z"/>
+          </g>
+          <path class="brain-groove" d="M50,9 C48,20 51,31 50,42 C49,53 51,64 50,71"/>
+          <g class="brain-nodes" filter="url(#brainSoft)">
+            <circle class="brain-node n1" cx="26" cy="23" r="6"/>
+            <circle class="brain-node n2" cx="17" cy="43" r="5.5"/>
+            <circle class="brain-node n3" cx="27" cy="62" r="6"/>
+            <circle class="brain-node n4" cx="74" cy="23" r="6"/>
+            <circle class="brain-node n5" cx="83" cy="43" r="5.5"/>
+            <circle class="brain-node n6" cx="73" cy="62" r="6"/>
+          </g>
+        </svg>
+      </div>
+      <div class="logo"><em>J</em>ARVIS <span style="color:var(--muted);font-size:11px;letter-spacing:2px;">COMMAND CENTER</span></div>
+      <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
+      <div class="enc-badge" id="enc">AES-256</div>
+      <div class="spacer"></div>
+      <div class="palette-hint" id="palette-hint">⌘K Befehl</div>
+      <div class="url">__IP__:__PORT__</div>
+    </header>
+    <div class="companion" id="companion">
+      <div class="companion-row">
+        <span class="companion-title" id="companion-title"></span>
+        <span class="companion-when" id="companion-when"></span>
+      </div>
+      <div class="companion-eta" id="companion-eta"></div>
+      <div class="companion-loc" id="companion-loc-status">Standort aus.</div>
+      <button class="companion-share" id="companion-location-toggle" onclick="companionToggleLocation()">📍 Live-Standort einschalten</button>
+    </div>
+    <main id="feed"></main>
+    <footer>
+      <input id="inp" placeholder="Nachricht an JARVIS…" autocomplete="off">
+      <label class="btn-attach" for="file-inp" title="Datei senden">📎</label>
+      <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
+      <button id="mic-btn" onclick="doMic()" title="Sprachbefehl">🎤</button>
+      <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
+      <button class="btn btn-send" onclick="doSend()">SEND</button>
+    </footer>
+  </div>
+
+  <aside id="sidebar">
+    <div class="side-card">
+      <h3>System</h3>
+      <div id="sys-metrics">
+        <div class="side-hint">Lädt…</div>
+      </div>
+    </div>
+    <div class="side-card">
+      <h3>Befehle</h3>
+      <div class="side-hint">
+        <kbd>Strg</kbd>+<kbd>K</kbd> (oder <kbd>⌘K</kbd>) öffnet die Befehlszeile —
+        sendet Text an JARVIS ohne die Maus zu benutzen.
+      </div>
+    </div>
+  </aside>
 
   <script src="/static/shared.js"></script>
+  <script>
+    // ── Desktop-only additions: system monitor + command palette ────────────
+    // Everything else (chat, voice, confirm, companion) is shared.js —
+    // identical logic and one shared session, just displayed with more room.
+
+    function _metricBar(label, pct, extra) {
+      const cls = pct >= 90 ? 'crit' : pct >= 75 ? 'warn' : '';
+      return `<div class="metric-row"><span>${label}</span><span class="val">${extra || pct.toFixed(0) + '%'}</span></div>
+              <div class="metric-bar-wrap"><div class="metric-bar ${cls}" style="width:${Math.min(100, pct)}%"></div></div>`;
+    }
+
+    async function _refreshSystemStatus() {
+      const el = document.getElementById('sys-metrics');
+      try {
+        const r = await _authFetch('/api/system/status');
+        if (!r.ok) { el.innerHTML = '<div class="side-hint">Nicht verfügbar.</div>'; return; }
+        const d = await r.json();
+        let html = '';
+        html += _metricBar('CPU', d.cpu_percent);
+        html += _metricBar('RAM', d.ram_percent, `${d.ram_used_gb}/${d.ram_total_gb} GB`);
+        if (d.gpu_percent !== null && d.gpu_percent !== undefined) html += _metricBar('GPU', d.gpu_percent);
+        if (d.cpu_temp_c !== null && d.cpu_temp_c !== undefined) html += _metricBar('Temp', d.cpu_temp_c, d.cpu_temp_c + '°C');
+        html += `<div class="metric-row"><span>Uptime</span><span class="val">${d.uptime}</span></div>`;
+        el.innerHTML = html;
+      } catch (_) {
+        el.innerHTML = '<div class="side-hint">Nicht verfügbar.</div>';
+      }
+    }
+    _refreshSystemStatus();
+    setInterval(_refreshSystemStatus, 8000);
+
+    // ── Command palette ──────────────────────────────────────────────────────
+    const paletteOverlay = document.getElementById('palette-overlay');
+    const paletteInput   = document.getElementById('palette-input');
+
+    function _openPalette() {
+      paletteOverlay.classList.add('show');
+      paletteInput.value = '';
+      paletteInput.focus();
+    }
+    function _closePalette() {
+      paletteOverlay.classList.remove('show');
+    }
+
+    document.getElementById('palette-hint').addEventListener('click', _openPalette);
+    document.addEventListener('keydown', e => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        paletteOverlay.classList.contains('show') ? _closePalette() : _openPalette();
+      } else if (e.key === 'Escape' && paletteOverlay.classList.contains('show')) {
+        _closePalette();
+      }
+    });
+    paletteOverlay.addEventListener('click', e => { if (e.target === paletteOverlay) _closePalette(); });
+
+    function _paletteRun(cmd) {
+      _closePalette();
+      if (cmd === '__wake') { doWake(); return; }
+      if (cmd === '__companion-toggle-location') { companionToggleLocation(); return; }
+      document.getElementById('inp').value = cmd;
+      doSend();
+    }
+
+    paletteInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        const v = paletteInput.value.trim();
+        if (v) _paletteRun(v);
+      }
+    });
+    document.querySelectorAll('.palette-action').forEach(btn => {
+      btn.addEventListener('click', () => _paletteRun(btn.dataset.cmd));
+    });
+  </script>
 </body>
 </html>
