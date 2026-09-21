@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>JARVIS</title>
-  <link rel="manifest" href="/manifest.json">
+  <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#000000">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="JARVIS">
-  <link rel="apple-touch-icon" href="/static/icons/icon-180.png">
-  <link rel="icon" href="/static/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="static/icons/icon-180.png">
+  <link rel="icon" href="static/icons/icon-192.png">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -226,13 +226,18 @@
     const _rawNext = new URLSearchParams(location.search).get('next') || '/';
     const _next = /^\/[A-Za-z0-9/_-]*$/.test(_rawNext) ? _rawNext : '/';
 
+    const _basePath = location.pathname.startsWith('/companion/') ? '/companion' : '';
+    function _url(path) {
+      return `${_basePath}${path}`;
+    }
+
     // Try auto-reconnect with stored device token (set on first QR login)
     (async function() {
       const devTok = localStorage.getItem('jarvis_device_token');
       if (!devTok) return;
       document.getElementById('reconnecting').style.display = 'block';
       try {
-        const r = await fetch('/api/device-login', {
+        const r = await fetch(_url('/api/device-login'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ device_token: devTok }),
@@ -264,7 +269,7 @@
       if (key.length < 6) { shake(); return; }
       let data;
       try {
-        const r = await fetch('/login', {
+        const r = await fetch(_url('/login'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pin: key })

@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JARVIS Command Center</title>
-  <link rel="manifest" href="/manifest.json">
+  <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#000000">
-  <link rel="icon" href="/static/icons/icon-192.png">
-  <script src="/static/crypto.js"></script>
+  <link rel="icon" href="static/icons/icon-192.png">
+  <script src="static/crypto.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -186,14 +186,15 @@
     /* ── MIC BUTTON ── */
     #mic-btn {
       background: var(--surface); border: 1px solid var(--border); color: var(--muted);
-      padding: 13px 16px; font-size: 16px; line-height: 1; border-radius: 14px;
+      padding: 13px 16px; font-size: 13px; line-height: 1; border-radius: 14px;
       cursor: pointer; transition: opacity 0.15s, transform 0.1s, background 0.2s, border-color 0.2s, color .2s;
       display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      min-width: 132px; font-weight: 800; letter-spacing: .8px; white-space: nowrap;
     }
     #mic-btn:hover  { opacity: 0.9; border-color: var(--accent); color: var(--accent); }
     #mic-btn:active { transform: scale(0.96); }
     #mic-btn.recording {
-      background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.45); color: #ef4444;
+      background: rgba(34,197,94,0.16); border-color: rgba(34,197,94,0.45); color: var(--green);
       animation: mic-pulse 1s ease-in-out infinite;
     }
     #mic-btn.unsupported { opacity: 0.3; cursor: not-allowed; }
@@ -368,7 +369,7 @@
       <input id="inp" placeholder="Nachricht an JARVIS…" autocomplete="off">
       <label class="btn-attach" for="file-inp" title="Datei senden">📎</label>
       <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
-      <button id="mic-btn" onclick="doMic()" title="Sprachbefehl">🎤</button>
+      <button id="mic-btn" class="dialog-btn" onclick="doMic()" title="Dialog-Sitzung starten">Dialog starten</button>
       <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
       <button class="btn btn-send" onclick="doSend()">SEND</button>
     </footer>
@@ -390,7 +391,7 @@
     </div>
   </aside>
 
-  <script src="/static/shared.js"></script>
+  <script src="static/shared.js"></script>
   <script>
     // ── Desktop-only additions: system monitor + command palette ────────────
     // Everything else (chat, voice, confirm, companion) is shared.js —

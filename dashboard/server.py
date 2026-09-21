@@ -967,6 +967,12 @@ class DashboardServer:
         except Exception as e:
             print(f"[Confirm] Disabled: {e}")
 
+
+        try:
+            from dashboard.app_state import install_app_state
+            install_app_state(app, _auth, BASE_DIR)
+        except Exception as e:
+            print(f"[CompanionApp] Disabled: {e}")
         return app
 
     # ── serve ─────────────────────────────────────────────────────────────

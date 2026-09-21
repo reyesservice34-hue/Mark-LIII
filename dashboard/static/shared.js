@@ -14,6 +14,10 @@
 // ── Auth — bearer token ───────────────────────────────────────────────────
 const _authToken  = sessionStorage.getItem('jarvis_token');
 const _sessionKey = sessionStorage.getItem('jarvis_key');
+const _basePath = location.pathname.startsWith('/companion/') ? '/companion' : '';
+const _isDesktopDashboard = location.pathname === '/desktop' || location.pathname.endsWith('/desktop');
+function _url(path) { return _basePath + path; }
+function _wsPath(path) { return _basePath + path; }
 
 if (!_authToken) {
   // Installed home-screen launches (PWA) get a fresh session token
@@ -23,18 +27,18 @@ if (!_authToken) {
   const _devTok = localStorage.getItem('jarvis_device_token');
   const _next = encodeURIComponent(location.pathname + location.search);
   location.replace(_devTok
-    ? `/auto-device-login?device_token=${encodeURIComponent(_devTok)}&next=${_next}`
-    : `/login?next=${_next}`);
+    ? `${_basePath}/auto-device-login?device_token=${encodeURIComponent(_devTok)}&next=${_next}`
+    : `${_basePath}/login?next=${_next}`);
 }
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  navigator.serviceWorker.register(_url('/sw.js'), { scope: _basePath ? '/companion/' : '/' }).catch(() => {});
 }
 
 function _authHeader() { return { 'Authorization': `Bearer ${_authToken}` }; }
 function _authFetch(url, opts = {}) {
   opts.headers = Object.assign({}, opts.headers, _authHeader());
-  return fetch(url, opts);
+  return fetch(url.startsWith('/') ? _url(url) : url, opts);
 }
 
 // ── AES-256-CBC encryption (CryptoJS) ────────────────────────────────────
@@ -88,7 +92,7 @@ const stTxt = document.getElementById('st');
 const wake  = document.getElementById('wake');
 
 const _wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-const _wsUrl   = `${_wsProto}://${location.host}/ws?token=${encodeURIComponent(_authToken)}`;
+const _wsUrl   = `${_wsProto}://${location.host}${_wsPath('/ws')}?token=${encodeURIComponent(_authToken)}`;
 const ws       = new WebSocket(_wsUrl);
 
 ws.onopen    = () => { sys('Remote session active.'); toast('Connected to JARVIS'); };
@@ -245,7 +249,7 @@ function _uploadFile(file) {
   feed.scrollTop = feed.scrollHeight;
 
   const xhr = new XMLHttpRequest();
-  xhr.open('POST', '/api/upload');
+  xhr.open('POST', _url('/api/upload'));
   xhr.setRequestHeader('Authorization', `Bearer ${_authToken}`);
 
   xhr.upload.onprogress = (e) => {
@@ -265,7 +269,7 @@ function _uploadFile(file) {
     if (xhr.status === 200) {
       let savedName = file.name;
       try { savedName = JSON.parse(xhr.responseText).name || file.name; } catch {}
-      const dlUrl = `/uploads/${encodeURIComponent(savedName)}?token=${encodeURIComponent(_authToken)}`;
+      const dlUrl = `${_basePath}/uploads/${encodeURIComponent(savedName)}?token=${encodeURIComponent(_authToken)}`;
       if (bar)  { bar.style.width = '100%'; bar.style.background = 'var(--green)'; }
       if (st)   { st.textContent = '✓'; st.className = 'fc-status done'; }
       if (lbl)  lbl.textContent = 'Sent';
@@ -295,7 +299,7 @@ function _uploadFile(file) {
 
 // File received by another WebSocket client (e.g., second open tab)
 function _onFileReceived(m) {
-  const dlUrl = `/uploads/${encodeURIComponent(m.name)}?token=${encodeURIComponent(_authToken)}`;
+  const dlUrl = `${_basePath}/uploads/${encodeURIComponent(m.name)}?token=${encodeURIComponent(_authToken)}`;
   const card  = document.createElement('div');
   card.className = 'msg-file';
   card.innerHTML = `
@@ -481,11 +485,17 @@ let _micStm   = null;
 let _audioNd  = null;
 
 function _micIdle() {
-  micBtn.innerHTML = '🎤';
-  micBtn.title     = 'Voice — tap to speak';
+  if (_isDesktopDashboard) {
+    micBtn.textContent = 'Dialog starten';
+    micBtn.title = 'Dialog-Sitzung starten';
+  } else {
+    micBtn.innerHTML = '🎤';
+    micBtn.title = 'Voice — tap to speak';
+  }
   micBtn.classList.remove('recording');
   _setBrainState(_baseBrainState);
 }
+_micIdle();
 
 // Float32 PCM → resample to 16 kHz + convert to Int16.
 // Picking every Nth sample (the old approach) aliases high-frequency
@@ -594,7 +604,7 @@ async function doMic() {
 
   const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(
-    `${wsProto}://${location.host}/ws/phone-audio?token=${encodeURIComponent(_authToken)}`
+    `${wsProto}://${location.host}${_wsPath('/ws/phone-audio')}?token=${encodeURIComponent(_authToken)}`
   );
   ws.binaryType = 'arraybuffer';
 
@@ -635,12 +645,17 @@ async function doMic() {
       _audioNd = sp;
     }
 
-    micBtn.innerHTML = '⏹';
-    micBtn.title     = 'Tap to stop';
+    if (_isDesktopDashboard) {
+      micBtn.textContent = 'Dialog beenden';
+      micBtn.title = 'Dialog-Sitzung beenden';
+    } else {
+      micBtn.innerHTML = '⏹';
+      micBtn.title = 'Tap to stop';
+    }
     micBtn.classList.add('recording');
     _setBrainState('listening');
-    sys('Voice live — speak now');
-    toast('🎤 Live');
+    sys(_isDesktopDashboard ? 'Dialog-Sitzung aktiv — du kannst frei sprechen.' : 'Voice live — speak now');
+    toast(_isDesktopDashboard ? 'Dialog aktiv' : '🎤 Live');
   };
 
   ws.onclose = () => { _stopVoice(); };
@@ -652,6 +667,7 @@ async function doMic() {
 }
 
 function _stopVoice() {
+  const wasOpen = !!_voiceWs;
   if (_audioNd)  { try { _audioNd.disconnect(); }  catch (_) {}; _audioNd  = null; }
   if (_audioCtx) { try { _audioCtx.close(); }      catch (_) {}; _audioCtx = null; }
   if (_micStm)   { _micStm.getTracks().forEach(t => t.stop()); _micStm = null; }
@@ -660,6 +676,10 @@ function _stopVoice() {
     if (w.readyState < 2) w.close();
   }
   _micIdle();
+  if (_isDesktopDashboard && wasOpen) {
+    sys('Dialog-Sitzung beendet.');
+    toast('Dialog beendet');
+  }
 }
 
 // ── Companion: next calendar event + optional ETA ─────────────────────────
@@ -811,3 +831,43 @@ window.addEventListener('pagehide', () => {
 
 companionRefresh();
 setInterval(companionRefresh, 120000);
+
+
+// -- Reyes/JARVIS MVP app panels -------------------------------------------------
+(function installMvpPanels(){
+  if (document.getElementById('mvp-shell')) return;
+  const style = document.createElement('style');
+  style.textContent = `
+    .mvp-shell{flex-shrink:0;border-bottom:1px solid var(--border);background:rgba(0,0,0,.34);backdrop-filter:blur(22px);padding:10px 14px;display:grid;gap:10px}
+    .mvp-core{display:grid;grid-template-columns:76px 1fr;gap:12px;align-items:center}.mvp-orb{width:72px;height:72px;border-radius:50%;position:relative;background:radial-gradient(circle at 45% 40%,#ffd38a 0,#ff8a1f 24%,#9a3412 48%,rgba(0,0,0,.2) 70%);box-shadow:0 0 28px rgba(249,115,22,.6),inset 0 0 30px rgba(255,255,255,.18);overflow:hidden}.mvp-orb:before,.mvp-orb:after{content:"";position:absolute;inset:10px;border:1px solid rgba(255,230,180,.38);border-radius:42% 58% 45% 55%;animation:mvpSpin 9s linear infinite}.mvp-orb:after{inset:18px;animation-duration:5s;animation-direction:reverse}.mvp-orb.active{animation:mvpPulse 1.2s ease-in-out infinite}.mvp-title{font-size:13px;font-weight:800;letter-spacing:2px;color:#ffe8c2}.mvp-sub{font-size:11px;color:var(--muted);line-height:1.35;margin-top:3px}.mvp-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.mvp-tab{border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:8px;padding:8px 4px;font-size:10px;font-weight:800;letter-spacing:.5px}.mvp-tab.on{color:#fed7aa;border-color:rgba(249,115,22,.5);background:rgba(249,115,22,.14)}.mvp-pane{display:none;gap:8px}.mvp-pane.on{display:grid}.mvp-row{display:grid;grid-template-columns:1fr auto;gap:7px}.mvp-input{min-width:0;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text);border-radius:9px;padding:9px 10px;font-size:13px}.mvp-add{border:1px solid rgba(249,115,22,.5);background:rgba(249,115,22,.14);color:#fed7aa;border-radius:9px;padding:0 12px;font-weight:800}.mvp-list{display:grid;gap:6px;max-height:130px;overflow:auto}.mvp-item{border:1px solid var(--border);background:rgba(255,255,255,.04);border-radius:9px;padding:8px 9px;font-size:12px;color:var(--text);display:flex;justify-content:space-between;gap:8px}.mvp-item small{color:var(--muted)}.mvp-item.done{opacity:.55;text-decoration:line-through}.mvp-empty{color:var(--muted);font-size:12px;padding:6px 2px}@keyframes mvpSpin{to{transform:rotate(360deg)}}@keyframes mvpPulse{50%{filter:brightness(1.25);box-shadow:0 0 42px rgba(249,115,22,.9)}}`;
+  document.head.appendChild(style);
+  const shell=document.createElement('section');
+  shell.id='mvp-shell';
+  shell.className='mvp-shell';
+  shell.innerHTML=`
+    <div class="mvp-core"><div class="mvp-orb" id="mvp-orb"></div><div><div class="mvp-title">JARVIS CORE</div><div class="mvp-sub">Zentraler Server aktiv. Handy und Rechner sind Clients derselben Jarvis-Instanz.</div></div></div>
+    <div class="mvp-tabs"><button class="mvp-tab on" data-pane="tasks">Aufgaben</button><button class="mvp-tab" data-pane="calendar">Kalender</button><button class="mvp-tab" data-pane="notes">Notizen</button><button class="mvp-tab" data-pane="files">Dateien</button></div>
+    <div class="mvp-pane on" id="mvp-pane-tasks"><div class="mvp-row"><input class="mvp-input" id="mvp-task-input" placeholder="Neue Aufgabe"><button class="mvp-add" data-add="task">+</button></div><div class="mvp-list" id="mvp-tasks"></div></div>
+    <div class="mvp-pane" id="mvp-pane-calendar"><div class="mvp-row"><input class="mvp-input" id="mvp-event-input" placeholder="Termin oder Erinnerung"><button class="mvp-add" data-add="event">+</button></div><div class="mvp-list" id="mvp-events"></div></div>
+    <div class="mvp-pane" id="mvp-pane-notes"><div class="mvp-row"><input class="mvp-input" id="mvp-note-input" placeholder="Notiz fuer Jarvis"><button class="mvp-add" data-add="note">+</button></div><div class="mvp-list" id="mvp-notes"></div></div>
+    <div class="mvp-pane" id="mvp-pane-files"><div class="mvp-list" id="mvp-files"><div class="mvp-empty">Dateien ueber die Büroklammer hochladen.</div></div></div>`;
+  const companion=document.getElementById('companion');
+  companion?.insertAdjacentElement('afterend', shell);
+  shell.querySelectorAll('.mvp-tab').forEach(btn=>btn.addEventListener('click',()=>{
+    shell.querySelectorAll('.mvp-tab').forEach(b=>b.classList.toggle('on',b===btn));
+    shell.querySelectorAll('.mvp-pane').forEach(p=>p.classList.toggle('on',p.id==='mvp-pane-'+btn.dataset.pane));
+  }));
+  shell.querySelectorAll('[data-add]').forEach(btn=>btn.addEventListener('click',()=>mvpAdd(btn.dataset.add)));
+  mvpLoad(); setInterval(mvpLoad,30000);
+})();
+async function mvpLoad(){
+  try{ const r=await _authFetch('/api/app/state'); if(r.ok) mvpRender(await r.json()); }catch{}
+  try{ const r=await _authFetch('/api/files'); if(r.ok) mvpRenderFiles((await r.json()).files||[]); }catch{}
+}
+function mvpRender(data){
+  const render=(id,items,empty,task)=>{ const box=document.getElementById(id); if(!box)return; box.innerHTML=''; if(!items.length){box.innerHTML=`<div class="mvp-empty">${empty}</div>`;return;} items.slice(0,8).forEach(it=>{const d=document.createElement('div');d.className='mvp-item'+(it.done?' done':'');d.innerHTML=`<span>${esc(it.text||it.title||'')}</span>${task?'<small>tippen</small>':''}`; if(task)d.onclick=()=>mvpToggle(it.id); box.appendChild(d);}); };
+  render('mvp-tasks',data.tasks||[],'Noch keine Aufgaben.',true); render('mvp-events',data.events||[],'Noch keine Termine.',false); render('mvp-notes',data.notes||[],'Noch keine Notizen.',false);
+}
+function mvpRenderFiles(files){ const box=document.getElementById('mvp-files'); if(!box)return; box.innerHTML=''; if(!files.length){box.innerHTML='<div class="mvp-empty">Dateien ueber die Büroklammer hochladen.</div>';return;} files.slice(0,8).forEach(f=>{const d=document.createElement('div');d.className='mvp-item';d.innerHTML=`<span>${esc(f.name)}</span><small>${_fmtSize(f.size||0)}</small>`;box.appendChild(d);}); }
+async function mvpAdd(kind){ const map={task:['mvp-task-input','/api/app/tasks'],note:['mvp-note-input','/api/app/notes'],event:['mvp-event-input','/api/app/events']}; const [id,url]=map[kind]; const input=document.getElementById(id); const text=(input?.value||'').trim(); if(!text)return; input.value=''; await _authFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}); mvpLoad(); }
+async function mvpToggle(id){ await _authFetch(`/api/app/tasks/${id}/toggle`,{method:'POST'}); mvpLoad(); }
