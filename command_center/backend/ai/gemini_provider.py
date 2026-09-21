@@ -30,7 +30,16 @@ class GeminiProvider:
                     parts.append({"inline_data": {"mime_type": b["media_type"], "data": b["data"]}})
                 elif t == "tool_use":
                     tool_names[b["id"]] = wire(b["name"])
-                    parts.append({"functionCall": {"name": wire(b["name"]), "args": b.get("input") or {}}})
+                    part: dict = {"functionCall": {"name": wire(b["name"]), "args": b.get("input") or {}}}
+                    # Thinking models attach a thoughtSignature to a functionCall
+                    # part; echoing it back on the next turn is required or Gemini
+                    # rejects the whole request ("Function call is missing a
+                    # thought_signature ..."), not just a warning. Older stored
+                    # turns from before this fix won't have one — nothing to echo,
+                    # same as a plain (non-thinking) model's calls.
+                    if b.get("thought_signature"):
+                        part["thoughtSignature"] = b["thought_signature"]
+                    parts.append(part)
                 elif t == "tool_result":
                     parts.append({"functionResponse": {
                         "name": tool_names.get(b["tool_use_id"], "tool"),
@@ -96,9 +105,13 @@ class GeminiProvider:
                                     yield {"type": "text_delta", "text": part["text"]}
                                 if part.get("functionCall"):
                                     fc = part["functionCall"]
-                                    calls.append({"id": f"call_{len(calls) + 1}",
+                                    call: dict = {"id": f"call_{len(calls) + 1}",
                                                   "name": names.real(fc.get("name", "")),
-                                                  "input": fc.get("args") or {}})
+                                                  "input": fc.get("args") or {}}
+                                    sig = part.get("thoughtSignature")
+                                    if sig:
+                                        call["thought_signature"] = sig
+                                    calls.append(call)
         except httpx.HTTPError as e:
             yield {"type": "error", "message": f"Cannot reach Gemini: {e}", "retryable": True}
             return
