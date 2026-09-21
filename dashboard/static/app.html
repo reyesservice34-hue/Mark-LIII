@@ -12,16 +12,16 @@
       --surface: rgba(255,255,255,0.045);
       --surface2:rgba(255,255,255,0.08);
       --border:  rgba(255,255,255,0.10);
-      --accent:  #ab8bf5;
-      --adim:    rgba(171,139,245,0.14);
+      --accent:  #ff8a1f;
+      --adim:    rgba(255,138,31,0.14);
       --text:    #f3f2f7;
       --muted:   #93939e;
       --green:   #22c55e;
       --gdim:    rgba(34,197,94,0.14);
       --glass:   linear-gradient(160deg, rgba(255,255,255,0.055), rgba(0,0,0,0.55) 55%, rgba(0,0,0,0.8) 100%);
-      --brain-a: #4c1d95;
-      --brain-b: #7c3aed;
-      --brain-c: #a78bfa;
+      --brain-a: #7a2f00;
+      --brain-b: #ff7a00;
+      --brain-c: #ffd7a3;
     }
     html, body {
       height: 100%; color: var(--text);
@@ -38,6 +38,9 @@
     .brain svg { width: 100%; height: 100%; overflow: visible; display: block; }
     .brain-outline path, .brain-outline use { fill: rgba(255,255,255,0.035); stroke: rgba(255,255,255,0.18); stroke-width: 1.4; }
     .brain-groove { fill: none; stroke: rgba(255,255,255,0.14); stroke-width: 1.1; }
+    .brain-neural { fill:none; stroke:rgba(255,158,61,.68); stroke-width:.9; stroke-linecap:round; filter:drop-shadow(0 0 2px rgba(255,122,0,.75)); }
+    .brain-glass { fill:rgba(255,157,63,.045); stroke:rgba(255,203,148,.28); stroke-width:1.1; }
+
     .brain-halo { opacity: 0.55; transform-origin: 50px 46px; animation: brainBreathe 4.6s ease-in-out infinite; }
     .brain-node { fill: url(#brainGlow); transform-box: fill-box; transform-origin: center; animation: brainPulse 3.8s ease-in-out infinite; }
     .brain-node.n2 { animation-delay: .5s }
@@ -47,10 +50,10 @@
     .brain-node.n6 { animation-delay: 1.4s }
     @keyframes brainPulse   { 0%,100% { opacity:.35; transform:scale(.8);  } 50% { opacity:1;   transform:scale(1.2);  } }
     @keyframes brainBreathe { 0%,100% { opacity:.4;  transform:scale(.9); } 50% { opacity:.8;  transform:scale(1.08); } }
-    .brain[data-state="idle"]      { --brain-a:#4c1d95; --brain-b:#7c3aed; --brain-c:#a78bfa; }
-    .brain[data-state="awake"]     { --brain-a:#6d28d9; --brain-b:#c026d3; --brain-c:#e879f9; }
-    .brain[data-state="listening"] { --brain-a:#5b21b6; --brain-b:#06b6d4; --brain-c:#67e8f9; }
-    .brain[data-state="speaking"]  { --brain-a:#c2410c; --brain-b:#f97316; --brain-c:#fde68a; }
+    .brain[data-state="idle"]      { --brain-a:#7a2f00; --brain-b:#ff7a00; --brain-c:#ffd7a3; }
+    .brain[data-state="awake"]     { --brain-a:#9a3e00; --brain-b:#ff8a1f; --brain-c:#ffe4bd; }
+    .brain[data-state="listening"] { --brain-a:#b34700; --brain-b:#ff9d3d; --brain-c:#fff0d6; }
+    .brain[data-state="speaking"]  { --brain-a:#c2410c; --brain-b:#ff6a00; --brain-c:#fff3df; }
     .brain[data-state="idle"]      .brain-node, .brain[data-state="idle"]      .brain-halo { animation-duration: 4.6s; }
     .brain[data-state="awake"]     .brain-node, .brain[data-state="awake"]     .brain-halo { animation-duration: 2.3s; }
     .brain[data-state="listening"] .brain-node, .brain[data-state="listening"] .brain-halo { animation-duration: 1s;   }
@@ -154,6 +157,11 @@
       animation: mic-pulse 1s ease-in-out infinite;
     }
     #mic-btn.unsupported { opacity: 0.3; cursor: not-allowed; }
+    #mic-btn .mic-label { margin-left:7px; font-size:12px; font-weight:700; letter-spacing:.2px; }
+    #mic-btn.session-active { border-color:rgba(255,138,31,.55); color:#ffd7a3; background:rgba(255,138,31,.10); }
+    .end-session-btn { display:none; background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.42); color:#fca5a5; }
+    .end-session-btn.show { display:block; }
+
     @keyframes mic-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.65;transform:scale(0.97)} }
 
     /* ── TOAST ── */
@@ -221,6 +229,17 @@
           <path class="brain-stem" d="M45,73 C45,80 47,86 50,88 C53,86 55,80 55,73 C53,75 47,75 45,73 Z"/>
         </g>
         <path class="brain-groove" d="M50,9 C48,20 51,31 50,42 C49,53 51,64 50,71"/>
+        <g class="brain-glass">
+          <ellipse cx="50" cy="45" rx="36" ry="31"/>
+        </g>
+        <g class="brain-neural">
+          <path d="M18 28 C29 20,36 24,44 33 S61 45,76 26"/>
+          <path d="M14 45 C27 37,34 42,43 49 S61 60,85 43"/>
+          <path d="M20 62 C32 54,39 58,49 67 S67 70,79 58"/>
+          <path d="M29 17 C35 29,45 28,50 40 C56 52,67 45,73 31"/>
+          <path d="M27 67 C34 57,42 54,50 45 C58 36,67 37,77 20"/>
+          <path d="M18 40 L31 32 L42 39 L54 31 L68 39 L82 31"/>
+        </g>
         <g class="brain-nodes" filter="url(#brainSoft)">
           <circle class="brain-node n1" cx="26" cy="23" r="6"/>
           <circle class="brain-node n2" cx="17" cy="43" r="5.5"/>
@@ -242,7 +261,8 @@
     <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
     <label class="btn-attach" for="file-inp" title="Send file">📎</label>
     <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
-    <button id="mic-btn" onclick="doMic()" title="Voice command">🎤</button>
+    <button id="mic-btn" onclick="doMic()" title="Talk to Mia">🎤 <span class="mic-label">Talk to Mia</span></button>
+    <button id="end-session-btn" class="btn end-session-btn" onclick="endVoiceSession()" title="Sitzung beenden">Sitzung beenden</button>
     <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
     <button class="btn btn-send" onclick="doSend()">SEND</button>
   </footer>
@@ -594,12 +614,17 @@
     let _audioCtx = null;
     let _micStm   = null;
     let _audioNd  = null;
+    let _voiceSessionActive = false;
+    let _voiceReconnectTimer = null;
+    const endSessionBtn = document.getElementById('end-session-btn');
 
     function _micIdle() {
-      micBtn.innerHTML = '🎤';
-      micBtn.title     = 'Voice — tap to speak';
+      micBtn.innerHTML = '🎤 <span class="mic-label">Talk to Mia</span>';
+      micBtn.title     = _voiceSessionActive ? 'Mia-Sitzung läuft' : 'Talk to Mia';
       micBtn.classList.remove('recording');
-      _setBrainState(_baseBrainState);
+      micBtn.classList.toggle('session-active', _voiceSessionActive);
+      endSessionBtn.classList.toggle('show', _voiceSessionActive);
+      _setBrainState(_voiceSessionActive ? 'awake' : _baseBrainState);
     }
 
     // Float32 PCM → resample to 16 kHz + convert to Int16
@@ -646,8 +671,16 @@
       });
     }
 
-    async function doMic() {
-      if (_voiceWs) { _stopVoice(); return; }
+    async function doMic(_reconnect = false) {
+      if (_voiceSessionActive && !_reconnect) {
+        toast('Mia-Sitzung läuft bereits');
+        return;
+      }
+      if (!_reconnect) {
+        _voiceSessionActive = true;
+        clearTimeout(_voiceReconnectTimer);
+        _micIdle();
+      }
 
       if (!navigator.mediaDevices?.getUserMedia) {
         _showVoiceSetup();
@@ -662,6 +695,7 @@
         sys(e.name === 'NotAllowedError'
           ? 'Microphone denied — tap the address bar lock and allow microphone.'
           : 'Mic error: ' + e.message);
+        if (!_reconnect) { _voiceSessionActive = false; _micIdle(); }
         return;
       }
 
@@ -713,23 +747,33 @@
           _audioNd = sp;
         }
 
-        micBtn.innerHTML = '⏹';
-        micBtn.title     = 'Tap to stop';
-        micBtn.classList.add('recording');
+        micBtn.innerHTML = '🎤 <span class="mic-label">Mia hört zu</span>';
+        micBtn.title     = 'Mia-Sitzung aktiv';
+        micBtn.classList.add('recording', 'session-active');
+        endSessionBtn.classList.add('show');
         _setBrainState('listening');
         sys('Voice live — speak now');
         toast('🎤 Live');
       };
 
-      ws.onclose = () => { _stopVoice(); };
-      ws.onerror = () => { sys('Voice connection failed.'); _stopVoice(); };
+      ws.onclose = () => {
+        _cleanupVoiceTransport();
+        if (_voiceSessionActive) {
+          sys('Voice-Verbindung unterbrochen — Sitzung bleibt aktiv, verbinde neu…');
+          clearTimeout(_voiceReconnectTimer);
+          _voiceReconnectTimer = setTimeout(() => {
+            if (_voiceSessionActive && !_voiceWs) doMic(true);
+          }, 1200);
+        }
+      };
+      ws.onerror = () => { sys('Voice connection interrupted.'); };
 
       _voiceWs  = ws;
       _audioCtx = ctx;
       _micStm   = stream;
     }
 
-    function _stopVoice() {
+    function _cleanupVoiceTransport() {
       if (_audioNd)  { try { _audioNd.disconnect(); }  catch (_) {}; _audioNd  = null; }
       if (_audioCtx) { try { _audioCtx.close(); }      catch (_) {}; _audioCtx = null; }
       if (_micStm)   { _micStm.getTracks().forEach(t => t.stop()); _micStm = null; }
@@ -738,6 +782,17 @@
         if (w.readyState < 2) w.close();
       }
       _micIdle();
+    }
+
+    function endVoiceSession() {
+      if (!_voiceSessionActive) return;
+      _voiceSessionActive = false;
+      clearTimeout(_voiceReconnectTimer);
+      _voiceReconnectTimer = null;
+      _cleanupVoiceTransport();
+      _stopPlayback();
+      sys('Mia-Sitzung beendet.');
+      toast('Sitzung beendet');
     }
   </script>
 </body>
