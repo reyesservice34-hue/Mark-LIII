@@ -1064,6 +1064,15 @@ class JarvisLive:
                             txt = _clean_transcript(sc.output_transcription.text)
                             if txt and txt != (out_buf[-1] if out_buf else ""):
                                 out_buf.append(txt)
+                                # Stream each chunk as it's generated rather than
+                                # waiting for turn_complete — a longer answer takes
+                                # as long to generate as it would to speak aloud,
+                                # so without this the dashboard shows nothing at
+                                # all until the whole reply is done.
+                                if self._dashboard:
+                                    asyncio.create_task(
+                                        self._dashboard.broadcast_log_delta("jarvis", txt)
+                                    )
 
                         if sc.input_transcription and sc.input_transcription.text:
                             txt = _clean_transcript(sc.input_transcription.text)
