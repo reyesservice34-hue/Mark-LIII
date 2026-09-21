@@ -182,6 +182,12 @@
     #mic-btn.unsupported { opacity: 0.3; cursor: not-allowed; }
     @keyframes mic-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.65;transform:scale(0.97)} }
 
+    /* ── THINKING INDICATOR ── */
+    .msg-thinking .dots span { animation: think-dot 1.2s infinite; opacity: 0.3; }
+    .msg-thinking .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .msg-thinking .dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes think-dot { 0%,60%,100% { opacity: 0.3; } 30% { opacity: 1; } }
+
     /* ── TOAST ── */
     #toast {
       position:fixed; top:66px; left:50%; transform:translateX(-50%) translateY(-8px);
@@ -413,8 +419,32 @@
     // for as long as the full answer takes to speak. Stream each chunk into
     // one growing bubble instead, closed out when the final 'log' arrives.
     let _streamEl = null, _streamChunks = [];
+    let _thinkingEl = null, _thinkingTimer = null;
+
+    // The model responds in AUDIO mode — text can never arrive before the
+    // matching bit of speech has actually been generated, so there is always
+    // a short real gap before the first chunk. Showing something the instant
+    // a command is sent (rather than silence) is what actually fixes the
+    // "sounds broken" feeling — the streaming above only helps once the
+    // reply has started.
+    function _showThinking() {
+      if (_thinkingEl || _streamEl) return;
+      _thinkingEl = document.createElement('div');
+      _thinkingEl.className = 'msg msg-j msg-thinking';
+      _thinkingEl.innerHTML = '<div class="lbl">Jarvis</div><span class="dots"><span>·</span><span>·</span><span>·</span></span>';
+      feed.appendChild(_thinkingEl);
+      feed.scrollTop = feed.scrollHeight;
+      clearTimeout(_thinkingTimer);
+      _thinkingTimer = setTimeout(_hideThinking, 20000); // safety net, never stuck forever
+    }
+
+    function _hideThinking() {
+      clearTimeout(_thinkingTimer);
+      if (_thinkingEl) { _thinkingEl.remove(); _thinkingEl = null; }
+    }
 
     function _streamAppendJarvis(txt) {
+      _hideThinking();
       if (!_streamEl) {
         _streamEl = document.createElement('div');
         _streamEl.className = 'msg msg-j';
@@ -429,6 +459,7 @@
     }
 
     function _streamFinish() {
+      _hideThinking();
       _streamEl = null;
       _streamChunks = [];
     }
@@ -583,6 +614,7 @@
           body: JSON.stringify(body)
         });
         if (!response.ok) throw new Error();
+        _showThinking();
       } catch {
         sys('Senden fehlgeschlagen — Text wiederhergestellt.');
         if (!inp.value) inp.value = txt;
