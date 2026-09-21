@@ -159,7 +159,9 @@
   white-space: pre-wrap;
 }
 
-.vc-hint, .vc-blocked { margin: 0; color: var(--text-3); font-size: 15px; line-height: 1.6; max-width: 60ch; }
+/* Volle Breite des Gesprächsbereichs — bis dahin, wo die Werkzeug-Badges
+   stehen, nicht auf eine schmale Lesespalte begrenzt. */
+.vc-hint, .vc-blocked { margin: 0; color: var(--text-3); font-size: 15px; line-height: 1.6; }
 .vc-blocked { color: var(--warn); }
 
 .vc-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }

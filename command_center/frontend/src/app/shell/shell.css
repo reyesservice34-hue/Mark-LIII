@@ -60,10 +60,6 @@
   animation: live-bar-pulse 1.6s ease-in-out infinite; }
 .live-bar.phase-speaking .live-bar-dot { animation-duration: .55s; }
 .live-bar.phase-thinking { color: var(--warn); border-bottom-color: rgba(255,180,84,0.3); }
-/* Schläft: mithören, aber nicht gemeint — die Leiste tritt zurück, statt so
-   aufzufallen wie eine Leitung, die gleich antwortet. */
-.live-bar.asleep { opacity: .65; }
-.live-bar.asleep .live-bar-dot { animation-duration: 3.2s; }
 .live-bar-label { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0;
   color: inherit; font: inherit; cursor: pointer; padding: 0; white-space: nowrap; }
 .live-bar-label:hover { text-decoration: underline; }
