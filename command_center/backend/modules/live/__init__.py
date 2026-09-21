@@ -16,17 +16,30 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
 from ...auth import Principal
 from ...deps import AppState, current_principal, get_state, resolve_principal
-from ...services import realtime
+from ...services import realtime as realtime_openai
+from ...services import realtime_gemini
 from .. import ModuleSpec
 
 router = APIRouter(tags=["live"])
+
+
+def _provider():
+    """Which upstream backs the live line. This project standardized on free
+    Gemini models throughout (see the "Kostenlos ist Pflicht" commit) — OpenAI's
+    Realtime API needs a paid key this deployment was never meant to carry, so
+    it's only a fallback for a server that has an OPENAI_API_KEY but no Gemini
+    one. Both modules share the same RealtimeSession/capabilities()/configured()
+    shape, so callers never need to know which one they got."""
+    if realtime_gemini.configured():
+        return realtime_gemini
+    return realtime_openai
 
 
 @router.get("/api/voice/live/capabilities")
 async def live_capabilities(state: AppState = Depends(get_state),
                             principal: Principal = Depends(current_principal)):
     """What the live line can do right now — and if it cannot, why."""
-    caps = realtime.capabilities()
+    caps = _provider().capabilities()
     caps["tools"] = sum(1 for t in state.tools.all() if t.available and t.handler)
     return caps
 
@@ -49,6 +62,7 @@ async def live(ws: WebSocket):
         return
 
     await ws.accept()
+    realtime = _provider()
     if not realtime.configured():
         await ws.send_text(json.dumps({"type": "jarvis.unavailable",
                                        "detail": realtime.unavailable_reason()}))
