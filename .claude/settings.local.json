@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -)",
+      "Bash(/tmp/claude-0/-root-Mark-LIII-dashboard--claude-worktrees-jarvis-mobile-app-92e35d/53259093-dde9-4ef3-b834-cbd1465d57e7/scratchpad/v/bin/pip -q install python-multipart)",
+      "Bash(/tmp/claude-0/-root-Mark-LIII-dashboard--claude-worktrees-jarvis-mobile-app-92e35d/53259093-dde9-4ef3-b834-cbd1465d57e7/scratchpad/v/bin/python /tmp/claude-0/-root-Mark-LIII-dashboard--claude-worktrees-jarvis-mobile-app-92e35d/53259093-dde9-4ef3-b834-cbd1465d57e7/scratchpad/t.py)",
+      "Bash(cd /root/Mark-LIII; grep -nE \"N8N_\\(API|URL|BASE|HOST\\)|5678|3000|X-N8N\" scripts/n8n_connector_handler.py scripts/setup_qdrant_credential.py | head; ls -a | grep -i env; grep -hoE \"^N8N[A-Z_]*=\" .env* 2>/dev/null | sort -u)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" localhost:5678/healthz)",
+      "Bash(python -m json.tool integrations/n8n/plancraft_bridge.json)",
+      "Bash(python -c ' *)",
+      "Bash(python3 -m json.tool integrations/n8n/plancraft_bridge.json)",
+      "Bash(python3 -c ' *)",
+      "Bash(ps -o user,args -p 270679)",
+      "Bash(curl -s -m3 localhost:3001)",
+      "Bash(docker exec *)",
+      "Bash(docker cp *)",
+      "Bash(python3 -m py_compile main.py core/mcp_client.py actions/install_manager.py)",
+      "Bash(ls config; grep -rniE 'anthropic|claude|api_key|OPENAI' --include=*.py --include=*.json --include=*.yaml --include=*.yml --include=*.env* --include=*.example . 2>/dev/null | grep -v '.claude/' | head -30; ls -a | grep -i env; ls -a /root/Mark-LIII | grep -i env)",
+      "Bash(chmod 755 /usr/local/bin/frag)",
+      "Bash(cd /)",
+      "Bash(frag \"Was ist 3+3? Nur die Zahl.\")",
+      "Bash(cd /root/jarvis/command_center && grep -nE 'ANTHROPIC|OPENROUTER|OPENAI|LLM|PROVIDER|MODEL|BASE_URL' backend/config.py .env.example | head -40; echo ---; sed -n 1,80p backend/ai/__init__.py; echo ---; grep -nE 'env_file|environment|ANTHROPIC|OPENAI|LLM|volumes|- ' ../docker-compose.command-center.yml | head -30; ls -a . | grep env)",
+      "Bash(awk -F= '{print $1\"=\" \\(length\\($2\\)? \\(length\\($2\\)>25? \"<gesetzt, \"length\\($2\\)\" Zeichen>\": $2\\) : \"<leer>\"\\)}')",
+      "Bash(curl -s localhost:8080/api/health)",
+      "Bash(docker inspect *)",
+      "Read(//root/jarvis/**)",
+      "Bash(docker network *)",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "mcp__claude-in-chrome__navigate",
+      "mcp__claude-in-chrome__get_page_text",
+      "mcp__claude-in-chrome__computer",
+      "mcp__claude-in-chrome__find",
+      "mcp__claude-in-chrome__javascript_tool",
+      "Bash(awk -F= '{print $1\"=\"\\(length\\($2\\)?\\(length\\($2\\)>20?\"<gesetzt>\":$2\\):\"<leer>\"\\)}')",
+      "Bash(python3 -c \"import json,sys;d=json.load\\(sys.stdin\\);[print\\(k,v\\) for k,v in d['components'].items\\(\\)]\")",
+      "Bash(grep -vE '^\\\\s*$')",
+      "Bash(curl -s https://openrouter.ai/api/v1/models)",
+      "Bash(curl -s -o /dev/null -w \"audio/speech: %{http_code}\\\\n\" -X POST https://openrouter.ai/api/v1/audio/speech)",
+      "Bash(curl -s -o /dev/null -w \"audio/transcriptions: %{http_code}\\\\n\" -X POST https://openrouter.ai/api/v1/audio/transcriptions)",
+      "Bash(curl -s -o /dev/null -w \"realtime: %{http_code}\\\\n\" https://openrouter.ai/api/v1/realtime)"
+    ]
+  }
+}

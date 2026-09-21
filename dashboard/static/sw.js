@@ -1,4 +1,4 @@
-// JARVIS Dashboard — Service Worker
+// Mia Dashboard — Service Worker
 // Purpose: makes the dashboard installable on iOS/Android (a service worker is
 // required for a reliable "Add to Home Screen" install) and caches the static
 // app shell so the icon still opens to *something* without a network.
@@ -7,7 +7,7 @@
 // VAPID subscription endpoint that does not exist yet — see readme note in the
 // PR description. Do not add a 'push' listener until that backend exists.
 
-const CACHE_NAME = 'jarvis-shell-v1';
+const CACHE_NAME = 'mia-shell-v2';   // bumped: new name + icons must not be served from the old cache
 const SHELL_ASSETS = [
   '/manifest.json',
   '/static/icons/icon-192.png',

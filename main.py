@@ -309,6 +309,42 @@ TOOL_DECLARATIONS = [
             "required": [],
         },
     },
+    {
+        "name": "dashboard_open",
+        "description": (
+            "Open something on the user's dashboard (browser / phone) so they can SEE it. "
+            "Call this whenever you would otherwise say you will show or open something — "
+            "saying it opens nothing, only this tool does. "
+            "Actions: open_view (target = dashboard | chat | tasks | calendar | files | notes | "
+            "location | devices | status | settings), open_file (target = name of a file the user "
+            "uploaded to the dashboard), open_task (target = task title or id), "
+            "open_calendar_event (target = appointment title or id), "
+            "show_notification (text = a short message, level = info | success | warning | error), "
+            "focus_chat. "
+            "Only tell the user it is open if the result says it was opened. If the result says "
+            "NOT opened, say so honestly and give the reason."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "open_view | open_file | open_task | open_calendar_event | show_notification | focus_chat"},
+                "target": {"type": "STRING", "description": "View name, file name, or task / appointment title or id (depends on the action)"},
+                "text":   {"type": "STRING", "description": "Notification text (show_notification only)"},
+                "level":  {"type": "STRING", "description": "info | success | warning | error (show_notification only)"},
+            },
+            "required": ["action"],
+        },
+    },
+    {
+        "name": "dashboard_context",
+        "description": (
+            "Returns what the user's dashboard is currently showing: the open view, the selected "
+            "file / task / appointment and simple counts. This is the dashboard's own state, not a "
+            "screenshot. Call it when the user refers to what is on their dashboard "
+            "('this file', 'the one I selected', 'what am I looking at')."
+        ),
+        "parameters": {"type": "OBJECT", "properties": {}},
+    },
 ]
 
 class _ReconnectSignal(Exception):
@@ -352,7 +388,7 @@ def _keep_context_of(exc: BaseException) -> bool:
 class JarvisLive:
     def __init__(self, ui: JarvisUI):
         self.ui             = ui
-        self._asst_name     = "JARVI    S"   # updated each session from config
+        self._asst_name     = "Mia"          # updated each session from config
         self.session              = None
         self.audio_in_queue       = None
         self.out_queue            = None
@@ -691,10 +727,10 @@ class JarvisLive:
         # Load customization from config
         try:
             _cfg = json.loads(open(API_CONFIG_PATH, encoding="utf-8").read())
-            self._asst_name = (_cfg.get("assistant_name") or "JARVIS").strip()
+            self._asst_name = (_cfg.get("assistant_name") or "Mia").strip()
             _user_name = (_cfg.get("user_name") or "").strip()
         except Exception:
-            self._asst_name = "JARVIS"
+            self._asst_name = "Mia"
             _user_name = ""
 
         memory     = load_memory()
@@ -878,6 +914,18 @@ class JarvisLive:
                     import os as _os
                     _os._exit(0)
                 asyncio.create_task(_do_shutdown())
+
+            elif name == "dashboard_open":
+                if not self._dashboard:
+                    result = "The dashboard is not running, so nothing can be shown there."
+                else:
+                    result = await self._dashboard.ui_action_for_tool(args)
+
+            elif name == "dashboard_context":
+                if not self._dashboard:
+                    result = "The dashboard is not running."
+                else:
+                    result = json.dumps(self._dashboard.ui_context(), ensure_ascii=False)
 
             elif self._action_registry.has(name):
                 # file_processor: fall back to the currently-uploaded file when none is given
@@ -1151,7 +1199,15 @@ class JarvisLive:
                         fn_responses = []
                         for fc in response.tool_call.function_calls:
                             print(f"[JARVIS] 📞 {fc.name}")
-                            fr = await self._execute_tool(fc)
+                            if self._dashboard:   # tool name only — lets the dashboard show real activity
+                                await self._dashboard.broadcast_event(
+                                    {"type": "activity", "phase": "tool_start", "tool": str(fc.name)[:64]})
+                            try:
+                                fr = await self._execute_tool(fc)
+                            finally:
+                                if self._dashboard:
+                                    await self._dashboard.broadcast_event(
+                                        {"type": "activity", "phase": "tool_end", "tool": str(fc.name)[:64]})
                             fn_responses.append(fr)
                         await self.session.send_tool_response(
                             function_responses=fn_responses
@@ -1800,20 +1856,52 @@ class JarvisLive:
                     _conn_backoff = 3
                     continue
 
-                # Network / timeout errors — log clearly and back off
-                is_net_err = any(k in err_str for k in (
-                    "TimeoutError", "timed out", "getaddrinfo", "CancelledError",
-                    "ConnectionRefusedError", "OSError", "Cannot connect",
-                ))
-                if is_net_err:
-                    _conn_backoff = min(getattr(self, "_conn_backoff", 3) * 2, 60)
+                # Gemini can occasionally fail a Live turn with transient
+                # backend overload (HTTP 503 / UNAVAILABLE) or reject a resumed
+                # tool-call history with a thought_signature error. Both cases
+                # are recoverable, but exposing raw API JSON in the phone chat
+                # makes JARVIS look broken. Reconnect cleanly instead.
+                err_low = err_str.lower()
+                is_gemini_busy = (
+                    "http 503" in err_low
+                    or "unavailable" in err_low
+                    or "high demand" in err_low
+                    or "resource_exhausted" in err_low
+                    or "quota" in err_low
+                )
+                is_tool_history_rejected = (
+                    "thought_signature" in err_low
+                    or "function call is missing" in err_low
+                    or "knowledge.open" in err_low
+                )
+                if is_tool_history_rejected:
+                    self._resume_handle = None
+                    self._conn_backoff = 3
+                    self.ui.write_log(
+                        "SYS: Tool session got out of sync — reconnecting cleanly."
+                    )
+                    continue
+                if is_gemini_busy:
+                    _conn_backoff = min(getattr(self, "_conn_backoff", 3) * 2, 45)
                     self._conn_backoff = _conn_backoff
                     self.ui.write_log(
-                        f"NET: Connection failed — retrying in {_conn_backoff}s. "
-                        "(a VPN may be required)"
+                        f"SYS: Gemini is busy right now — retrying in {_conn_backoff}s."
                     )
                 else:
-                    self._conn_backoff = 3
+                    # Network / timeout errors — log clearly and back off
+                    is_net_err = any(k in err_str for k in (
+                        "TimeoutError", "timed out", "getaddrinfo", "CancelledError",
+                        "ConnectionRefusedError", "OSError", "Cannot connect",
+                    ))
+                    if is_net_err:
+                        _conn_backoff = min(getattr(self, "_conn_backoff", 3) * 2, 60)
+                        self._conn_backoff = _conn_backoff
+                        self.ui.write_log(
+                            f"NET: Connection failed — retrying in {_conn_backoff}s. "
+                            "(a VPN may be required)"
+                        )
+                    else:
+                        self._conn_backoff = 3
             finally:
                 self.session = None
                 # Only save if there was a real conversation (≥3 turns)
