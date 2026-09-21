@@ -1572,6 +1572,19 @@ class JarvisLive:
                         turn_complete=True,
                     )
                     self.ui.write_log(f"[Web]: {text}")
+                    self._session_log.append(f"User: {text}")
+                    if self._dashboard:
+                        # Voice input reaches every connected client via
+                        # transcription broadcasts; a typed command otherwise
+                        # only ever appeared in the sender's own tab (fire-
+                        # and-forget POST, no round trip) — invisible to any
+                        # other open client and lost on reconnect since it
+                        # never entered _history. Broadcasting it here makes
+                        # typed and spoken turns behave the same way.
+                        asyncio.create_task(self._dashboard.broadcast({
+                            "type": "log", "speaker": "user", "text": text,
+                            "ts": datetime.now().isoformat(),
+                        }))
                 else:
                     print(f"[Dashboard] Dropped command (no session): {text}")
             except asyncio.TimeoutError:
