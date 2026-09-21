@@ -86,12 +86,16 @@ export function VoiceConsole() {
 
   const stop = useCallback(async () => { await closeLine(); }, []);
 
-  // Lokale Leitung: die Live-Konsole sitzt direkt in der Kachel. Gleiche Adresse,
-  // gleiche Anmeldung — kein neuer Tab, keine zweite Anmeldung.
+  // Lokale Leitung: eingebettet aus Mark-LIII statt aus dem separaten
+  // /live/-Dienst (jarvis-live-voice), der über den aktuellen Server-Umzug
+  // nicht mit freigeschaltet wurde. Andere Adresse als diese Seite hier
+  // (jarvis-reyes.de-Subdomain, eigenes Zertifikat), daher eigene Anmeldung
+  // im eingebetteten Fenster nötig — anders als bei /live/, das denselben
+  // Ursprung hatte.
   if (local && !blocked) {
     return (
       <section className="voice-console vc-embed-wrap" aria-label="Sprachkonsole">
-        <iframe className="vc-embed" src="/live/" title="Jarvis Live-Gespräch"
+        <iframe className="vc-embed" src="https://dashboard.jarvis-reyes.de/" title="Jarvis Live-Gespräch"
           allow="microphone; autoplay" />
       </section>
     );
