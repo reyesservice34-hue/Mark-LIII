@@ -361,6 +361,15 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
             else:
                 result = f"Fehler: unbekanntes Tool '{name}'"
             messages.append({"role": "tool", "content": str(result)})
+        # Nach jeder Tool-Runde: Ergebnis-Disziplin erzwingen. Beobachtet: das
+        # kleine Modell beendete eine Aufgabe mit "Ich werde es jetzt versuchen"
+        # und markierte sie damit als erledigt - eine Ankuendigung ist kein Ergebnis.
+        messages.append({"role": "system", "content": (
+            "STRIKT: Nutze nur die Tool-Ergebnisse oben. Hat ein Tool nichts Brauchbares "
+            "geliefert, rufe JETZT das passendere andere Tool auf (z.B. weather_report fuer "
+            "Wetter, search_knowledge fuer Wissen) statt es anzukuendigen. Beende NIE mit "
+            "'ich werde ... versuchen' - entweder konkretes Ergebnis oder klare Aussage, "
+            "was genau nicht ging und warum.")})
 
     return "Ich bin mir nicht sicher, wie ich das ohne weitere Rueckfrage loesen kann.", messages
 

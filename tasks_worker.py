@@ -48,10 +48,17 @@ def main() -> int:
             answer, _ = chat(
                 "Erledige diese Aufgabe jetzt vollstaendig und eigenstaendig mit deinen Tools. "
                 "Berichte am Ende in 2-4 Saetzen, was du konkret getan hast und was das Ergebnis ist. "
-                "Wenn etwas nicht ging, sag klar warum.\n\nAUFGABE: " + task["goal"]
+                "VERBOTEN: Ankuendigungen wie 'ich werde ... versuchen' oder 'ich mache das jetzt' - "
+                "das ist kein Ergebnis. Entweder du lieferst das konkrete Resultat, oder du sagst "
+                "exakt, was nicht ging und warum.\n\nAUFGABE: " + task["goal"]
             )
-            task["status"] = "done"
-            task["result"] = answer.strip()
+            answer = answer.strip()
+            _promise = any(p in answer.lower() for p in (
+                "ich werde", "werde ich", "ich versuche es", "versuche ich", "ich mache das jetzt", "gleich"))
+            _substance = len(answer) > 40 and not _promise
+            task["status"] = "done" if _substance else "failed"
+            task["result"] = answer if _substance else (
+                "Kein verwertbares Ergebnis - die Antwort war nur eine Ankuendigung oder leer: " + answer[:200])
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
             print(f"[tasks] Fehler: {err}", flush=True)
