@@ -166,24 +166,18 @@
     .btn-attach:hover  { opacity: 0.9; border-color: var(--accent); color: var(--accent); }
     .btn-attach:active { transform: scale(0.96); }
 
-    /* ── MIC BUTTON ── */
-    #mic-btn {
-      background: var(--surface); border: 1px solid var(--border); color: var(--muted);
-      padding: 12px 14px; font-size: 16px; line-height: 1; border-radius: 14px;
-      cursor: pointer; transition: opacity 0.15s, transform 0.1s, background 0.2s, border-color 0.2s, color .2s;
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    /* ── SESSION BUTTON (REPLACES MIC BUTTON) ── */
+    #session-btn {
+      background: rgba(34,197,94,0.16); border: 1px solid rgba(34,197,94,0.45); color: var(--green);
+      padding: 12px 16px; font-size: 12px; font-weight: 700; border-radius: 14px;
+      cursor: pointer; transition: opacity 0.15s, transform 0.1s, box-shadow 0.2s;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 8px;
     }
-    #mic-btn:hover  { opacity: 0.9; border-color: var(--accent); color: var(--accent); }
-    #mic-btn:active { transform: scale(0.96); }
-    #mic-btn.recording {
-      background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.45); color: #ef4444;
-      animation: mic-pulse 1s ease-in-out infinite;
-    }
-    #mic-btn.unsupported { opacity: 0.3; cursor: not-allowed; }
-    #mic-btn .mic-label { margin-left:7px; font-size:12px; font-weight:700; letter-spacing:.2px; }
-    #mic-btn.session-active { border-color:rgba(255,138,31,.55); color:#ffd7a3; background:rgba(255,138,31,.10); }
-    .end-session-btn { display:none; background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.42); color:#fca5a5; }
-    .end-session-btn.show { display:block; }
+    #session-btn:hover { opacity: 0.9; box-shadow: 0 0 16px rgba(34,197,94,0.3); }
+    #session-btn:active { transform: scale(0.96); }
+    #session-btn .session-icon { font-size: 14px; }
+    #session-btn.active { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.42); color: #fca5a5; }
+    #session-btn.active:hover { box-shadow: 0 0 16px rgba(239,68,68,0.2); }
 
     @keyframes mic-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.65;transform:scale(0.97)} }
 
@@ -288,11 +282,10 @@
   </section>
   <main id="feed"></main>
   <footer>
-    <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
+    <input id="inp" placeholder="Chat with Mia…" autocomplete="off">
     <label class="btn-attach" for="file-inp" title="Send file">📎</label>
     <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
-    <button id="mic-btn" onclick="doMic()" title="Talk to Mia">🎤 <span class="mic-label">Talk to Mia</span></button>
-    <button id="end-session-btn" class="btn end-session-btn" onclick="endVoiceSession()" title="Sitzung beenden">Sitzung beenden</button>
+    <button id="session-btn" onclick="doStartSession()" title="Start a new session">💬 <span class="session-label">Start Session</span></button>
     <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
     <button class="btn btn-send" onclick="doSend()">SEND</button>
   </footer>
@@ -580,14 +573,19 @@
       const txt = inp.value.trim();
       if (!txt) return;
       inp.value = '';
-      append('user', txt);
-      const enc  = _encrypt(txt);
-      const body = enc ? { enc } : { text: txt };
-      _authFetch('/api/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
+
+      if (_sessionActive) {
+        _sessionSendMessage(txt);
+      } else {
+        append('user', txt);
+        const enc  = _encrypt(txt);
+        const body = enc ? { enc } : { text: txt };
+        _authFetch('/api/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      }
     }
 
     function doWake() {
@@ -677,191 +675,64 @@
     });
     document.getElementById('cb-decline').addEventListener('click', _dismissCall);
 
-    // ── Real-time Voice — PCM16 WebSocket → Gemini Live ──────────────────────
-    const micBtn  = document.getElementById('mic-btn');
-    let _voiceWs  = null;
-    let _audioCtx = null;
-    let _micStm   = null;
-    let _audioNd  = null;
-    let _voiceSessionActive = false;
-    let _voiceReconnectTimer = null;
-    const endSessionBtn = document.getElementById('end-session-btn');
+    // ── Session Management (Chat-based) ──────────────────────────────────────
+    const sessionBtn = document.getElementById('session-btn');
+    let _sessionActive = false;
+    let _currentSessionId = null;
 
-    function _micIdle() {
-      micBtn.innerHTML = '🎤 <span class="mic-label">Talk to Mia</span>';
-      micBtn.title     = _voiceSessionActive ? 'Mia-Sitzung läuft' : 'Talk to Mia';
-      micBtn.classList.remove('recording');
-      micBtn.classList.toggle('session-active', _voiceSessionActive);
-      endSessionBtn.classList.toggle('show', _voiceSessionActive);
-      _setBrainState(_voiceSessionActive ? 'awake' : _baseBrainState);
-    }
-
-    // Float32 PCM → resample to 16 kHz + convert to Int16
-    function _f32toPcm16(f32, srcRate) {
-      let s = f32;
-      if (srcRate !== 16000) {
-        const ratio = srcRate / 16000;
-        const len   = Math.round(f32.length / ratio);
-        s = new Float32Array(len);
-        for (let i = 0; i < len; i++)
-          s[i] = f32[Math.min(Math.round(i * ratio), f32.length - 1)];
+    function _updateSessionBtnUI() {
+      if (_sessionActive) {
+        sessionBtn.innerHTML = '✕ <span class="session-label">End Session</span>';
+        sessionBtn.classList.add('active');
+        sessionBtn.title = 'End the current session';
+        _setBrainState('awake');
+      } else {
+        sessionBtn.innerHTML = '💬 <span class="session-label">Start Session</span>';
+        sessionBtn.classList.remove('active');
+        sessionBtn.title = 'Start a new chat session';
+        _setBrainState(_baseBrainState);
       }
-      const out = new Int16Array(s.length);
-      for (let i = 0; i < s.length; i++)
-        out[i] = Math.max(-32768, Math.min(32767, Math.round(s[i] * 32768)));
-      return out.buffer;
     }
 
-    function _showVoiceSetup() {
-      if (document.getElementById('voice-setup')) return; // show once
-      const origin = location.origin;
-      const card = document.createElement('div');
-      card.id = 'voice-setup';
-      card.style.cssText = [
-        'align-self:stretch', 'background:rgba(171,139,245,0.07)',
-        'border:1px solid rgba(171,139,245,0.22)', 'border-radius:16px',
-        'padding:16px 18px', 'font-size:13px', 'line-height:1.8',
-        'animation:pop 0.18s ease'
-      ].join(';');
-      card.innerHTML =
-        '<div style="font-weight:700;color:#c4b0fb;letter-spacing:.5px;margin-bottom:10px">🎤 One-time voice setup</div>' +
-        '<ol style="padding-left:18px;color:#a9a9b3;margin:0;display:flex;flex-direction:column;gap:4px">' +
-        '<li>Open a new tab → go to <span style="background:rgba(255,255,255,0.07);padding:1px 6px;border-radius:4px;font-family:monospace;font-size:12px">chrome://flags</span></li>' +
-        '<li>Search: <strong style="color:#f3f2f7">Insecure origins treated as secure</strong></li>' +
-        '<li>Paste this URL into the box:<br><span id="flags-url" style="background:rgba(255,255,255,0.07);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:11px;user-select:all;cursor:pointer">' + esc(origin) + '</span></li>' +
-        '<li>Set to <strong style="color:#22c55e">Enabled</strong> → tap <strong style="color:#f3f2f7">Relaunch</strong></li>' +
-        '<li>Return here and tap 🎤</li>' +
-        '</ol>';
-      feed.appendChild(card);
-      feed.scrollTop = feed.scrollHeight;
-      // tap to copy
-      card.querySelector('#flags-url').addEventListener('click', () => {
-        navigator.clipboard?.writeText(origin).then(() => toast('URL copied!')).catch(() => {});
+    async function doStartSession() {
+      if (_sessionActive) {
+        // End session
+        _sessionActive = false;
+        _currentSessionId = null;
+        sys('Mia-Sitzung beendet.');
+        toast('Sitzung beendet');
+        append('jarvis', 'Sitzung gespeichert. Ich habe von dieser Konversation gelernt. 👋');
+      } else {
+        // Start session
+        _sessionActive = true;
+        _currentSessionId = 'session_' + Date.now();
+        sys('Neue Mia-Sitzung gestartet. Ich bin bereit zu lernen.');
+        toast('💬 Sitzung aktiv');
+        append('jarvis', 'Hallo! Eine neue Sitzung hat begonnen. Du kannst mich nun alles fragen. Ich werde versuchen, dir zu helfen und von unserer Konversation zu lernen.');
+      }
+      _updateSessionBtnUI();
+    }
+
+    function _sessionSendMessage(text) {
+      if (!_sessionActive) {
+        toast('Starten Sie eine Sitzung, um zu chatten');
+        return;
+      }
+      append('user', text);
+      // Send message to backend
+      const enc = _encrypt(text);
+      const body = {
+        session_id: _currentSessionId,
+        enc: enc ? enc : null,
+        text: !enc ? text : null
+      };
+      _authFetch('/api/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).catch(err => {
+        sys('Fehler beim Senden: ' + err.message);
       });
-    }
-
-    async function doMic(_reconnect = false) {
-      if (_voiceSessionActive && !_reconnect) {
-        toast('Mia-Sitzung läuft bereits');
-        return;
-      }
-      if (!_reconnect) {
-        _voiceSessionActive = true;
-        clearTimeout(_voiceReconnectTimer);
-        _micIdle();
-      }
-
-      if (!navigator.mediaDevices?.getUserMedia) {
-        _showVoiceSetup();
-        return;
-      }
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-        });
-      } catch (e) {
-        sys(e.name === 'NotAllowedError'
-          ? 'Microphone denied — tap the address bar lock and allow microphone.'
-          : 'Mic error: ' + e.message);
-        if (!_reconnect) { _voiceSessionActive = false; _micIdle(); }
-        return;
-      }
-
-      // 16 kHz context (fall back to native rate — _f32toPcm16 resamples)
-      let ctx;
-      try { ctx = new AudioContext({ sampleRate: 16000 }); }
-      catch (_) { ctx = new AudioContext(); }
-      if (ctx.state === 'suspended') await ctx.resume();
-
-      const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const ws = new WebSocket(
-        `${wsProto}://${location.host}/ws/phone-audio?token=${encodeURIComponent(_authToken)}`
-      );
-      ws.binaryType = 'arraybuffer';
-
-      ws.onopen = async () => {
-        const rate = ctx.sampleRate;
-        const src  = ctx.createMediaStreamSource(stream);
-
-        // AudioWorklet (modern) — runs in dedicated audio thread
-        const wCode = `class J extends AudioWorkletProcessor{process(i){const c=i[0]?.[0];if(c)this.port.postMessage(c.slice());return true;}}registerProcessor('j',J);`;
-        try {
-          const burl = URL.createObjectURL(new Blob([wCode], { type: 'application/javascript' }));
-          await ctx.audioWorklet.addModule(burl);
-          URL.revokeObjectURL(burl);
-          const nd = new AudioWorkletNode(ctx, 'j');
-          // Buffer to 1024 samples (64 ms at 16 kHz) before sending —
-          // matches PC mic chunk size, prevents queue flooding on the server.
-          let _pbuf = [], _plen = 0;
-          nd.port.onmessage = e => {
-            const chunk = new Int16Array(_f32toPcm16(e.data, rate));
-            _pbuf.push(chunk); _plen += chunk.length;
-            if (_plen >= 1024) {
-              const out = new Int16Array(_plen); let off = 0;
-              for (const c of _pbuf) { out.set(c, off); off += c.length; }
-              if (ws.readyState === 1) ws.send(out.buffer);
-              _pbuf = []; _plen = 0;
-            }
-          };
-          src.connect(nd);
-          _audioNd = nd;
-        } catch (_) {
-          // ScriptProcessor fallback (deprecated, still works everywhere)
-          const sp = ctx.createScriptProcessor(4096, 1, 1);
-          sp.onaudioprocess = e => {
-            if (ws.readyState === 1) ws.send(_f32toPcm16(e.inputBuffer.getChannelData(0), rate));
-          };
-          src.connect(sp); sp.connect(ctx.destination);
-          _audioNd = sp;
-        }
-
-        micBtn.innerHTML = '🎤 <span class="mic-label">Mia hört zu</span>';
-        micBtn.title     = 'Mia-Sitzung aktiv';
-        micBtn.classList.add('recording', 'session-active');
-        endSessionBtn.classList.add('show');
-        _setBrainState('listening');
-        sys('Voice live — speak now');
-        toast('🎤 Live');
-      };
-
-      ws.onclose = () => {
-        _cleanupVoiceTransport();
-        if (_voiceSessionActive) {
-          sys('Voice-Verbindung unterbrochen — Sitzung bleibt aktiv, verbinde neu…');
-          clearTimeout(_voiceReconnectTimer);
-          _voiceReconnectTimer = setTimeout(() => {
-            if (_voiceSessionActive && !_voiceWs) doMic(true);
-          }, 1200);
-        }
-      };
-      ws.onerror = () => { sys('Voice connection interrupted.'); };
-
-      _voiceWs  = ws;
-      _audioCtx = ctx;
-      _micStm   = stream;
-    }
-
-    function _cleanupVoiceTransport() {
-      if (_audioNd)  { try { _audioNd.disconnect(); }  catch (_) {}; _audioNd  = null; }
-      if (_audioCtx) { try { _audioCtx.close(); }      catch (_) {}; _audioCtx = null; }
-      if (_micStm)   { _micStm.getTracks().forEach(t => t.stop()); _micStm = null; }
-      if (_voiceWs)  {
-        const w = _voiceWs; _voiceWs = null;
-        if (w.readyState < 2) w.close();
-      }
-      _micIdle();
-    }
-
-    function endVoiceSession() {
-      if (!_voiceSessionActive) return;
-      _voiceSessionActive = false;
-      clearTimeout(_voiceReconnectTimer);
-      _voiceReconnectTimer = null;
-      _cleanupVoiceTransport();
-      _stopPlayback();
-      sys('Mia-Sitzung beendet.');
-      toast('Sitzung beendet');
     }
   </script>
 </body>
