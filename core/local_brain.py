@@ -307,7 +307,8 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
     umgeformt, BEVOR MIA ihn verarbeitet. So versteht sie auch fragmentierte
     oder dialektgefaerbte Eingaben zuverlaessig.
     """
-    tools = build_ollama_tools()
+    all_tools = build_ollama_tools()
+    tool_names = [t["function"]["name"] for t in all_tools]
     system_prompt = _load_system_prompt()
 
     clear_text = user_text if skip_clarify else clarify(user_text)
@@ -315,14 +316,26 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
     messages = history[:] if history else [{"role": "system", "content": system_prompt}]
     messages.append({"role": "user", "content": clear_text})
 
+    # Gleiche Optimierung wie in chat_stream_and_speak: Datum deterministisch
+    # vorgeben und NUR die per Stichwort passenden Tools mitschicken. Der
+    # Hintergrund-Worker lief mit allen 19 Tool-Schemas im Kontext in den
+    # 120s-Timeout (CPU-only Prompt-Eval).
+    date_hit = _extract_explicit_date(user_text)
+    if date_hit:
+        word, resolved = date_hit
+        messages.append({"role": "system", "content": f"FAKT (nicht selbst nachrechnen, direkt uebernehmen): '{word}' bedeutet hier exakt das Datum {resolved}. Falls du ein Tool mit einem 'date'-Feld aufrufst, nutze GENAU '{resolved}'."})
+    matched_names = set(_matching_tool_names(clear_text, tool_names))
+    tools = [t for t in all_tools if t["function"]["name"] in matched_names]
+
     registry = get_registry()
 
     for _round in range(4):  # max 4 Tool-Call-Runden pro Turn, verhindert Endlosschleifen
         resp = requests.post(
             f"{OLLAMA_URL}/api/chat",
-            json={"model": OLLAMA_MODEL, "messages": messages, "tools": tools, "stream": False,
-                  "keep_alive": "30m", "options": {"temperature": 0.0}},  # deterministisch: bei Default-Temperatur driftete das 3B-Modell in Tool-Runden gelegentlich in andere Sprachen ab und rief das Tool nicht auf
-            timeout=120,  # CPU-only Inferenz mit vielen Tool-Definitionen im Kontext ist langsam
+            json={"model": OLLAMA_MODEL, "messages": messages, "stream": False,
+                  "keep_alive": "30m", "options": {"temperature": 0.0},  # deterministisch: bei Default-Temperatur driftete das 3B-Modell in Tool-Runden gelegentlich ab
+                  **({"tools": tools} if tools else {})},
+            timeout=180,
         )
         resp.raise_for_status()
         data = resp.json()
