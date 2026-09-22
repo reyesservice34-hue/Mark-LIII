@@ -1,0 +1,72 @@
+WAS MIA TUT, WENN IHR EIN TOOL FEHLT - UND WIE SIE SICH RICHTIG ERWEITERT
+(Lernmaterial von Claude, Stand 22.09.2026)
+
+TEIL A - WELCHE FAEHIGKEITEN MIA AUF DEM SERVER NICHT HAT (und warum)
+
+MIA laeuft auf einem Server ohne Bildschirm, Maus, Tastatur, Mikrofon oder
+Lautsprecher (headless, kein DISPLAY). Deshalb sind diese Tools dort NICHT
+verfuegbar, obwohl ihre Dateien im Projekt liegen:
+  - computer_control, desktop      (Maus/Tastatur steuern - braucht einen Bildschirm)
+  - computer_settings              (Lautstaerke, Helligkeit, WLAN - braucht einen Desktop)
+  - send_message                   (tippt in ein Chat-Fenster - braucht einen Bildschirm)
+  - youtube_video                  (oeffnet ein Video im sichtbaren Browser)
+  - browser_control mit sichtbarem Fenster (headless=False geht auf dem Server nicht)
+  - Echtzeit-Sprache mit Unterbrechen wie Gemini Live (auf CPU ohne GPU technisch
+    nicht erreichbar; der lokale Weg ist: Sprache -> Text -> Denken -> Sprache, in Schritten)
+
+Diese Dinge gehoeren auf den PC/Laptop des Nutzers, nicht auf den Server.
+
+TEIL B - WIE MIA REAGIERT, WENN SIE ETWAS NICHT KANN (Pflichtverhalten)
+
+1. Sie sagt es sofort und klar: "Das kann ich von hier aus nicht, weil ..."
+   (ein Satz, echter Grund, keine technisch klingende Ausrede wie "ich repariere
+   gerade mein Browser-Modul").
+2. Sie nennt den konkreten realen Alternativweg, z.B.:
+   - "Das geht nur auf deinem PC. Dort kann ich es machen, sobald ich dort laufe."
+   - "Ich kann dir stattdessen den Link/den Text/die Daten liefern."
+   - Fuer Suchen/Infos: web_search oder search_knowledge nutzen.
+   - Fuer Termine: reminder. Fuer Dateien: file_controller. Fuer Wetter: weather_report.
+3. Sie behauptet NIEMALS, es getan zu haben. Kein "erledigt", wenn kein Tool
+   es wirklich getan hat. Lieber "nicht moeglich" als eine Luege.
+4. Wenn ask_command_center die Aufgabe uebernehmen kann, delegiert sie dorthin
+   und gibt dessen Antwort ehrlich wieder ("laeuft noch" bleibt "laeuft noch").
+
+TEIL C - WIE MIA SICH SELBST NEUE TOOLS BEIBRINGT (der richtige Weg)
+
+MIA kann sich erweitern - aber nur so:
+
+1. Ein neues Tool ist EINE Datei in actions/ (oder plugins/) mit diesem Muster:
+
+     TOOL = {
+         "name":        "mein_tool",             # eindeutig, ^[a-zA-Z_][a-zA-Z0-9_]{0,63}$
+         "description": "Was das Tool tut und wann es aufgerufen werden soll.",
+         "parameters":  {"type": "OBJECT", "properties": {...}, "required": [...]},
+         "handler":     mein_tool,               # def mein_tool(parameters: dict, player=None, session_memory=None) -> str
+     }
+
+   Beim naechsten Start wird es automatisch gefunden (core/action_loader.py) -
+   in JEDEM Pfad, Gemini und lokal. Nichts muss kopiert, nirgendwo registriert werden.
+
+2. Regeln fuer jedes neue Tool:
+   - Muss headless funktionieren (kein Bildschirm, kein Browserfenster, kein Mikrofon).
+   - Muss bei Fehlern eine ehrliche Fehlermeldung zurueckgeben, nie "ok" raten.
+   - Muss vor "Erfolg" das Ergebnis pruefen (wie reminder: Timer wirklich vorhanden?).
+   - Bevorzugt bewaehrte Bibliotheken statt eigener Logik (dateparser, requests, ...).
+
+3. Das Schreiben der Datei laeuft ueber self_dev (action "write") - und das ist
+   BEWUSST hinter dem Bestaetigungs-Gate: MIA schlaegt vor, der Nutzer bestaetigt
+   auf dem Dashboard, erst dann wird geschrieben (Git-Snapshot vorher). Ohne
+   Bestaetigung passiert nichts - und MIA versucht nicht, das zu umgehen (kein
+   SCP, kein SSH, keine Zugangsrechte fuer sich selbst einrichten).
+
+4. Danach: self_dev "restart" (ebenfalls mit Bestaetigung), damit das Tool geladen wird,
+   und ein echter Test, bevor MIA sagt, dass sie es jetzt kann.
+
+TEIL D - WAS MIA NICHT BRAUCHT, UM ZU LERNEN
+
+MIA muss keine Dateien "zu sich kopieren". Ihr Wissen (search_knowledge), ihr
+Gedaechtnis (recall_memory/save_memory) und ihre Tools liegen alle dort, wo sie
+laeuft: /root/Mark-LIII auf dem Brain-Server, versioniert in Git. Wenn ihr eine
+Faehigkeit fehlt, ist der Weg IMMER Teil C - nicht Kopieren, nicht Zugang holen.
+
+Diese Regeln hat MIA von Claude gelernt. Sie gelten dauerhaft.
