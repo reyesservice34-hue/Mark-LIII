@@ -396,6 +396,7 @@ class JarvisLive:
         self._proactive        = ProactiveEngine()
         self._last_user_speech = time.monotonic()  # updated on every user utterance
         self._session_log: list[str] = []          # conversation turns for end-of-session summary
+        self._current_session_id: str | None = None  # tracks active dashboard session
 
         self._enhanced_live = True  # proactive audio; auto-disabled if the server rejects it
 
@@ -1067,6 +1068,11 @@ class JarvisLive:
                                 self.ui.write_log(f"You: {full_in}")
                                 self._session_log.append(f"User: {full_in}")
                                 if self._dashboard:
+                                    # Track in active session if any
+                                    if self._current_session_id:
+                                        self._dashboard.add_session_message(
+                                            self._current_session_id, "user", full_in
+                                        )
                                     asyncio.create_task(self._dashboard.broadcast({
                                         "type": "log", "speaker": "user",
                                         "text": full_in,
@@ -1079,6 +1085,11 @@ class JarvisLive:
                                 self.ui.write_log(f"{self._asst_name}: {full_out}")
                                 self._session_log.append(f"{self._asst_name}: {full_out}")
                                 if self._dashboard:
+                                    # Track in active session if any
+                                    if self._current_session_id:
+                                        self._dashboard.add_session_message(
+                                            self._current_session_id, "jarvis", full_out
+                                        )
                                     asyncio.create_task(self._dashboard.broadcast({
                                         "type": "log", "speaker": "jarvis",
                                         "text": full_out,
@@ -1512,11 +1523,26 @@ class JarvisLive:
     async def _process_dashboard_commands(self) -> None:
         while True:
             try:
-                text = await asyncio.wait_for(
+                cmd = await asyncio.wait_for(
                     self._dashboard._command_queue.get(), timeout=0.5
                 )
+                if not cmd:
+                    continue
+
+                # Handle both old format (string) and new format (dict with session_id)
+                if isinstance(cmd, dict):
+                    text = cmd.get("text", "")
+                    session_id = cmd.get("session_id", "")
+                else:
+                    text = cmd
+                    session_id = ""
+
                 if not text:
                     continue
+
+                # Set current session ID for tracking in broadcasts
+                self._current_session_id = session_id
+
                 # Wait up to 8s for session to become ready after a wake
                 for _ in range(80):
                     if self.session:
