@@ -385,6 +385,7 @@ class DashboardServer:
         self._uploads_dir                 = UPLOADS_DIR
         self._login_html                  = _read("login.html")
         self._app_html                    = _read("app.html")
+        self._active_sessions: dict[str, dict] = {}  # session_id → {start_time, messages}
         self.app                          = self._build_app()
 
     # ── one-time key management ───────────────────────────────────────────
@@ -432,6 +433,35 @@ class DashboardServer:
 
     def set_connect_callback(self, fn) -> None:
         self._connect_callback = fn
+
+    # ── session management ───────────────────────────────────────────────
+
+    def create_session(self, session_id: str) -> None:
+        """Create a new chat session."""
+        self._active_sessions[session_id] = {
+            "start_time": time.time(),
+            "messages": [],
+            "searches": [],
+        }
+
+    def add_session_message(
+        self, session_id: str, speaker: str, text: str, search_results: list = None
+    ) -> None:
+        """Add a message to an active session."""
+        if session_id not in self._active_sessions:
+            return
+        msg = {"speaker": speaker, "text": text, "timestamp": time.time()}
+        if search_results:
+            msg["search_results"] = search_results
+        self._active_sessions[session_id]["messages"].append(msg)
+
+    def end_session(self, session_id: str) -> dict:
+        """End a session and return its data."""
+        session = self._active_sessions.pop(session_id, {})
+        if session:
+            session["end_time"] = time.time()
+            session["message_count"] = len(session.get("messages", []))
+        return session
 
     # ── broadcast ────────────────────────────────────────────────────────
 
@@ -631,6 +661,7 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             body  = await req.json()
             token = req.headers.get("authorization", "").removeprefix("Bearer ").strip()
+            session_id = body.get("session_id", "")
             enc   = body.get("enc", "")
             if enc:
                 text = self._decrypt(token, enc)
@@ -639,7 +670,13 @@ class DashboardServer:
             else:
                 text = (body.get("text") or "").strip()
             if text:
-                await self._command_queue.put(text)
+                # Create session if specified and doesn't exist
+                if session_id and session_id not in self._active_sessions:
+                    self.create_session(session_id)
+                # Track message in session if active
+                if session_id:
+                    self.add_session_message(session_id, "user", text)
+                await self._command_queue.put({"text": text, "session_id": session_id})
                 if self._wake_callback:
                     self._wake_callback()
             return JSONResponse({"ok": True})
@@ -786,9 +823,16 @@ class DashboardServer:
                     data = await websocket.receive_json()
                     if data.get("type") == "command":
                         enc = data.get("enc", "")
+                        session_id = data.get("session_id", "")
                         t   = self._decrypt(tok, enc) if enc else (data.get("text") or "").strip()
                         if t:
-                            await self._command_queue.put(t)
+                            # Create session if specified
+                            if session_id and session_id not in self._active_sessions:
+                                self.create_session(session_id)
+                            # Track message in session if active
+                            if session_id:
+                                self.add_session_message(session_id, "user", t)
+                            await self._command_queue.put({"text": t, "session_id": session_id})
                             if self._wake_callback:
                                 self._wake_callback()
             except WebSocketDisconnect:
