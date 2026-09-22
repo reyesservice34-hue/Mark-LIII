@@ -87,6 +87,29 @@
     .url { font-size: 10px; font-family: monospace; color: var(--muted); padding: 4px 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
     @media (max-width: 380px) { .url { display: none; } }
 
+    /* ── LIVE SYSTEM DECK ── */
+    .system-deck {
+      flex-shrink: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border);
+      background: rgba(0,0,0,.42); backdrop-filter: blur(22px) saturate(135%);
+    }
+    .system-card {
+      min-width: 0; padding: 9px 11px; border: 1px solid var(--border); border-radius: 12px;
+      background: linear-gradient(150deg, rgba(255,255,255,.055), rgba(255,138,31,.025) 52%, rgba(0,0,0,.3));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+    }
+    .system-card .k { font-size: 8px; font-weight: 800; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; }
+    .system-card .v { margin-top: 3px; font-size: 14px; font-weight: 750; color: #f6f3ef; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .system-card.online .v { color: var(--green); }
+    .system-card.active .v { color: #ffd7a3; }
+    .system-card.dim .v { color: var(--muted); }
+    @media (max-width: 760px) {
+      .system-deck { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 8px 10px; gap: 6px; }
+      .system-card:nth-child(n+4) { display: none; }
+      .system-card { padding: 8px 9px; }
+      .system-card .v { font-size: 12px; }
+    }
+
     /* ── FEED ── */
     main { flex: 1; overflow-y: auto; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
     main::-webkit-scrollbar { width: 4px; }
@@ -256,6 +279,13 @@
     <div class="spacer"></div>
     <div class="url">__IP__:__PORT__</div>
   </header>
+  <section class="system-deck" id="system-deck" aria-label="Live system status">
+    <div class="system-card online" id="sys-server"><div class="k">Core</div><div class="v">ONLINE</div></div>
+    <div class="system-card" id="sys-clients"><div class="k">Live Clients</div><div class="v">–</div></div>
+    <div class="system-card" id="sys-devices"><div class="k">Paired Devices</div><div class="v">–</div></div>
+    <div class="system-card" id="sys-queue"><div class="k">Command Queue</div><div class="v">–</div></div>
+    <div class="system-card" id="sys-history"><div class="k">Session Events</div><div class="v">–</div></div>
+  </section>
   <main id="feed"></main>
   <footer>
     <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
@@ -281,6 +311,45 @@
       opts.headers = Object.assign({}, opts.headers, _authHeader());
       return fetch(url, opts);
     }
+
+    // ── Live system deck ──────────────────────────────────────────────────────
+    const _sys = {
+      server:  document.querySelector('#sys-server .v'),
+      clients: document.querySelector('#sys-clients .v'),
+      devices: document.querySelector('#sys-devices .v'),
+      queue:   document.querySelector('#sys-queue .v'),
+      history: document.querySelector('#sys-history .v'),
+    };
+    function _setSystemCard(id, value, active = false) {
+      const card = document.getElementById(id);
+      const val = card?.querySelector('.v');
+      if (!card || !val) return;
+      val.textContent = String(value);
+      card.classList.remove('online', 'active', 'dim');
+      card.classList.add(active ? 'active' : 'online');
+    }
+    async function refreshSystemDeck() {
+      try {
+        const res = await _authFetch('/api/system-status', { cache: 'no-store' });
+        if (!res.ok) throw new Error('status unavailable');
+        const s = await res.json();
+        _setSystemCard('sys-server', 'ONLINE');
+        _setSystemCard('sys-clients', s.live_clients, s.live_clients > 0);
+        _setSystemCard('sys-devices', s.paired_devices, s.paired_devices > 0);
+        _setSystemCard('sys-queue', s.command_queue, s.command_queue > 0);
+        _setSystemCard('sys-history', s.session_events, s.session_events > 0);
+      } catch {
+        const card = document.getElementById('sys-server');
+        const val = card?.querySelector('.v');
+        if (card && val) {
+          val.textContent = 'UNAVAILABLE';
+          card.classList.remove('online', 'active');
+          card.classList.add('dim');
+        }
+      }
+    }
+    refreshSystemDeck();
+    setInterval(refreshSystemDeck, 5000);
 
     // ── AES-256-CBC encryption (CryptoJS) ────────────────────────────────────
     const _AES_SALT = 'JARVIS-DASHBOARD-v1';

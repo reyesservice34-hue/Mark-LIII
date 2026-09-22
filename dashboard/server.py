@@ -625,6 +625,22 @@ class DashboardServer:
             self._device_sessions.clear()
             return JSONResponse({"ok": True, "revoked": count})
 
+        @app.get("/api/system-status")
+        async def system_status(req: Request):
+            """Return non-sensitive runtime health used by the dashboard status deck."""
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            return JSONResponse({
+                "ok": True,
+                "live_clients": len(self._clients),
+                "paired_devices": len(self._device_sessions),
+                "active_tokens": len(self._tokens),
+                "encrypted_sessions": len(self._token_keys),
+                "command_queue": self._command_queue.qsize(),
+                "session_events": len(self._history),
+                "voice_queue": self._phone_audio_queue.qsize(),
+            })
+
         @app.post("/api/command")
         async def command(req: Request):
             if not _auth(req):
