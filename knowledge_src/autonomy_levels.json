@@ -1,0 +1,93 @@
+{
+  "autonomy_levels": {
+    "level_1_auto_approved": {
+      "name": "Auto-Approved Learning",
+      "description": "MIA darf OHNE Genehmigung lernen",
+      "what_she_can_do": [
+        "Code-Beispiele speichern",
+        "Erfolgreiche Lösungen memorieren",
+        "Fehler analysieren",
+        "Performance-Metriken tracken",
+        "Best Practices dokumentieren"
+      ],
+      "examples": [
+        "User frag: 'Wie debuggt man Python?'",
+        "MIA antwortet + speichert Antwort",
+        "Nächstes Mal: schneller Zugriff ✓",
+        "KEINE Genehmigung nötig ✓"
+      ],
+      "approval_required": false,
+      "max_tokens_per_skill": 5000,
+      "storage": "Procedural Brain (Qdrant)"
+    },
+    "level_2_ask_for_approval": {
+      "name": "Approval-Required Learning",
+      "description": "MIA fragt DICH um Genehmigung",
+      "what_she_can_do": [
+        "Neue Programmiersprache lernen",
+        "Neues Framework integieren",
+        "Neue Fähigkeit trainieren",
+        "Externe APIs integrieren",
+        "Workflow ändern"
+      ],
+      "examples": [
+        "MIA: 'Ich möchte Rust lernen. Genehmigt?'",
+        "DU: 'Ja, bitte'",
+        "MIA speichert Rust-Wissen",
+        "Genehmigung getracked ✓"
+      ],
+      "approval_required": true,
+      "approval_types": [
+        "new_language",
+        "new_framework",
+        "new_skill",
+        "api_integration",
+        "workflow_change"
+      ],
+      "storage": "Procedural Brain (mit Approval-Flag)"
+    },
+    "level_3_never_without_approval": {
+      "name": "Critical - Always Needs Approval",
+      "description": "MIA DARF NICHT ohne Genehmigung",
+      "what_she_cannot_do": [
+        "Code deployieren",
+        "Server-Konfiguration ändern",
+        "Daten löschen",
+        "Security-Policies ändern",
+        "Critical Infrastructure upgraden"
+      ],
+      "examples": [
+        "MIA: 'Soll ich diese Security-Patch deployen?'",
+        "DU: 'Approve' oder 'Reject'",
+        "ONLY DANN deployed MIA oder nicht",
+        "Entscheidung wird getracked ✓"
+      ],
+      "approval_required": true,
+      "always_explicit": true,
+      "storage": "Approval Log (mit Timestamp + Grund)"
+    }
+  },
+  "approval_workflow": {
+    "when_mia_wants_to_learn": [
+      "1. MIA erkennt: 'Das ist Level 2 oder 3'",
+      "2. MIA fragt: 'Darf ich X lernen? Grund: Y'",
+      "3. DU antwortest: 'Ja/Nein' + optional Grund",
+      "4. Entscheidung wird getracked",
+      "5. MIA speichert (oder nicht) mit Source-Info"
+    ],
+    "mia_proposes_learning": {
+      "step_1": "MIA erkennt Wissenslücke",
+      "step_2": "MIA: 'Ich könnte Rust lernen. Sollen wir das machen?'",
+      "step_3_you_say": "Approve oder Reject + optional Grund",
+      "step_4": "MIA speichert Entscheidung",
+      "step_5": "Wenn Approve: MIA lädt Wissen"
+    },
+    "you_request_learning": {
+      "step_1": "Du sagst: 'Bitte lerne Docker'",
+      "step_2": "MIA: 'OK, ich lerne Docker'",
+      "step_3": "MIA lädt Wissen von Sources",
+      "step_4": "MIA: 'Docker gelernt! Quellen: X, Y, Z'",
+      "step_5": "Alles getracked & dokumentiert"
+    }
+  }
+}

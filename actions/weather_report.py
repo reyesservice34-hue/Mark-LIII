@@ -1,5 +1,4 @@
-import webbrowser
-from urllib.parse import quote_plus
+import requests
 
 
 def weather_action(
@@ -7,35 +6,39 @@ def weather_action(
     player=None,
     session_memory=None,
 ) -> str:
-    city     = parameters.get("city")
-    when     = parameters.get("time", "today")  
+    city = parameters.get("city")
+    when = parameters.get("time", "today")
 
     if not city or not isinstance(city, str) or not city.strip():
-        msg = "Sir, the city is missing for the weather report."
+        msg = "Die Stadt fehlt für den Wetterbericht."
         _log(msg, player)
         return msg
 
     city = city.strip()
     when = (when or "today").strip()
 
-    search_query  = f"weather in {city} {when}"
-    url           = f"https://www.google.com/search?q={quote_plus(search_query)}"
-
     try:
-        opened = webbrowser.open(url)
-        if not opened:
-            raise RuntimeError("webbrowser.open returned False")
+        # wttr.in: kostenlos, kein API-Key, liefert echten Text-Wetterbericht -
+        # laeuft auch headless auf einem Server, kein Browser noetig.
+        resp = requests.get(
+            f"https://wttr.in/{requests.utils.quote(city)}",
+            params={"format": "3", "lang": "de"},
+            timeout=8,
+            headers={"User-Agent": "curl"},
+        )
+        resp.raise_for_status()
+        weather_text = resp.text.strip()
+        msg = f"Wetter für {city}: {weather_text}"
     except Exception as e:
-        msg = f"Sir, I couldn't open the browser for the weather report: {e}"
+        msg = f"Ich konnte das Wetter für {city} gerade nicht abrufen: {e}"
         _log(msg, player)
         return msg
 
-    msg = f"Showing the weather for {city}, {when}, sir."
     _log(msg, player)
 
     if session_memory:
         try:
-            session_memory.set_last_search(query=search_query, response=msg)
+            session_memory.set_last_search(query=f"weather in {city} {when}", response=msg)
         except Exception:
             pass
 
@@ -46,7 +49,7 @@ def _log(message: str, player=None) -> None:
     print(f"[Weather] {message}")
     if player:
         try:
-            player.write_log(f"JARVIS: {message}")
+            player.write_log(f"MIA: {message}")
         except Exception:
             pass
 

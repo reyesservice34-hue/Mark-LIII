@@ -1055,6 +1055,43 @@ class DashboardServer:
                     self._wake_callback()
             return JSONResponse({"ok": True})
 
+        @app.post("/api/local-chat")
+        async def local_chat(req: Request):
+            # 100% lokaler Text-Chat-Pfad: Verstehens-Schicht + Ollama + Tools,
+            # komplett getrennt von der Gemini-Command-Queue oben. Fuer Tests
+            # und Automatisierungs-Anfragen, die nicht durch die Cloud sollen.
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            body = await req.json()
+            token = req.headers.get("authorization", "").removeprefix("Bearer ").strip()
+            enc = body.get("enc", "")
+            if enc:
+                text = self._decrypt(token, enc)
+                if text is None:
+                    return JSONResponse({"error": "Decryption failed"}, status_code=400)
+            else:
+                text = (body.get("text") or "").strip()
+            if not text:
+                return JSONResponse({"error": "empty text"}, status_code=400)
+            try:
+                import sys as _sys
+                from pathlib import Path as _Path
+                _base = _Path(__file__).resolve().parent.parent
+                if str(_base) not in _sys.path:
+                    _sys.path.insert(0, str(_base))
+                from core.understanding import clarify as _clarify
+                from core.local_brain import chat as _local_chat
+
+                def _run():
+                    clear_text = _clarify(text)
+                    answer, _ = _local_chat(clear_text, skip_clarify=True)
+                    return clear_text, answer
+
+                clear_text, answer = await asyncio.to_thread(_run)
+            except Exception as e:
+                return JSONResponse({"error": f"local-chat failed: {e}"}, status_code=500)
+            return JSONResponse({"ok": True, "understood_as": clear_text, "answer": answer})
+
         @app.post("/api/wake")
         async def wake_ep(req: Request):
             if not _auth(req):

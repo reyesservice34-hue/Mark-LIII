@@ -1,0 +1,43 @@
+{
+  "bash_scripting": {
+    "description": "MIA kann Bash-Scripts schreiben & ausführen",
+    "common_tasks": {
+      "check_server_status": "curl http://server:port/health",
+      "restart_docker_container": "docker restart container_name",
+      "view_logs": "docker logs -f container_name",
+      "check_cpu_usage": "top -b -n 1 | grep 'load average'",
+      "get_disk_usage": "df -h",
+      "list_all_containers": "docker ps -a",
+      "run_background_task": "nohup python script.py &"
+    },
+    "useful_patterns": [
+      "SSH execution: ssh user@host 'command'",
+      "Loops: for i in {1..10}; do echo $i; done",
+      "Conditionals: if [ -f file ]; then echo 'exists'; fi",
+      "Functions: my_func() { echo 'Hello'; }",
+      "Pipes: cat file | grep pattern | awk '{print $1}'",
+      "Redirection: command > output.txt 2>&1"
+    ]
+  },
+  "powershell_scripting": {
+    "description": "MIA kann PowerShell nutzen (Windows-compatible)",
+    "common_tasks": {
+      "get_file_content": "Get-Content file.txt",
+      "list_files": "Get-ChildItem -Path C:\\folder",
+      "create_file": "New-Item -ItemType File -Path file.txt",
+      "stop_process": "Stop-Process -Name processname -Force",
+      "start_service": "Start-Service -Name servicename",
+      "get_system_info": "Get-ComputerInfo",
+      "run_remote_command": "Invoke-Command -ComputerName server -ScriptBlock { command }"
+    },
+    "useful_patterns": [
+      "Variables: $var = 'value'",
+      "Arrays: $array = @(1, 2, 3)",
+      "Loops: foreach ($item in $array) { }",
+      "Conditionals: if ($condition) { } else { }",
+      "Functions: function MyFunc { }",
+      "Pipes: Get-Process | Where-Object { $_.CPU -gt 100 }",
+      "Error handling: try { } catch { }"
+    ]
+  }
+}

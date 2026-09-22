@@ -4,7 +4,7 @@ import platform
 import shutil
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 _CNW: dict = (
@@ -254,10 +254,13 @@ def _schedule_linux(target_dt: datetime, task_name: str,
 
     if shutil.which("systemd-run"):
         on_calendar = target_dt.strftime("%Y-%m-%d %H:%M:00")
+        # KEIN --user: das braucht eine dauerhafte User-Systemd-Instanz (linger),
+        # die eine SSH-Root-Session normalerweise nicht hat - der Befehl meldet
+        # dann faelschlich Erfolg, aber der Timer verschwindet sofort wieder.
+        # System-Scope (Standard ohne --user) ist fuer einen root-Server-Dienst richtig.
         result = subprocess.run(
             [
                 "systemd-run",
-                "--user",
                 f"--on-calendar={on_calendar}",
                 f"--unit={task_name}",
                 "--",
@@ -266,8 +269,17 @@ def _schedule_linux(target_dt: datetime, task_name: str,
             capture_output=True, text=True,
         )
         if result.returncode == 0:
-            return task_name
-        print(f"[Reminder] ⚠️ systemd-run failed: {result.stderr.strip()}, trying 'at'")
+            # Nicht blind vertrauen: verifizieren, dass der Timer wirklich existiert,
+            # bevor Erfolg gemeldet wird (genau das Problem, das --user verursacht hat).
+            check = subprocess.run(
+                ["systemctl", "list-timers", "--all", f"{task_name}.timer"],
+                capture_output=True, text=True,
+            )
+            if task_name in check.stdout:
+                return task_name
+            print(f"[Reminder] ⚠️ systemd-run returned success but timer not found on verification, trying 'at'")
+        else:
+            print(f"[Reminder] ⚠️ systemd-run failed: {result.stderr.strip()}, trying 'at'")
 
     if shutil.which("at"):
         at_time = target_dt.strftime("%H:%M %Y-%m-%d")
@@ -284,6 +296,45 @@ def _schedule_linux(target_dt: datetime, task_name: str,
     print("[Reminder] ❌ Neither systemd-run nor at found on this Linux system.")
     return ""
 
+# ── Relative Datumsausdruecke robust aufloesen (nicht dem LLM ueberlassen -
+#    kleine Modelle rechnen bei 'morgen'/Wochentagen unzuverlaessig) - nutzt
+#    dateparser (ausgereifte Bibliothek) statt eigener Regel-Logik.
+import dateparser as _dateparser
+_DATEPARSER_SETTINGS = {'PREFER_DATES_FROM': 'future', 'RETURN_AS_TIMEZONE_AWARE': False}
+
+def _resolve_date(date_str: str) -> str:
+    s = (date_str or '').strip()
+    if not s:
+        return s
+
+    # Schon im richtigen Format? Direkt durchreichen.
+    try:
+        datetime.strptime(s, '%Y-%m-%d')
+        return s
+    except ValueError:
+        pass
+
+    s_norm = s.lower().replace('ue', 'ü').replace('ae', 'ä').replace('oe', 'ö')
+    parsed = _dateparser.parse(s_norm, languages=['de'], settings=_DATEPARSER_SETTINGS)
+    if parsed is not None:
+        return parsed.strftime('%Y-%m-%d')
+
+    return date_str  # unveraendert - loest bewusst den bestehenden Fehlerpfad unten aus
+
+import re as _re_t
+
+def _resolve_time(t: str) -> str:
+    """Toleranter Zeit-Parser: '14', '14 Uhr', '14:00 Uhr', '9.30', '9h' -> 'HH:MM'.
+    Gleiche Idee wie _resolve_date: nicht darauf verlassen, dass das Modell exakt formatiert."""
+    m = _re_t.search(r"(\d{1,2})(?:[:.](\d{2}))?", t or "")
+    if not m:
+        return t
+    h = int(m.group(1)); mi = int(m.group(2) or 0)
+    if 0 <= h <= 23 and 0 <= mi <= 59:
+        return f"{h:02d}:{mi:02d}"
+    return t
+
+
 def reminder(
     parameters: dict,
     response=None,
@@ -291,8 +342,8 @@ def reminder(
     session_memory=None,
 ) -> str:
 
-    date_str = parameters.get("date", "").strip()
-    time_str = parameters.get("time", "").strip()
+    date_str = _resolve_date(parameters.get("date", "").strip())
+    time_str = _resolve_time(parameters.get("time", "").strip())
     message  = parameters.get("message", "Reminder").strip()
 
     if not date_str or not time_str:
@@ -346,7 +397,7 @@ TOOL = {
         "properties": {
             "date": {
                 "type": "STRING",
-                "description": "Date in YYYY-MM-DD format"
+                "description": "Date as YYYY-MM-DD, OR a relative word like heute/morgen/uebermorgen/montag..sonntag - wird serverseitig korrekt berechnet"
             },
             "time": {
                 "type": "STRING",

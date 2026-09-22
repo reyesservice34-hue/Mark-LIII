@@ -28,6 +28,8 @@ trade made in exchange for that:
 """
 
 import subprocess
+
+from core import confirm as _confirm
 import sys
 from pathlib import Path
 
@@ -174,11 +176,30 @@ def self_dev(parameters: dict, player=None, session_memory=None) -> str:
     elif action == "read":
         result = _read(path)
     elif action == "write":
-        result = _write(path, content)
+        # Eigener-Code-Aenderung: NUR mit Nutzer-Bestaetigung ueber das
+        # bestehende Gate (core/confirm.py) - nicht mehr direkt ausgefuehrt.
+        # Im headless lokalen Pfad (kein HUD gebunden) wird das automatisch
+        # abgelehnt, siehe confirm.request()'s Doku.
+        result = _confirm.request(
+            key=f"self_dev_write_{path}",
+            title=f"MIA will eigenen Code aendern: {path}",
+            detail=f"{len(content or '')} Zeichen werden in '{path}' geschrieben (Git-Snapshot vorher, reversibel).",
+            run=lambda: _write(path, content),
+        )
     elif action == "run":
-        result = _run(command)
+        result = _confirm.request(
+            key=f"self_dev_run_{command}",
+            title="MIA will einen Befehl im eigenen Projekt ausfuehren",
+            detail=f"Befehl: {command}",
+            run=lambda: _run(command),
+        )
     elif action == "restart":
-        result = _restart()
+        result = _confirm.request(
+            key="self_dev_restart",
+            title="MIA will sich selbst neu starten",
+            detail="Wendet zuvor geschriebene Code-Aenderungen an.",
+            run=_restart,
+        )
     else:
         result = "Unknown self_dev action. Use list, read, write, run, or restart."
 

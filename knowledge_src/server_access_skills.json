@@ -1,0 +1,73 @@
+{
+  "server_infrastructure": {
+    "description": "MIA kennt ihre 3 Server und kann sie verwalten",
+    "servers": {
+      "brain": {
+        "hostname": "MIA-BRAIN-01",
+        "ip": "31.70.150.218",
+        "user": "root",
+        "ssh_port": 22,
+        "what_runs_here": [
+          "Ollama LLM (Phi-2)",
+          "Reasoning Engine",
+          "Voice I/O (STT/TTS)",
+          "Core Orchestrator"
+        ],
+        "ssh_command": "ssh -i ~/.ssh/mia_servers root@31.70.150.218",
+        "check_health": "curl http://localhost:8888/health",
+        "restart_service": "docker restart mia-brain"
+      },
+      "knowledge": {
+        "hostname": "MIA-KNOWLEDGE-01",
+        "ip": "31.70.152.166",
+        "user": "root",
+        "ssh_port": 22,
+        "what_runs_here": [
+          "Qdrant Vector Database",
+          "Memory Services",
+          "Learning Engine",
+          "Worker Queue"
+        ],
+        "ssh_command": "ssh -i ~/.ssh/mia_servers root@31.70.152.166",
+        "check_health": "curl http://localhost:8100/health",
+        "restart_service": "docker restart mia-knowledge"
+      },
+      "control": {
+        "hostname": "MIA-CONTROL-01",
+        "ip": "31.70.140.208",
+        "user": "root",
+        "ssh_port": 22,
+        "what_runs_here": [
+          "Dashboard",
+          "API Gateway",
+          "Monitoring",
+          "Watchdog"
+        ],
+        "ssh_command": "ssh -i ~/.ssh/mia_servers root@31.70.140.208",
+        "check_health": "curl http://localhost:5000/health",
+        "restart_service": "docker restart mia-control"
+      }
+    },
+    "how_to_connect": [
+      "1. MIA hat SSH-Key in ~/.ssh/mia_servers",
+      "2. MIA kann SSH-Kommandos auf alle 3 Server ausführen",
+      "3. MIA kann remote Commands ausführen",
+      "4. MIA kann Logs prüfen",
+      "5. MIA kann Services neu starten"
+    ],
+    "common_operations": {
+      "check_all_servers": "for ip in 31.70.150.218 31.70.152.166 31.70.140.208; do ssh -i ~/.ssh/mia_servers root@$ip 'hostname && uptime'; done",
+      "check_disk_space": "ssh root@31.70.150.218 'df -h'",
+      "check_running_containers": "ssh root@31.70.150.218 'docker ps'",
+      "view_logs": "ssh root@31.70.150.218 'tail -f /var/log/docker.log'",
+      "get_system_metrics": "ssh root@31.70.150.218 'top -b -n 1 | head -20'"
+    }
+  },
+  "security": {
+    "ssh_key_location": "~/.ssh/mia_servers",
+    "permissions": "0600 (read/write nur für MIA)",
+    "never_share": "SSH-Key ist privat - teile nie!",
+    "passphrase": "Benutzerdefiniert (falls gesetzt)",
+    "known_hosts": "~/.ssh/known_hosts (speichert Fingerprints)"
+  }
+}

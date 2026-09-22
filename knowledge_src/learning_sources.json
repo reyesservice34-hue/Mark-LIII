@@ -1,0 +1,70 @@
+{
+  "source_categories": {
+    "official_docs": {
+      "name": "Offizielle Dokumentation",
+      "examples": [
+        "Python.org",
+        "MDN Web Docs",
+        "TensorFlow Docs",
+        "Docker Docs"
+      ],
+      "trust_level": "HIGH",
+      "citation_required": true
+    },
+    "verified_tutorials": {
+      "name": "Verifizierte Tutorials",
+      "examples": [
+        "Real Python",
+        "Codecademy",
+        "freeCodeCamp",
+        "Official Video Series"
+      ],
+      "trust_level": "HIGH",
+      "citation_required": true
+    },
+    "community_resources": {
+      "name": "Community Ressourcen",
+      "examples": [
+        "Stack Overflow (hochbewertete Antworten)",
+        "GitHub (verified projects)",
+        "Dev.to (community blogs)",
+        "Medium (verified authors)"
+      ],
+      "trust_level": "MEDIUM",
+      "citation_required": true
+    },
+    "user_provided": {
+      "name": "Vom Benutzer bereitgestellt",
+      "examples": [
+        "Code-Beispiele vom User",
+        "User-Feedback & Corrections",
+        "User Teaching",
+        "Internal documentation"
+      ],
+      "trust_level": "TRUSTED",
+      "citation_required": true
+    },
+    "internal_experience": {
+      "name": "Interne Erfahrung",
+      "examples": [
+        "Erfolgreiche Solutions",
+        "Fehleranalyse",
+        "Performance Tests",
+        "Trial & Error (documented)"
+      ],
+      "trust_level": "SELF-LEARNED",
+      "citation_required": false
+    }
+  },
+  "every_new_skill_must_have": [
+    "skill_name: 'Was wird gelernt?'",
+    "source_category: 'Woher kommt es?'",
+    "source_url: 'Link oder Referenz'",
+    "approval_status: 'approved/auto_approved/pending'",
+    "approval_date: 'Wann genehmigt?'",
+    "approval_reason: 'Warum ist das wichtig?'",
+    "learned_by: 'MIA oder externe Quelle?'",
+    "timestamp: 'Wann gelernt?'",
+    "examples: 'Praktische Beispiele'"
+  ]
+}
