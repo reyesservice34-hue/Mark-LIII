@@ -50,3 +50,6 @@ desktop.ini
 logs/
 downloads/
 screenshots/
+tasks/queue/*.json
+tasks/done/*.json
+tasks/.worker.lock

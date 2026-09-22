@@ -268,6 +268,7 @@ _TOOL_KEYWORDS: dict[str, list[str]] = {
     "save_memory": ["merk dir", "merke dir", "speicher", "notier", "vergiss nicht dass", "ich heiße", "mein name ist", "ich mag", "ich bin"],
     "system_status": ["cpu", "ram", "speicher voll", "auslastung", "wie geht es dir", "systemstatus", "server status", "laufzeit"],
     "undo": ["rückgängig", "mach das rückgängig", "undo", "zurücknehmen", "nein nicht das"],
+    "background_task": ["im hintergrund", "kümmer dich", "kümmere dich", "erledige das", "aufgabe", "später fertig", "arbeite daran", "offene aufgaben", "ergebnis der aufgabe"],
     "search_knowledge": [
         "was weißt du über", "was kannst du", "welche skills", "erkläre mir", "erklär mir",
         "wie funktioniert", "wie geht", "was ist", "strategie", "tipps", "vorgehen",
