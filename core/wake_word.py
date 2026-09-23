@@ -1,5 +1,5 @@
 """
-Local wake-word detection for JARVIS ("Hey Jarvis").
+Local wake-word detection for MIA ("Hey Jarvis").
 
 Design goals:
   • ZERO cost when the feature is off — openwakeword is imported ONLY inside

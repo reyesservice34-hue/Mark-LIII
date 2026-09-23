@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JARVIS Dashboard</title>
+  <title>MIA Dashboard</title>
   <script src="/static/crypto.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -223,7 +223,7 @@
 <body>
   <div id="toast"></div>
   <div id="callBanner">
-    <div class="cb-txt">📞 JARVIS ruft an<small>Eingehender Anruf</small></div>
+    <div class="cb-txt">📞 MIA ruft an<small>Eingehender Anruf</small></div>
     <div class="cb-btns">
       <button class="cb-answer" id="cb-answer">Annehmen</button>
       <button class="cb-decline" id="cb-decline">Ablehnen</button>
@@ -288,7 +288,7 @@
   </section>
   <main id="feed"></main>
   <footer>
-    <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
+    <input id="inp" placeholder="Send a command to MIA…" autocomplete="off">
     <label class="btn-attach" for="file-inp" title="Send file">📎</label>
     <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
     <button id="mic-btn" onclick="doMic()" title="Talk to Mia">🎤 <span class="mic-label">Talk to Mia</span></button>
@@ -405,7 +405,7 @@
     const _wsUrl   = `${_wsProto}://${location.host}/ws?token=${encodeURIComponent(_authToken)}`;
     const ws       = new WebSocket(_wsUrl);
 
-    ws.onopen    = () => { sys('Remote session active.'); toast('Connected to JARVIS'); };
+    ws.onopen    = () => { sys('Remote session active.'); toast('Connected to MIA'); };
     ws.onclose   = () => sys('Connection lost — refresh to reconnect.');
     ws.onerror   = () => sys('Connection error.');
     ws.onmessage = (e) => {
@@ -433,9 +433,9 @@
 
     function append(speaker, text) {
       const d = document.createElement('div');
-      if (speaker === 'jarvis') {
+      if (speaker === 'mia') {
         d.className = 'msg msg-j';
-        d.innerHTML = `<div class="lbl">Jarvis</div>${esc(text)}`;
+        d.innerHTML = `<div class="lbl">MIA</div>${esc(text)}`;
         _pulseBrain('speaking');
       } else {
         d.className = 'msg msg-u';
@@ -608,7 +608,7 @@
       _toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
     }
 
-    // ── Playback — JARVIS's spoken replies, streamed as PCM16 @ 24 kHz ───────
+    // ── Playback — MIA's spoken replies, streamed as PCM16 @ 24 kHz ───────
     let _playCtx    = null;
     let _playCursor = 0;      // ctx.currentTime cursor for gapless scheduling
     let _playNodes  = [];     // scheduled sources, so audio_stop can cut them off
@@ -652,7 +652,7 @@
       if (_playCtx) _playCursor = _playCtx.currentTime;
     }
 
-    // ── Incoming call — JARVIS wants to talk on its own initiative and
+    // ── Incoming call — MIA wants to talk on its own initiative and
     // nobody's mic is open to hear it ─────────────────────────────────────────
     const callBanner = document.getElementById('callBanner');
     let _callTimer = null;
@@ -660,7 +660,7 @@
     function _showIncomingCall() {
       if (_voiceWs) return;   // already on the line — nothing to announce
       callBanner.classList.add('show');
-      toast('📞 JARVIS ruft an');
+      toast('📞 MIA ruft an');
       clearTimeout(_callTimer);
       _callTimer = setTimeout(_dismissCall, 30000);   // missed call after 30s
     }
