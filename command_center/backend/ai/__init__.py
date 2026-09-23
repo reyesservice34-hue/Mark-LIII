@@ -13,10 +13,26 @@ import os
 from .base import LLMProvider, ProviderInfo, ToolDef  # noqa: F401
 
 
+def _model_for(provider_name: str, specific_env: str, default: str) -> str:
+    """JARVIS_AI_MODEL names a model for whichever provider JARVIS_AI_PROVIDER
+    actually selects. Applying it unconditionally to every provider factory
+    means a model tag meant for one provider (e.g. a local Ollama tag) leaks
+    into every other provider's own health check and gets looked up on a
+    service that never heard of it — see the Gemini integration card 404'ing
+    on a qwen2.5:7b "model" while JARVIS_AI_PROVIDER=local. Only the active
+    provider gets the JARVIS_AI_MODEL override; everyone else falls back to
+    their own env var or hardcoded default."""
+    if os.environ.get("JARVIS_AI_PROVIDER", "").strip().lower() == provider_name:
+        override = os.environ.get("JARVIS_AI_MODEL", "").strip()
+        if override:
+            return override
+    return os.environ.get(specific_env, "").strip() or default
+
+
 def _anthropic():
     from .anthropic_provider import AnthropicProvider
     return AnthropicProvider(api_key=os.environ["ANTHROPIC_API_KEY"],
-                             model=os.environ.get("JARVIS_AI_MODEL") or "claude-opus-5",
+                             model=_model_for("anthropic", "ANTHROPIC_MODEL", "claude-opus-5"),
                              workspace_id=os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip())
 
 
@@ -26,7 +42,7 @@ def _openai():
         provider_id="openai",
         base_url=os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com",
         api_key=os.environ["OPENAI_API_KEY"],
-        model=os.environ.get("JARVIS_AI_MODEL") or os.environ.get("OPENAI_MODEL") or "gpt-4.1")
+        model=_model_for("openai", "OPENAI_MODEL", "gpt-4.1"))
 
 
 _CHAIN_DEFS = {
@@ -63,13 +79,13 @@ def _local():
         provider_id="local",
         base_url=os.environ["LOCAL_LLM_URL"],
         api_key=os.environ.get("LOCAL_LLM_API_KEY", ""),
-        model=os.environ.get("JARVIS_AI_MODEL") or os.environ.get("LOCAL_LLM_MODEL") or "llama3.2")
+        model=_model_for("local", "LOCAL_LLM_MODEL", "llama3.2"))
 
 
 def _gemini():
     from .gemini_provider import GeminiProvider
     return GeminiProvider(api_key=os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"],
-                          model=os.environ.get("JARVIS_AI_MODEL") or "gemini-flash-latest")
+                          model=_model_for("gemini", "GEMINI_MODEL", "gemini-flash-latest"))
 
 
 _FACTORIES = {"anthropic": _anthropic, "openai": _openai, "local": _local, "gemini": _gemini}
