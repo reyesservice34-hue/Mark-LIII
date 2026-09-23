@@ -1540,6 +1540,31 @@ class MiaLive:
                 print(f"[Dashboard] Command error: {e}")
                 await asyncio.sleep(0.5)
 
+    # ── Approvals ("Freigaben") — bridges core/confirm.py to the dashboard ────
+
+    def _broadcast_approval(self, payload: dict) -> None:
+        """Sync-safe hook core/confirm.py calls from any thread. Schedules the
+        actual async send on MIA's own event loop — mirrors how interrupt()
+        and other confirm-adjacent calls reach the dashboard."""
+        if self._dashboard and self._loop:
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._dashboard.broadcast(payload), self._loop
+                )
+            except Exception as e:
+                print(f"[Approvals] Broadcast failed: {e}")
+
+    async def _run_approval_sweep(self) -> None:
+        """Expire stale approvals even if nobody is polling the dashboard —
+        same 'runs for the whole lifetime' pattern as _process_dashboard_commands,
+        just on a longer, cheap interval since this is a 90s timeout."""
+        while True:
+            await asyncio.sleep(15)
+            try:
+                confirm_gate.sweep_expired()
+            except Exception as e:
+                print(f"[Approvals] Sweep error: {e}")
+
     # ── main loop ───────────────────────────────────────────────────────────
 
     async def run(self):
@@ -1551,9 +1576,10 @@ class MiaLive:
         # trim is invisible without a way to say so. Both are bound once here
         # rather than passed down through every action signature.
         confirm_gate.bind(
-            show = self.ui.show_confirm,
-            hide = self.ui.hide_confirm,
-            log  = self.ui.write_log,
+            show      = self.ui.show_confirm,
+            hide      = self.ui.hide_confirm,
+            log       = self.ui.write_log,
+            broadcast = self._broadcast_approval,
         )
         set_trim_notifier(self.ui.write_log)
 
@@ -1574,6 +1600,7 @@ class MiaLive:
             asyncio.create_task(self._dashboard.serve())
             # Runs for the whole lifetime, not just inside an active session
             asyncio.create_task(self._process_dashboard_commands())
+            asyncio.create_task(self._run_approval_sweep())
         except Exception as e:
             print(f"[Dashboard] Disabled: {e}")
             self._dashboard = None

@@ -215,6 +215,93 @@
     #callBanner .cb-answer { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); color: var(--green); animation: mic-pulse 1s ease-in-out infinite; }
     #callBanner .cb-decline { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
 
+    /* ── FREIGABEN BADGE ── */
+    .approvals-badge {
+      display: flex; align-items: center; gap: 6px; padding: 4px 11px;
+      border-radius: 99px; background: var(--surface); border: 1px solid var(--border);
+      font-size: 10px; font-weight: 700; letter-spacing: .5px;
+      color: var(--muted); cursor: pointer; transition: all .2s; white-space: nowrap;
+      font-family: inherit;
+    }
+    .approvals-badge:hover { border-color: var(--accent); color: var(--text); }
+    .approvals-badge.has-pending {
+      background: rgba(255,138,31,.14); border-color: rgba(255,138,31,.4); color: #ffd7a3;
+    }
+    @media (max-width: 430px) {
+      header { flex-wrap: wrap; row-gap: 8px; }
+      .spacer { flex-basis: 100%; height: 0; }
+    }
+
+    /* ── FREIGABEN PANEL ── */
+    #approvalsOverlay {
+      position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.45);
+      opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    #approvalsOverlay.show { opacity: 1; pointer-events: auto; }
+    #approvalsPanel {
+      position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); z-index: 60;
+      background: rgba(8,9,13,0.97); backdrop-filter: blur(24px) saturate(140%);
+      border-left: 1px solid var(--border);
+      transform: translateX(100%); transition: transform .22s ease;
+      display: flex; flex-direction: column;
+    }
+    #approvalsPanel.show { transform: translateX(0); }
+    .ap-head { display: flex; align-items: center; gap: 10px; padding: 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .ap-head h2 { font-size: 13px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; }
+    .ap-close {
+      margin-left: auto; background: none; border: none; color: var(--muted);
+      font-size: 18px; cursor: pointer; padding: 4px 8px; line-height: 1;
+    }
+    .ap-close:hover { color: var(--text); }
+    .ap-filters { display: flex; gap: 6px; flex-wrap: wrap; padding: 12px 16px 0; flex-shrink: 0; }
+    .ap-filter {
+      font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+      padding: 6px 11px; border-radius: 99px; background: var(--surface);
+      border: 1px solid var(--border); color: var(--muted); cursor: pointer; font-family: inherit;
+    }
+    .ap-filter.active { color: var(--text); border-color: var(--accent); background: var(--adim); }
+    .ap-body { flex: 1; overflow-y: auto; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .ap-empty { text-align: center; color: var(--muted); font-size: 12px; padding: 46px 12px; }
+    .ap-card {
+      border: 1px solid var(--border); border-radius: 14px; padding: 13px 15px;
+      background: linear-gradient(150deg, rgba(255,255,255,.05), rgba(255,138,31,.02) 55%, rgba(0,0,0,.3));
+      animation: pop .18s ease;
+    }
+    .ap-card .ap-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .ap-card .ap-title { font-size: 13px; font-weight: 700; }
+    .ap-card .ap-sub { font-size: 10px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 3px 10px; margin-bottom: 8px; }
+    .ap-card .ap-sub b { color: #c9ccd6; font-weight: 600; }
+    .ap-card .ap-detail { font-size: 11.5px; color: #c9ccd6; line-height: 1.5; margin-bottom: 11px; }
+    .ap-status {
+      flex-shrink: 0; font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+      padding: 3px 9px; border-radius: 99px; white-space: nowrap;
+    }
+    .ap-status.pending   { background: rgba(255,138,31,.14);  color: #ffd7a3; }
+    .ap-status.executing { background: rgba(171,139,245,.16); color: #e4d9ff; }
+    .ap-status.success   { background: var(--gdim);           color: var(--green); }
+    .ap-status.rejected  { background: rgba(255,255,255,.06); color: var(--muted); }
+    .ap-status.failed    { background: rgba(239,68,68,.12);   color: #f87171; }
+    .ap-status.expired   { background: rgba(255,255,255,.06); color: var(--muted); }
+    .ap-actions { display: flex; gap: 8px; }
+    .ap-btn {
+      flex: 1; padding: 10px; border-radius: 10px; font-size: 11px; font-weight: 700;
+      letter-spacing: .5px; text-transform: uppercase; border: none; cursor: pointer;
+      transition: opacity .15s, transform .1s; font-family: inherit;
+    }
+    .ap-btn:active { transform: scale(0.97); }
+    .ap-btn:disabled { opacity: .4; cursor: default; transform: none; }
+    .ap-approve { background: var(--gdim); border: 1px solid rgba(34,197,94,.4); color: var(--green); }
+    .ap-reject  { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.35); color: #f87171; }
+    .ap-time { font-size: 9px; color: var(--muted); margin-top: 9px; }
+
+    /* Chat-feed hint pointing at a pending approval (dashboard point 10) */
+    .msg-approval {
+      align-self: center; max-width: 92%; background: var(--adim);
+      border: 1px solid rgba(255,138,31,.3); border-radius: 14px; padding: 10px 15px;
+      font-size: 12px; color: #ffd7a3; cursor: pointer; text-align: center;
+    }
+    .msg-approval:hover { background: rgba(255,138,31,.22); }
+
     @media (prefers-reduced-motion: reduce) {
       .brain-node, .brain-halo, .dot, #mic-btn.recording { animation: none !important; }
     }
@@ -228,6 +315,21 @@
       <button class="cb-answer" id="cb-answer">Annehmen</button>
       <button class="cb-decline" id="cb-decline">Ablehnen</button>
     </div>
+  </div>
+  <div id="approvalsOverlay" onclick="closeApprovals()"></div>
+  <div id="approvalsPanel" role="dialog" aria-label="Freigaben">
+    <div class="ap-head">
+      <h2>Freigaben</h2>
+      <button class="ap-close" onclick="closeApprovals()" aria-label="Schließen">✕</button>
+    </div>
+    <div class="ap-filters" id="apFilters">
+      <div class="ap-filter active" data-f="pending" onclick="setApFilter('pending')">Ausstehend</div>
+      <div class="ap-filter" data-f="all" onclick="setApFilter('all')">Alle</div>
+      <div class="ap-filter" data-f="approved" onclick="setApFilter('approved')">Freigegeben</div>
+      <div class="ap-filter" data-f="rejected" onclick="setApFilter('rejected')">Abgelehnt</div>
+      <div class="ap-filter" data-f="failed" onclick="setApFilter('failed')">Fehlgeschlagen</div>
+    </div>
+    <div class="ap-body" id="apBody"><div class="ap-empty">Lädt…</div></div>
   </div>
   <header>
     <div class="brain" id="brain" data-state="idle" aria-hidden="true">
@@ -273,9 +375,12 @@
         </g>
       </svg>
     </div>
-    <div class="logo"><em>J</em>ARVIS</div>
+    <div class="logo"><em>M</em>IA</div>
     <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
     <div class="enc-badge" id="enc">AES-256</div>
+    <button class="approvals-badge" id="approvalsBadge" onclick="openApprovals()">
+      <span class="abtxt" id="approvalsBadgeTxt">Keine offenen Freigaben</span>
+    </button>
     <div class="spacer"></div>
     <div class="url">__IP__:__PORT__</div>
   </header>
@@ -418,6 +523,8 @@
       if (m.type === 'audio')         _playPcm16(m.data, m.rate);
       if (m.type === 'audio_stop')    _stopPlayback();
       if (m.type === 'incoming_call') _showIncomingCall();
+      if (m.type === 'approval_pending')  _onApprovalPending(m);
+      if (m.type === 'approval_resolved') _onApprovalResolved(m);
     };
 
     function setStatus(s) {
@@ -455,6 +562,197 @@
     function esc(s) {
       return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
+
+    // ── Freigaben (approvals) ─────────────────────────────────────────────────
+    // Thin client over /api/approvals + the 'approval_pending'/'approval_resolved'
+    // WebSocket events already pushed through the same connection everything
+    // else uses — no separate transport, no separate polling loop.
+    const STATUS_LABEL = {
+      pending:   'Ausstehend',
+      executing: 'Wird ausgeführt',
+      success:   'Erfolgreich',
+      rejected:  'Abgelehnt',
+      failed:    'Fehlgeschlagen',
+      expired:   'Abgelaufen',
+    };
+    // Filter chips map onto the internal status vocabulary above.
+    const FILTER_MATCH = {
+      all:      () => true,
+      pending:  s => s === 'pending',
+      approved: s => s === 'executing' || s === 'success',
+      rejected: s => s === 'rejected' || s === 'expired',
+      failed:   s => s === 'failed',
+    };
+
+    let _approvals   = { pending: [], history: [] }; // authoritative, replaced by GET /api/approvals
+    let _apFilter    = 'pending';
+    let _apLoadFailed = false;
+
+    const apBadge = document.getElementById('approvalsBadge');
+    const apBadgeTxt = document.getElementById('approvalsBadgeTxt');
+    const apBody   = document.getElementById('apBody');
+    const apPanel  = document.getElementById('approvalsPanel');
+    const apOverlay = document.getElementById('approvalsOverlay');
+
+    function _updateBadge() {
+      const n = _approvals.pending.filter(p => p.status === 'pending').length;
+      if (n > 0) {
+        apBadge.classList.add('has-pending');
+        apBadgeTxt.textContent = `Freigaben (${n})`;
+      } else {
+        apBadge.classList.remove('has-pending');
+        apBadgeTxt.textContent = 'Keine offenen Freigaben';
+      }
+    }
+
+    function _fmtTime(epochSeconds) {
+      try {
+        return new Date(epochSeconds * 1000).toLocaleString(undefined,
+          { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+      } catch { return ''; }
+    }
+
+    function _apCard(a, isPending) {
+      const sub = [];
+      if (a.agent)  sub.push(`<span><b>Agent</b> ${esc(a.agent)}</span>`);
+      if (a.action) sub.push(`<span><b>Aktion</b> ${esc(a.action)}</span>`);
+      if (a.target) sub.push(`<span><b>Ziel</b> ${esc(a.target)}</span>`);
+      // Only render optional technical fields when the backend actually sent
+      // them — never invent a file/server/command that isn't real.
+      const meta = a.meta || {};
+      if (meta.file)    sub.push(`<span><b>Datei</b> ${esc(meta.file)}</span>`);
+      if (meta.server)  sub.push(`<span><b>Server</b> ${esc(meta.server)}</span>`);
+      if (meta.service) sub.push(`<span><b>Dienst</b> ${esc(meta.service)}</span>`);
+      if (meta.command) sub.push(`<span><b>Befehl</b> ${esc(meta.command)}</span>`);
+
+      const risk = meta.risk ? `<div class="ap-detail">⚠ ${esc(meta.risk)}</div>` : '';
+      const statusLbl = STATUS_LABEL[a.status] || a.status;
+
+      const actions = isPending ? `
+        <div class="ap-actions">
+          <button class="ap-btn ap-approve" onclick="resolveApproval('${a.id}', true)">Freigeben</button>
+          <button class="ap-btn ap-reject"  onclick="resolveApproval('${a.id}', false)">Ablehnen</button>
+        </div>` : '';
+
+      return `
+        <div class="ap-card" id="ap-card-${a.id}" data-id="${a.id}">
+          <div class="ap-top">
+            <div class="ap-title">${esc(a.title)}</div>
+            <div class="ap-status ${esc(a.status)}">${esc(statusLbl)}</div>
+          </div>
+          ${sub.length ? `<div class="ap-sub">${sub.join('')}</div>` : ''}
+          ${a.detail ? `<div class="ap-detail">${esc(a.detail)}</div>` : ''}
+          ${risk}
+          ${a.result ? `<div class="ap-detail">${esc(a.result)}</div>` : ''}
+          ${actions}
+          <div class="ap-time">${_fmtTime(a.at)} · ${esc(a.id)}</div>
+        </div>`;
+    }
+
+    function renderApprovals() {
+      const pending = _approvals.pending.filter(p => FILTER_MATCH[_apFilter](p.status));
+      const history = _approvals.history.filter(h => FILTER_MATCH[_apFilter](h.status));
+      const cards = [
+        ...pending.map(a => _apCard(a, a.status === 'pending')),
+        ...history.map(a => _apCard(a, false)),
+      ];
+      if (_apLoadFailed) {
+        apBody.innerHTML = '<div class="ap-empty">Freigaben konnten nicht geladen werden — Verbindung prüfen.</div>';
+      } else if (cards.length === 0) {
+        apBody.innerHTML = '<div class="ap-empty">Keine Einträge für diesen Filter.</div>';
+      } else {
+        apBody.innerHTML = cards.join('');
+      }
+      _updateBadge();
+    }
+
+    function setApFilter(f) {
+      _apFilter = f;
+      document.querySelectorAll('.ap-filter').forEach(el =>
+        el.classList.toggle('active', el.dataset.f === f));
+      renderApprovals();
+    }
+
+    async function refreshApprovals() {
+      try {
+        const res = await _authFetch('/api/approvals', { cache: 'no-store' });
+        if (!res.ok) throw new Error('approvals unavailable');
+        const data = await res.json();
+        _approvals = { pending: data.pending || [], history: data.history || [] };
+        _apLoadFailed = false;
+      } catch {
+        _apLoadFailed = true;
+      }
+      renderApprovals();
+    }
+
+    function openApprovals() {
+      apPanel.classList.add('show');
+      apOverlay.classList.add('show');
+      refreshApprovals();
+    }
+    function closeApprovals() {
+      apPanel.classList.remove('show');
+      apOverlay.classList.remove('show');
+    }
+
+    async function resolveApproval(id, accepted) {
+      // Disable both buttons in that card immediately — a slow network must
+      // not let a double-tap send two decisions for the same approval.
+      const card = document.getElementById(`ap-card-${id}`);
+      if (card) card.querySelectorAll('.ap-btn').forEach(b => b.disabled = true);
+      try {
+        const res = await _authFetch(`/api/approvals/${encodeURIComponent(id)}/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accepted }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          toast(err.error || 'Freigabe fehlgeschlagen — Verbindung prüfen.');
+          if (card) card.querySelectorAll('.ap-btn').forEach(b => b.disabled = false);
+          return;
+        }
+        toast(accepted ? 'Freigegeben.' : 'Abgelehnt.');
+        // The WebSocket push (approval_resolved) will re-render with the
+        // authoritative state; refresh once now too in case that socket
+        // happens to be down.
+        refreshApprovals();
+      } catch {
+        toast('Freigabe fehlgeschlagen — Verbindung prüfen.');
+        if (card) card.querySelectorAll('.ap-btn').forEach(b => b.disabled = false);
+      }
+    }
+
+    function _onApprovalPending(m) {
+      const exists = _approvals.pending.some(p => p.id === m.id);
+      if (!exists) _approvals.pending.push(m);
+      renderApprovals();
+      // Chat-feed hint, per "MIA chat integration": tell the user in the feed
+      // itself, with a one-tap way to open the matching entry.
+      const d = document.createElement('div');
+      d.className = 'msg-approval';
+      d.textContent = `🔒 Für diese Aktion benötige ich deine Freigabe: ${m.title}`;
+      d.onclick = () => { openApprovals(); setApFilter('pending'); };
+      feed.appendChild(d);
+      feed.scrollTop = feed.scrollHeight;
+      toast('Neue Freigabe angefordert');
+    }
+
+    function _onApprovalResolved(m) {
+      _approvals.pending = _approvals.pending.filter(p => p.id !== m.id);
+      if (m.status === 'executing') {
+        // Still running — keep it visible as pending-but-locked until the
+        // terminal status arrives, matching the backend, which keeps it in
+        // core.confirm's pending set until the worker thread finishes.
+        _approvals.pending.push(m);
+      } else {
+        _approvals.history = [m, ...(_approvals.history || [])].slice(0, 100);
+      }
+      renderApprovals();
+    }
+
+    refreshApprovals();
 
     // ── File helpers ──────────────────────────────────────────────────────────
     function _fileIcon(name) {

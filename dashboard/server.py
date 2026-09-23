@@ -641,6 +641,44 @@ class DashboardServer:
                 "voice_queue": self._phone_audio_queue.qsize(),
             })
 
+        # ── Freigaben (approvals) ────────────────────────────────────────────
+        # Thin HTTP surface over core/confirm.py, the single approval gate also
+        # used by the desktop HUD. No parallel approval system — this only
+        # exposes it to the phone/browser.
+
+        @app.get("/api/approvals")
+        async def list_approvals(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                from core.confirm import list_state
+            except Exception as e:
+                return JSONResponse({"error": f"Approval gate unavailable: {e}"},
+                                    status_code=503)
+            return JSONResponse({"ok": True, **list_state()})
+
+        @app.post("/api/approvals/{approval_id}/resolve")
+        async def resolve_approval(approval_id: str, req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                body = await req.json()
+            except Exception:
+                body = {}
+            accepted = bool(body.get("accepted"))
+            try:
+                from core.confirm import resolve as confirm_resolve
+            except Exception as e:
+                return JSONResponse({"error": f"Approval gate unavailable: {e}"},
+                                    status_code=503)
+            ok = confirm_resolve(accepted, approval_id=approval_id)
+            if not ok:
+                return JSONResponse(
+                    {"ok": False, "error": "Already resolved, expired, or unknown id."},
+                    status_code=409,
+                )
+            return JSONResponse({"ok": True})
+
         @app.post("/api/command")
         async def command(req: Request):
             if not _auth(req):

@@ -826,6 +826,7 @@ def computer_settings(
         return confirm.request(
             key=action, title=title, detail=detail,
             run=lambda f=func, a=action: (f(), f"{a} done.")[1],
+            target="This computer",
         )
 
     if action == "volume_set":
