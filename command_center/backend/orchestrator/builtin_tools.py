@@ -988,6 +988,10 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         base = (os.environ.get("N8N_WEBHOOK_BASE_URL") or os.environ.get("N8N_BASE_URL") or "").rstrip("/")
         if not base:
             return "Claude teacher unavailable: n8n webhook base URL is not configured.", False
+        token = os.environ.get("MIA_TEACHER_BRIDGE_TOKEN", "")
+        if not token:
+            return "Claude teacher unavailable: MIA_TEACHER_BRIDGE_TOKEN is not configured.", False
+        header = os.environ.get("MIA_TEACHER_BRIDGE_HEADER", "X-Mia-Teacher-Bridge")
         url = base + "/webhook/mia-claude-teacher-7f2d0c1a83e34b63910f4bd8"
         payload = {
             "topic": str(args["topic"]),
@@ -995,7 +999,9 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
             "context": str(args.get("context", "")),
         }
         async with httpx.AsyncClient(timeout=float(args.get("timeout", 330))) as client:
-            response = await client.post(url, json=payload)
+            response = await client.post(url, json=payload, headers={header: token})
+        if response.status_code in (401, 403):
+            return "Claude teacher rejected the request: bridge token invalid (MIA_TEACHER_BRIDGE_TOKEN mismatch).", False
         if response.status_code >= 400:
             return f"Claude teacher failed ({response.status_code}): {response.text[:1200]}", False
         try:
