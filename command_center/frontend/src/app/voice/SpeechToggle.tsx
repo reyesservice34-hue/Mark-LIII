@@ -38,7 +38,7 @@ export function SpeechToggle() {
 
   const usable = !!backend?.canSpeak;
   const title = !backend ? "Prüfe Sprachausgabe …"
-    : !usable ? `Vorlesen nicht möglich: ${backend.speakReason || "JARVIS_CC_TTS_URL ist nicht gesetzt"}`
+    : !usable ? `Vorlesen nicht möglich: ${backend.speakReason || "MIA_CC_TTS_URL ist nicht gesetzt"}`
       : `${LABEL[mode]} — klicken zum Umschalten`;
 
   const click = () => {

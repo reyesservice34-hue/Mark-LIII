@@ -79,8 +79,9 @@ export class LiveLine {
   private playHead = 0;
   private said = "";
   private open = false;
+  private muted = false;
 
-  constructor(private h: LiveHandlers) {}
+  constructor(private h: LiveHandlers, private conversationId = "") {}
 
   get isOpen() { return this.open; }
 
@@ -103,7 +104,8 @@ export class LiveLine {
     }
 
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${proto}//${location.host}/api/voice/live`);
+    const q = this.conversationId ? `?conversation_id=${encodeURIComponent(this.conversationId)}` : "";
+    const ws = new WebSocket(`${proto}//${location.host}/api/voice/live${q}`);
     this.ws = ws;
 
     await new Promise<void>((resolve, reject) => {
@@ -126,7 +128,7 @@ export class LiveLine {
     // bräuchte eine eigene Datei und brächte hier keinen hörbaren Vorteil.
     this.node = ctxIn.createScriptProcessor(4096, 1, 1);
     this.node.onaudioprocess = (ev) => {
-      if (!this.open || ws.readyState !== WebSocket.OPEN) return;
+      if (!this.open || this.muted || ws.readyState !== WebSocket.OPEN) return;
       const pcm = floatToPcm16(downsample(ev.inputBuffer.getChannelData(0), ctxIn.sampleRate, RATE));
       ws.send(JSON.stringify({
         type: "input_audio_buffer.append",
@@ -136,7 +138,14 @@ export class LiveLine {
     this.source.connect(this.node);
     this.node.connect(ctxIn.destination);
     this.open = true;
+    this.muted = false;
     this.h.onState?.("listening");
+  }
+
+  /** Mikrofon anhalten, ohne die Sprachverbindung oder die Antwort zu beenden. */
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    this.stream?.getAudioTracks().forEach((track) => { track.enabled = !muted; });
   }
 
   private downstream(raw: string) {
@@ -217,6 +226,7 @@ export class LiveLine {
 
   async stop(): Promise<void> {
     this.open = false;
+    this.muted = false;
     this.flush();
     try { this.node?.disconnect(); this.source?.disconnect(); } catch { /* schon zu */ }
     this.stream?.getTracks().forEach((t) => t.stop());

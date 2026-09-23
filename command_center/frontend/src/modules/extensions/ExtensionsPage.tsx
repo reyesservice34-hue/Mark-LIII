@@ -1,5 +1,5 @@
 /**
- * Erweiterungen — alles, was JARVIS über seinen eigenen Quelltext hinaus kann.
+ * Erweiterungen — alles, was MIA über seinen eigenen Quelltext hinaus kann.
  *
  * Drei Arten auf einer Seite: fremde Werkzeugserver (MCP), Fähigkeiten als
  * Text, und was er sich selbst geschrieben hat. Nichts davon ist an einen
@@ -100,7 +100,7 @@ export default function ExtensionsPage() {
             foot="Model Context Protocol — derselbe Stecker, den auch Claude benutzt. Werkzeuge daraus heißen mcp.<server>.<werkzeug> und laufen durch dieselbe Genehmigung wie alles andere.">
             {data.servers.length === 0 ? (
               <EmptyState icon={<Plug size={22} />} title="Noch kein Server eingetragen">
-                Trage die Adresse eines MCP-Servers ein. Seine Werkzeuge stehen JARVIS dann sofort zur
+                Trage die Adresse eines MCP-Servers ein. Seine Werkzeuge stehen MIA dann sofort zur
                 Verfügung — ohne dass hier eine Zeile Code dazukommt.
               </EmptyState>
             ) : (

@@ -110,11 +110,13 @@ def _tool_declarations(state, principal) -> tuple[list[dict], ToolNameMap]:
 class RealtimeSession:
     """One live conversation. Owns the upstream socket and the tool loop."""
 
-    def __init__(self, state, principal, *, instructions: str = "",
+    def __init__(self, state, principal, *, instructions: str = "", conversation_id: str = "",
                  send_down: Callable[[dict], Awaitable[None]]) -> None:
         self.state = state
         self.principal = principal
         self.instructions = instructions
+        self.conversation_id = conversation_id
+        self._assistant_text = ""
         self.send_down = send_down
         self.ws: Any = None
         self._names: ToolNameMap | None = None
@@ -180,6 +182,18 @@ class RealtimeSession:
                      "input_audio_buffer.clear", "conversation.item.create",
                      "conversation.item.truncate", "response.create", "response.cancel"):
             return
+        if t == "conversation.item.create" and self.conversation_id:
+            item = event.get("item") or {}
+            if item.get("role") == "user":
+                text = " ".join(
+                    str(c.get("text") or "") for c in (item.get("content") or [])
+                    if isinstance(c, dict) and c.get("type") in ("input_text", "text")
+                ).strip()
+                if text:
+                    self.state.services["chat"].add_message(
+                        self.conversation_id, "user", text,
+                        meta={"via": "live_text", "actor": self.principal.actor})
+                    self.state.services["chat"].maybe_title(self.conversation_id, text)
         await self._up(event)
 
     # ── downstream ───────────────────────────────────────────────────────
@@ -192,7 +206,18 @@ class RealtimeSession:
             except ValueError:
                 continue
             t = ev.get("type", "")
+            if t == "conversation.item.input_audio_transcription.completed" and self.conversation_id:
+                text = str(ev.get("transcript") or "").strip()
+                if text:
+                    self.state.services["chat"].add_message(self.conversation_id, "user", text, meta={"via": "voice", "actor": self.principal.actor})
+            elif t == "response.created":
+                self._assistant_text = ""
+            elif t == "response.output_audio_transcript.delta":
+                self._assistant_text += str(ev.get("delta") or "")
             if t == "response.done":
+                if self.conversation_id and self._assistant_text.strip():
+                    self.state.services["chat"].add_message(self.conversation_id, "assistant", self._assistant_text.strip(), meta={"via": "voice", "agent_id": "jarvis"})
+                    self._assistant_text = ""
                 # Tool calls arrive here, alongside the finished answer.
                 for item in ((ev.get("response") or {}).get("output") or []):
                     if item.get("type") == "function_call":
@@ -215,7 +240,7 @@ class RealtimeSession:
             args = {}
 
         ctx = ToolContext(state=self.state, principal=self.principal, agent_id="jarvis",
-                          emit=lambda kind, data: None)
+                          conversation_id=self.conversation_id or None, emit=lambda kind, data: None)
         executor = self.state.runtime.executor
         try:
             text, ok = await asyncio.wait_for(executor.execute(ctx, name, args), timeout=TOOL_TIMEOUT)

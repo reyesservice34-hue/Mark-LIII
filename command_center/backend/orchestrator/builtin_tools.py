@@ -21,6 +21,7 @@ import httpx
 from ..ai.base import trim
 from ..db import new_id, now_iso
 from ..services.composio import DASHBOARD as COMPOSIO_DASHBOARD
+from ..services.files import WorkspaceError
 from .tool_registry import ToolContext, ToolRegistry, ToolSpec
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -119,8 +120,9 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         text = out.decode("utf-8", "replace")
         return f"exit={proc.returncode}\n{trim(text, 8000)}", proc.returncode == 0
 
-    reg.register(ToolSpec("terminal.execute", "Run a shell command on the server inside the workspace. "
-                          "Every call requires user approval.",
+    reg.register(ToolSpec("terminal.execute", "Run a shell command inside the Command Center container's workspace. "
+                          "Every call requires user approval. Do not use this to read /root/Mark-LIII paths; "
+                          "use filesystem.read, which maps those host paths to the read-only Mark-LIII workspace.",
                           _obj({"command": _s("shell command"), "reason": _s("what this achieves"),
                                 "timeout": _i("seconds, default 60")}, ["command", "reason"]),
                           category="server", risk="critical", min_role="admin", handler=terminal_execute,
@@ -159,8 +161,11 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
     reg.register(ToolSpec("filesystem.list", "List a directory inside the workspace.",
                           _obj({"path": _s("relative path, '' for root")}), category="files", risk="low",
                           min_role="viewer", handler=fs_list))
-    reg.register(ToolSpec("filesystem.read", "Read a text file from the workspace.",
-                          _obj({"path": _s("relative path"), "max_bytes": _i("cap, default 200000")}, ["path"]),
+    reg.register(ToolSpec("filesystem.read", "Read a text file from the workspace. The host project "
+                          "/root/Mark-LIII is mounted read-only and may be addressed either by its full host "
+                          "path or as Mark-LIII/... . Always use this tool for those project files.",
+                          _obj({"path": _s("workspace-relative path or /root/Mark-LIII/... host path"),
+                                "max_bytes": _i("cap, default 200000")}, ["path"]),
                           category="files", risk="low", min_role="viewer", handler=fs_read))
     reg.register(ToolSpec("filesystem.write", "Create or overwrite a text file in the workspace.",
                           _obj({"path": _s("relative path"), "content": _s("full file content")},
@@ -323,7 +328,7 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
     async def notify_user(ctx: ToolContext, args: dict):
         n = st.services["notifications"].notify(
             category=str(args.get("category", "agent")), title=str(args["title"]), body=str(args.get("body", "")),
-            severity=str(args.get("severity", "info")),
+            severity=str(args.get("severity", "info")), meta={"push": True},        # ein Agent meldet nur, was der Nutzer wissen soll: aufs Handy
             user_id=ctx.principal.id if ctx.principal.kind == "user" else "*")
         return {"notification_id": n["id"]}
 
@@ -332,10 +337,33 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                                 "severity": _s("info|success|warning|error"), "category": _s("task|agent|server|system")},
                                ["title"]), category="communication", risk="low", handler=notify_user))
 
+    async def notify_call(ctx: ToolContext, args: dict):
+        from ..services import phone
+        text = str(args["message"])
+        st.services["notifications"].notify(category="agent", title="Anruf: " + text[:60], body=text, severity="critical",
+                                            meta={"push": True, "call": False},
+                                            user_id=ctx.principal.id if ctx.principal.kind == "user" else "*")
+        r = await phone.call(text, force=bool(args.get("sofort")))
+        return (r["hinweis"], bool(r["angerufen"]))
+
+    reg.register(ToolSpec("notify.call", "Call the user on their own phone and read a message aloud. ONLY for genuinely urgent "
+                          "cases that cannot wait: a site emergency, a deadline about to be missed, a critical failure. "
+                          "Everything else goes through notify.user. Calls only the user's saved number; there is a cool-down "
+                          "so it never rings repeatedly. Tells you if calling is not set up.",
+                          _obj({"message": _s("what to say, in German, two short sentences, first person, no markdown"),
+                                "sofort": {"type": "boolean", "description": "ignore the cool-down (only if the last call was about something else)"}},
+                               ["message"]), category="communication", risk="medium", handler=notify_call, timeout_seconds=40))
+
     async def memory_remember(ctx: ToolContext, args: dict):
         row_id = new_id("mem")
         st.db.insert("memory", {"id": row_id, "text": str(args["text"])[:4000], "actor": ctx.principal.actor,
                                 "conversation_id": ctx.conversation_id, "created_at": now_iso()})
+        try:
+            # Sofort einen Bedeutungs-Vektor anlegen. Klappt das nicht, holt die Suche es später nach.
+            from ..ai import embeddings as _emb
+            await _emb.index_one(st.db, row_id, str(args["text"])[:4000])
+        except Exception:  # noqa: BLE001
+            pass
         if args.get("core"):
             # Das Hauptgedächtnis ist gedeckelt: Was hier hineinkommt, wird bei
             # jeder Anfrage mitgeschickt. Ist kein Platz, wird das gesagt statt
@@ -350,8 +378,18 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         return "remembered"
 
     async def memory_search(ctx: ToolContext, args: dict):
-        rows = st.db.fetchall("SELECT text, created_at FROM memory WHERE text LIKE ? ORDER BY created_at DESC LIMIT ?",
-                              (f"%{args['query']}%", int(args.get("limit", 10))))
+        limit = int(args.get("limit", 10))
+        try:
+            from ..ai import embeddings as _emb
+            semantic = await _emb.search_all(st.db, str(args["query"]), limit=limit, min_score=0.25, include_pinned=True)
+        except Exception:  # noqa: BLE001
+            semantic = None
+        rows = [{"source": h["source"], "text": h["text"], "created_at": h["created_at"]} for h in (semantic or [])]
+        seen = {r["text"] for r in rows}
+        for r in st.db.fetchall("SELECT text, created_at FROM memory WHERE text LIKE ? ORDER BY created_at DESC LIMIT ?",
+                                (f"%{args['query']}%", limit)):
+            if r["text"] not in seen and len(rows) < limit:
+                rows.append({"source": "Gedächtnis", **r})
         return rows or "nothing stored matches"
 
     reg.register(ToolSpec("memory.remember",
@@ -377,7 +415,10 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           "entry matches, so nothing disappears by accident.",
                           _obj({"query": _s("text of the fact to forget")}, ["query"]),
                           category="memory", risk="medium", handler=memory_forget))
-    reg.register(ToolSpec("memory.search", "Search stored facts.", _obj({"query": _s("keyword"), "limit": _i("")}, ["query"]),
+    reg.register(ToolSpec("memory.search", "Search the one memory — remembered facts, the main memory (Hauptgedächtnis), "
+                          "standing instructions and company knowledge — by meaning and by keyword. Each hit says "
+                          "where it comes from. Ask in your own words: 'who cannot drive' finds 'has no driving licence'.",
+                          _obj({"query": _s("what you are looking for, in plain words"), "limit": _i("")}, ["query"]),
                           category="memory", risk="low", min_role="viewer", handler=memory_search))
 
     async def web_fetch(ctx: ToolContext, args: dict):
@@ -527,6 +568,10 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           category="communication", risk="high", handler=email_send,
                           available=mail_ok, reason=mail_reason, timeout_seconds=90))
 
+    # ── Lexware / Buchhaltung ──
+    from .lexware_tools import register_lexware_tools
+    register_lexware_tools(reg, st, files)
+
     # ── github ───────────────────────────────────────────────────────────
     gh = st.services["github"]
     gh_ok = gh.configured()
@@ -630,6 +675,7 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
     # laufen frei durch: sie ändern nichts, und ein Gatter davor wäre bloß
     # Lärm, der die echten Freigaben entwertet.
     selfext = st.services["selfext"]
+    evolution = st.services["core_evolution"]
 
     async def self_tools(ctx: ToolContext, args: dict):
         items = selfext.list()
@@ -666,15 +712,38 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         return selfext.source(str(args["file"]))
 
     async def self_propose(ctx: ToolContext, args: dict):
-        return selfext.propose(str(args["file"]), str(args["source"]), str(args["reason"]),
+        gain = str(args.get("capability_gain", "")).strip()
+        evidence = str(args.get("evidence", "")).strip()
+        verify = str(args.get("verification_plan", "")).strip()
+        if not gain or not evidence or not verify:
+            return "Core-Vorschlag abgelehnt: Fähigkeitsgewinn, Nachweis und Verifikationsplan sind Pflicht.", False
+        reason = (f"{args['reason']}\n\nCAPABILITY_GAIN: {gain}\nEVIDENCE: {evidence}\n"
+                  f"VERIFICATION_PLAN: {verify}")
+        return selfext.propose(str(args["file"]), str(args["source"]), reason,
                                author=ctx.principal.actor)
 
     async def self_proposals(ctx: ToolContext, args: dict):
         items = selfext.proposals()
         return items or "Es liegt kein Änderungsvorschlag vor."
 
+    async def self_verify(ctx: ToolContext, args: dict):
+        return await selfext.verify_proposal(
+            str(args["proposal_id"]),
+            capability_gain=str(args.get("capability_gain", "")),
+            verification_plan=str(args.get("verification_plan", "")))
+
     async def self_apply(ctx: ToolContext, args: dict):
-        return selfext.apply(str(args["proposal_id"]), actor=ctx.principal.actor)
+        verified = evolution.ensure_verified(str(args["proposal_id"]))
+        res = selfext.apply(str(args["proposal_id"]), actor=ctx.principal.actor)
+        evolution.arm_after_apply(res, verified)
+        learning.record(kind="self", title=f"Core-Änderung vorbereitet: {args['proposal_id']}",
+                        lesson=str(args.get("reason", "")),
+                        verification="Sandbox-Verifikation bestanden: " + ", ".join(
+                            c.get("name", "") for c in verified.get("checks", []) if c.get("ok")),
+                        source="core-evolution", conversation_id=ctx.conversation_id, confidence=1.0,
+                        tags=["core-evolution", "verified", "approved"], actor=ctx.principal.actor)
+        return {**res, "verified": True, "activation_mode": verified["activation_mode"],
+                "next": "Aktivierung braucht self.rebuild (Frontend) oder self.restart (Backend)."}
 
     async def self_revert(ctx: ToolContext, args: dict):
         return selfext.revert(str(args["proposal_id"]), actor=ctx.principal.actor)
@@ -702,7 +771,7 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           "this server with the same rights the server has.",
                           _obj({"name": _s("tool name"),
                                 "reason": _s("what it is for and why it is safe")}, ["name", "reason"]),
-                          category="self", risk="critical", min_role="admin", handler=self_activate))
+                          category="self", risk="critical", requires_approval=True, min_role="admin", handler=self_activate))
     reg.register(ToolSpec("self.disable", "Switch off a tool you wrote.",
                           _obj({"name": _s("tool name"), "reason": _s("why")}, ["name", "reason"]),
                           category="self", risk="high", requires_approval=True, handler=self_disable))
@@ -718,16 +787,29 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           "proposal with a diff and changes nothing that is running.",
                           _obj({"file": _s("path as self.tree prints it"),
                                 "source": _s("the complete new file"),
-                                "reason": _s("what this improves")}, ["file", "source", "reason"]),
-                          category="self", risk="high", requires_approval=True, handler=self_propose))
+                                "reason": _s("what should change"),
+                                "capability_gain": _s("specific new or measurably improved capability"),
+                                "evidence": _s("evidence showing the limitation exists and this change addresses it"),
+                                "verification_plan": _s("sandbox/tests/comparison that must pass before activation")},
+                               ["file", "source", "reason", "capability_gain", "evidence", "verification_plan"]),
+                          category="self", risk="medium", handler=self_propose))
     reg.register(ToolSpec("self.proposals", "The change proposals you have made to your own code.",
                           _obj({}), category="self", risk="low", min_role="viewer", handler=self_proposals))
+    reg.register(ToolSpec("self.verify",
+                          "Verify a proposed core/source change in an isolated server-side check before approval. "
+                          "The report is machine-generated and is required before self.apply can run.",
+                          _obj({"proposal_id": _s("id from self.propose"),
+                                "capability_gain": _s("specific capability or measurable improvement expected"),
+                                "verification_plan": _s("what should be proven by the checks")},
+                               ["proposal_id","capability_gain","verification_plan"]),
+                          category="self", risk="low", min_role="admin", handler=self_verify, timeout_seconds=600))
     reg.register(ToolSpec("self.apply",
                           "Write a proposal into your own source tree. The old file is backed up first. "
                           "It takes effect only after the server restarts.",
                           _obj({"proposal_id": _s("id from self.propose"),
-                                "reason": _s("why this should be applied")}, ["proposal_id", "reason"]),
-                          category="self", risk="critical", min_role="admin", handler=self_apply))
+                                "reason": _s("why this verified change should be activated")},
+                               ["proposal_id", "reason"]),
+                          category="self", risk="critical", requires_approval=True, min_role="admin", handler=self_apply))
     reg.register(ToolSpec("self.revert", "Undo an applied proposal from its backup.",
                           _obj({"proposal_id": _s("id from self.propose"),
                                 "reason": _s("why")}, ["proposal_id", "reason"]),
@@ -740,7 +822,9 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         return res
 
     async def self_restart(ctx: ToolContext, args: dict):
-        return selfext.restart_server(actor=ctx.principal.actor)
+        pending = evolution.begin_activation()
+        res = selfext.restart_server(actor=ctx.principal.actor)
+        return {**res, "core_evolution": pending}
 
     async def self_can_rebuild(ctx: ToolContext, args: dict):
         ok, why = selfext.can_rebuild()
@@ -805,6 +889,159 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           "building it is self.write / self.propose, and that still needs approval.",
                           _obj({"hours": _i("how far back, default 24")}),
                           category="self", risk="low", handler=self_improve, timeout_seconds=120))
+
+    # ── MIA experience memory ────────────────────────────────────────────
+    learning = st.services["learning"]
+
+    async def learning_search(ctx: ToolContext, args: dict):
+        raw = str(args.get("kinds", ""))
+        kinds = [x.strip() for x in raw.split(",") if x.strip()]
+        return learning.search(str(args.get("query", "")), kinds=kinds or None,
+                               limit=int(args.get("limit", 6)))
+
+    async def learning_solution(ctx: ToolContext, args: dict):
+        failed = args.get("failed_attempts") or []
+        tags = args.get("tags") or []
+        return learning.record(
+            kind="solution", title=str(args["title"]), problem=str(args.get("problem", "")),
+            lesson=str(args["solution"]),
+            failed_attempts=failed if isinstance(failed, list) else [str(failed)],
+            verification=str(args.get("verification", "")), source="mia",
+            conversation_id=ctx.conversation_id, confidence=float(args.get("confidence", 1.0)),
+            tags=tags if isinstance(tags, list) else [str(tags)], actor=ctx.principal.actor)
+
+    async def learning_error(ctx: ToolContext, args: dict):
+        tags = args.get("tags") or []
+        attempt = str(args.get("attempt", "")).strip()
+        return learning.record(
+            kind="error", title=str(args["title"]), problem=str(args.get("problem", "")),
+            lesson=str(args.get("why_it_failed", "")),
+            failed_attempts=[attempt] if attempt else [],
+            verification=str(args.get("verification", "")), source="mia",
+            conversation_id=ctx.conversation_id, confidence=float(args.get("confidence", 0.9)),
+            tags=tags if isinstance(tags, list) else [str(tags)], actor=ctx.principal.actor)
+
+    async def learning_preference(ctx: ToolContext, args: dict):
+        explicit = bool(args.get("explicit", False))
+        return learning.record(
+            kind="preference", title=str(args["title"]), problem=str(args.get("scope", "")),
+            lesson=str(args["preference"]), verification=str(args.get("evidence", "")),
+            source="user-explicit" if explicit else "user-repeated",
+            conversation_id=ctx.conversation_id, confidence=1.0 if explicit else 0.8,
+            tags=["user-preference"], actor=ctx.principal.actor)
+
+    async def learning_gap(ctx: ToolContext, args: dict):
+        return learning.record(
+            kind="gap", title=str(args["topic"]), problem=str(args.get("missing", "")),
+            lesson=str(args.get("why", "")), verification="not learned yet",
+            source="mia-detected", conversation_id=ctx.conversation_id,
+            confidence=float(args.get("confidence", 0.8)), tags=["knowledge-gap"],
+            actor=ctx.principal.actor)
+
+    reg.register(ToolSpec(
+        "learning.search",
+        "Search MIA's experience memory for solved problems, failed attempts, strategies, preferences and lessons. "
+        "Use this before retrying a familiar problem.",
+        _obj({"query": _s("problem or topic to recall"), "kinds": _s("optional comma-separated kinds"),
+              "limit": _i("max results, default 6")}, ["query"]),
+        category="learning", risk="low", min_role="viewer", handler=learning_search))
+    reg.register(ToolSpec(
+        "learning.record_solution",
+        "Store a reusable solution after a non-trivial problem was actually solved. Include failed attempts and "
+        "verification so the same problem is not solved from scratch next time.",
+        _obj({"title": _s("short reusable name"), "problem": _s("symptoms/problem"),
+              "solution": _s("successful steps and why they worked"),
+              "failed_attempts": {"type": "array", "items": {"type": "string"}},
+              "verification": _s("how success was confirmed"),
+              "confidence": {"type": "number"},
+              "tags": {"type": "array", "items": {"type": "string"}}},
+             ["title", "solution"]),
+        category="learning", risk="low", handler=learning_solution))
+    reg.register(ToolSpec(
+        "learning.record_error",
+        "Remember an important failed approach so MIA does not repeat it blindly in a similar case.",
+        _obj({"title": _s("short failure name"), "problem": _s("problem being solved"),
+              "attempt": _s("what was tried"), "why_it_failed": _s("known reason or observed failure"),
+              "verification": _s("evidence that it failed"), "confidence": {"type": "number"},
+              "tags": {"type": "array", "items": {"type": "string"}}},
+             ["title", "attempt"]),
+        category="learning", risk="low", handler=learning_error))
+    reg.register(ToolSpec(
+        "learning.record_preference",
+        "Store a stable user preference only when the user explicitly stated it or repeated evidence makes it clear. "
+        "Never turn a one-off request into a permanent preference.",
+        _obj({"title": _s("preference name"), "preference": _s("what the user prefers"),
+              "scope": _s("where it applies"), "evidence": _s("what established it"),
+              "explicit": _b("true when the user stated it directly")},
+             ["title", "preference", "evidence", "explicit"]),
+        category="learning", risk="low", handler=learning_preference))
+    reg.register(ToolSpec(
+        "learning.note_gap",
+        "Record a genuine knowledge gap MIA detected after checking existing memory and knowledge. "
+        "This does not contact an external model.",
+        _obj({"topic": _s("area that needs learning"), "missing": _s("what is not known yet"),
+              "why": _s("why learning this would improve MIA"), "confidence": {"type": "number"}},
+             ["topic", "missing", "why"]),
+        category="learning", risk="low", handler=learning_gap))
+
+    async def learning_teacher(ctx: ToolContext, args: dict):
+        base = (os.environ.get("N8N_WEBHOOK_BASE_URL") or os.environ.get("N8N_BASE_URL") or "").rstrip("/")
+        if not base:
+            return "Claude teacher unavailable: n8n webhook base URL is not configured.", False
+        url = base + "/webhook/mia-claude-teacher-7f2d0c1a83e34b63910f4bd8"
+        payload = {
+            "topic": str(args["topic"]),
+            "question": str(args["question"]),
+            "context": str(args.get("context", "")),
+        }
+        async with httpx.AsyncClient(timeout=float(args.get("timeout", 330))) as client:
+            response = await client.post(url, json=payload)
+        if response.status_code >= 400:
+            return f"Claude teacher failed ({response.status_code}): {response.text[:1200]}", False
+        try:
+            wire = response.json()
+        except ValueError:
+            return f"Claude teacher returned invalid JSON: {response.text[:1200]}", False
+        if isinstance(wire, list):
+            wire = wire[0] if wire else {}
+        stdout = str(wire.get("stdout", "")) if isinstance(wire, dict) else str(wire)
+        if isinstance(wire, dict) and int(wire.get("code") or 0) != 0:
+            return f"Claude teacher SSH failed: {wire.get('stderr') or stdout}", False
+        try:
+            claude = json.loads(stdout)
+        except ValueError:
+            claude = {"result": stdout}
+        lesson = str(claude.get("result") or claude.get("text") or stdout).strip()
+        if not lesson:
+            return "Claude teacher returned no lesson.", False
+        record = learning.record(
+            kind="teacher", title=f"Claude lesson: {args['topic']}",
+            problem=str(args["question"]), lesson=lesson,
+            verification="Read-only Claude Code teacher session. Verify before applying changes.",
+            source="claude-code", conversation_id=ctx.conversation_id,
+            confidence=0.75, tags=["claude-teacher", str(args["topic"])[:80]],
+            actor=ctx.principal.actor)
+        return {
+            "lesson": lesson,
+            "stored_as": record["id"],
+            "model": claude.get("model"),
+            "cost_usd": claude.get("total_cost_usd") or claude.get("cost_usd"),
+            "note": "Lesson stored. MIA must verify it against the real system before applying it.",
+        }
+
+    reg.register(ToolSpec(
+        "learning.teacher",
+        "Ask the server's Claude Code to teach MIA about a genuine knowledge gap. Claude can inspect MIA source "
+        "but runs in safe/restricted plan mode with only Read/Grep/Glob, so it cannot edit files or run commands. "
+        "Use only after memory, existing knowledge, specialists and normal research were insufficient. This always "
+        "pauses for explicit user approval before Claude is contacted, then stores the lesson for later reuse.",
+        _obj({"topic": _s("learning area"), "question": _s("specific lesson requested"),
+              "context": _s("relevant observations/errors/context"),
+              "why": _s("why Claude is needed and what improvement is expected"),
+              "timeout": _i("seconds, default 330")},
+             ["topic", "question", "why"]),
+        category="learning", risk="high", requires_approval=True,
+        handler=learning_teacher, timeout_seconds=360))
 
     # ── desktop (the paired PC) ──────────────────────────────────────────
     desktop = st.services["desktop"]
@@ -1174,6 +1411,27 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         ctx.emit("skill", {"text": f"Fähigkeit aufgeschlagen: {opened['name']}"})
         return opened
 
+    async def skill_save(ctx: ToolContext, args: dict):
+        from ..services.skills import SkillError
+        try:
+            saved = skills.save(
+                name=str(args.get("name", "")),
+                title=str(args.get("title", "")),
+                description=str(args.get("description", "")),
+                content=str(args.get("content", "")),
+                actor=ctx.principal.actor, source=str(args.get("source", "mia-learning")) or "mia-learning")
+        except SkillError as e:
+            return str(e), False
+        ctx.emit("skill", {"text": f"Neue Fähigkeit gelernt: {saved['name']}"})
+        learning = st.services.get("learning")
+        if learning is not None:
+            learning.record(kind="teacher", title=f"Skill gelernt: {saved['title']}",
+                            problem=str(args.get("why", "")), lesson=saved["description"],
+                            verification=str(args.get("verification", "")), source="mia-skill",
+                            conversation_id=ctx.conversation_id, confidence=float(args.get("confidence", 0.8)),
+                            tags=["skill", saved["name"]], actor=ctx.principal.actor)
+        return saved
+
     reg.register(ToolSpec("skill.list", "Which skills are available — each one a written instruction you "
                           "can open when a task calls for it.", _obj({}),
                           category="skills", risk="low", min_role="viewer", handler=skill_list))
@@ -1181,6 +1439,18 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           "starting a task of that kind, not after.",
                           _obj({"name": _s("skill name from skill.list")}, ["name"]),
                           category="skills", risk="low", min_role="viewer", handler=skill_open))
+    reg.register(ToolSpec("skill.save",
+                          "Save or update a reusable skill MIA has learned from verified work, a teacher, documentation, or a successful procedure. Use only when the instructions are concrete and reusable. Do not store guesses as skills.",
+                          _obj({"name": _s("lowercase reusable skill name"),
+                                "title": _s("human-readable title"),
+                                "description": _s("when this skill should be used"),
+                                "content": _s("full reusable instructions"),
+                                "why": _s("what demonstrated the need for this skill"),
+                                "verification": _s("how the skill was verified"),
+                                "confidence": {"type":"number","description":"0..1 confidence after verification"},
+                                "source": _s("teacher/source, e.g. claude-code, user-demo, docs")},
+                               ["name","description","content"]),
+                          category="skills", risk="medium", handler=skill_save))
 
     # ── Wissensspeicher: was er über diese Anlage weiß ───────────────────
     # Der Unterschied zu einer Fähigkeit ist inhaltlich, nicht technisch:
@@ -1213,6 +1483,27 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                     f"Das heißt nicht, dass es nicht stimmt — nur, dass es hier nicht steht.")
         return treffer
 
+    async def knowledge_save(ctx: ToolContext, args: dict):
+        evidence = str(args.get("evidence", "")).strip()
+        if not evidence:
+            return "Wissen nicht gespeichert: Es fehlt ein überprüfbarer Nachweis oder eine eindeutige Nutzerangabe.", False
+        content = str(args.get("content", "")).strip()
+        if not content:
+            return "Wissen nicht gespeichert: Inhalt fehlt.", False
+        try:
+            saved = wissensspeicher.save(title=str(args["title"]), content=content,
+                                          summary=str(args.get("summary", "")),
+                                          slug=str(args.get("name", "")), actor=ctx.principal.actor)
+        except Exception as e:
+            return str(e), False
+        learning.record(kind="teacher", title=f"Wissen gelernt: {saved['title']}",
+                        problem=str(args.get("summary", "")), lesson=saved["summary"],
+                        verification=evidence, source=str(args.get("source", "mia-learning")),
+                        conversation_id=ctx.conversation_id, confidence=float(args.get("confidence", 1.0)),
+                        tags=["knowledge", saved["slug"]], actor=ctx.principal.actor)
+        ctx.emit("learning", {"text": f"Wissen gespeichert: {saved['title']}"})
+        return saved
+
     reg.register(ToolSpec("knowledge.list",
                           "What this server knows about itself and its surroundings — "
                           "each entry a document you can open.",
@@ -1230,6 +1521,17 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                                 "limit": {"type": "integer", "description": "how many, default 5"}},
                                ["query"]),
                           category="memory", risk="low", min_role="viewer", handler=knowledge_search))
+    reg.register(ToolSpec("knowledge.save",
+                          "Save stable verified knowledge for future sessions. Use for facts, environment knowledge, "
+                          "documentation conclusions and explicit user-provided knowledge; never for guesses.",
+                          _obj({"name": _s("optional stable slug"), "title": _s("knowledge title"),
+                                "summary": _s("when this knowledge matters"),
+                                "content": _s("verified knowledge in useful detail"),
+                                "evidence": _s("source or verification proving this is reliable"),
+                                "source": _s("user/docs/web/tool/teacher"),
+                                "confidence": {"type": "number"}},
+                               ["title", "content", "evidence"]),
+                          category="learning", risk="low", handler=knowledge_save))
 
     # ── MCP: fremde Werkzeugserver ───────────────────────────────────────
     # Die Werkzeuge selbst melden sich beim Start an und heißen mcp.<server>.<werkzeug>.
@@ -1356,8 +1658,23 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
     src_why = src_reason()
 
     async def source_read(ctx: ToolContext, args: dict):
+        requested = str(args["path"])
+        normalized = requested.replace("\\", "/").strip()
+        # Mark-LIII is a separate, read-only project mount, not part of the
+        # Command Center Git repository. Voice models sometimes choose
+        # source.read for a Python file and may omit the leading slash. Route
+        # all recognised spellings to the confined workspace reader instead
+        # of incorrectly reporting that the real file does not exist.
+        if normalized == "Mark-LIII" or normalized.startswith("Mark-LIII/") \
+                or normalized == "/root/Mark-LIII" or normalized.startswith("/root/Mark-LIII/") \
+                or normalized == "root/Mark-LIII" or normalized.startswith("root/Mark-LIII/"):
+            try:
+                res = files.read_text(normalized, max_bytes=200_000)
+                return res["content"] + ("\n…[truncated]" if res["truncated"] else "")
+            except WorkspaceError as e:
+                return str(e), False
         try:
-            return await quelle.read(str(args["path"]))
+            return await quelle.read(requested)
         except SourceError as e:
             return str(e), False
 
@@ -1403,8 +1720,10 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         ctx.emit("source", {"text": f"zurückgenommen: {res['reverted']}"})
         return res
 
-    reg.register(ToolSpec("source.read", "Read one file of this server's own source code.",
-                          _obj({"path": _s("path relative to the repository root")}, ["path"]),
+    reg.register(ToolSpec("source.read", "Read one file of this server's own source code. For the separate "
+                          "Mark-LIII project, read-only paths /root/Mark-LIII/..., root/Mark-LIII/... and "
+                          "Mark-LIII/... are accepted and routed to its workspace mount.",
+                          _obj({"path": _s("repository-relative path, or a read-only Mark-LIII path")}, ["path"]),
                           category="code", risk="low", handler=source_read,
                           available=src_ok, reason=src_why))
     reg.register(ToolSpec("source.list",

@@ -36,15 +36,18 @@ import asyncio
 import difflib
 import hashlib
 import json
+import os
 import re
 import shutil
 import sys
+import tempfile
+import subprocess
 from pathlib import Path
 
 from ..db import Database, new_id, now_iso
 from ..orchestrator.tool_registry import ToolContext, ToolSpec
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(os.environ.get("JARVIS_CC_SOURCE_DIR") or Path(__file__).resolve().parents[3]).resolve()
 
 # Sein eigener Quelltext. Lesen darf er darin alles — wer sich verbessern
 # soll, muss sich erst verstehen können. Das Frontend gehört dazu: ohne das
@@ -403,6 +406,110 @@ class SelfExtension:
                             "(docker compose … up -d --build)."
                             if rel.startswith(NEEDS_BUILD_PREFIX) else ""))}
 
+
+    async def verify_proposal(self, proposal_id: str, *, capability_gain: str = "",
+                              verification_plan: str = "") -> dict:
+        """Verify a core proposal in isolation and persist machine-generated evidence."""
+        row = self.db.fetchone("SELECT * FROM self_tools WHERE name=?", (f"proposal:{proposal_id}",))
+        if row is None:
+            raise SelfExtError(f"Vorschlag '{proposal_id}' gibt es nicht.")
+        rel = row["last_error"]
+        target = self._own_path(rel)
+        draft = Path(row["file"])
+        if not draft.exists():
+            raise SelfExtError("Die vorgeschlagene Fassung ist nicht mehr da.")
+        candidate = draft.read_text(encoding="utf-8")
+        if _sha(candidate) != row["source_sha"]:
+            raise SelfExtError("Die vorgeschlagene Fassung hat sich geändert — Prüfung abgebrochen.")
+        current = target.read_text(encoding="utf-8")
+        checks = []
+        ok = True
+
+        def add(name: str, passed: bool, detail: str = "") -> None:
+            nonlocal ok
+            checks.append({"name": name, "passed": bool(passed), "detail": str(detail)[:2000]})
+            ok = ok and bool(passed)
+
+        add("changed", current != candidate, "candidate differs from current source")
+        # Critical invariants may never disappear through self-evolution.
+        if rel in CRITICAL_FILES:
+            invariants = []
+            if rel.endswith("builtin_tools.py") or rel.endswith("runtime.py"):
+                invariants += ["requires_approval", "approval"]
+            if rel.endswith("selfext.py"):
+                invariants += ["CRITICAL_FILES", "SelfExtError", "revert"]
+            if rel.endswith("approvals.py"):
+                invariants += ["approved", "rejected"]
+            for token in invariants:
+                add(f"invariant:{token}", token in candidate, f"required token '{token}' remains present")
+
+        suffix = target.suffix.lower()
+        if suffix == ".py":
+            with tempfile.TemporaryDirectory(prefix="mia-core-check-") as td:
+                tmp = Path(td) / target.name
+                tmp.write_text(candidate, encoding="utf-8")
+                proc = await asyncio.create_subprocess_exec(
+                    sys.executable, "-m", "py_compile", str(tmp),
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+                out, _ = await asyncio.wait_for(proc.communicate(), timeout=40)
+                detail = (out or b"").decode("utf-8", "replace")[-1800:]
+                add("python_compile", proc.returncode == 0, detail or "py_compile passed")
+        elif rel.startswith(NEEDS_BUILD_PREFIX):
+            frontend = self.FRONTEND_DIR
+            if not (frontend / "node_modules").is_dir():
+                add("frontend_toolchain", False, "node_modules is missing")
+            else:
+                with tempfile.TemporaryDirectory(prefix="mia-core-frontend-") as td:
+                    root = Path(td) / "frontend"
+                    shutil.copytree(frontend, root, ignore=shutil.ignore_patterns("node_modules", "dist"))
+                    (root / "node_modules").symlink_to(frontend / "node_modules", target_is_directory=True)
+                    rel_front = Path(rel).relative_to("command_center/frontend")
+                    cand_path = root / rel_front
+                    cand_path.parent.mkdir(parents=True, exist_ok=True)
+                    cand_path.write_text(candidate, encoding="utf-8")
+                    async def run(*args: str, timeout: float = 300):
+                        proc = await asyncio.create_subprocess_exec(*args, cwd=str(root),
+                            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+                        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                        return proc.returncode or 0, (out or b"").decode("utf-8", "replace")[-2500:]
+                    code, out = await run("node", str(root/"node_modules/.bin/tsc"), "--noEmit", "-p", "tsconfig.json", timeout=240)
+                    add("typescript", code == 0, out or "tsc passed")
+                    if code == 0:
+                        code, out = await run("node", str(root/"node_modules/.bin/vite"), "build", "--outDir", str(root/"dist-check"), "--emptyOutDir", timeout=480)
+                        add("vite_build", code == 0, out or "vite build passed")
+        else:
+            add("text_file", bool(candidate.strip()), "non-empty source")
+
+        baseline = {"sha": _sha(current), "bytes": len(current.encode('utf-8'))}
+        cand = {"sha": _sha(candidate), "bytes": len(candidate.encode('utf-8')),
+                "added_removed": abs(len(candidate.splitlines()) - len(current.splitlines()))}
+        status = "passed" if ok else "failed"
+        now = now_iso()
+        existing = self.db.fetchone("SELECT proposal_id FROM core_evolution_checks WHERE proposal_id=?", (proposal_id,))
+        payload=(rel,status,json.dumps(checks,ensure_ascii=False),json.dumps(baseline),json.dumps(cand),
+                 capability_gain[:2000],verification_plan[:4000],now)
+        if existing:
+            self.db.execute("UPDATE core_evolution_checks SET file=?,status=?,checks=?,baseline=?,candidate=?,capability_gain=?,verification_plan=?,updated_at=? WHERE proposal_id=?", payload+(proposal_id,))
+        else:
+            self.db.insert("core_evolution_checks", {"proposal_id":proposal_id,"file":rel,"status":status,
+                "checks":json.dumps(checks,ensure_ascii=False),"baseline":json.dumps(baseline),
+                "candidate":json.dumps(cand),"capability_gain":capability_gain[:2000],
+                "verification_plan":verification_plan[:4000],"created_at":now,"updated_at":now})
+        self.log.info("selfext", f"Core-Prüfung {proposal_id}: {status}")
+        self.bus.publish("core.evolution.checked", {"proposal_id":proposal_id,"file":rel,"status":status})
+        return {"proposal_id": proposal_id, "file": rel, "status": status, "checks": checks,
+                "baseline": baseline, "candidate": cand, "eligible_for_approval": ok}
+
+    def verification(self, proposal_id: str) -> dict | None:
+        row = self.db.fetchone("SELECT * FROM core_evolution_checks WHERE proposal_id=?", (proposal_id,))
+        if not row:
+            return None
+        out=dict(row)
+        for k in ("checks","baseline","candidate"):
+            try: out[k]=json.loads(out[k])
+            except Exception: pass
+        return out
+
     def apply(self, proposal_id: str, *, actor: str) -> dict:
         """Einen Vorschlag wirklich in den Quellbaum schreiben. Mit Sicherung."""
         row = self.db.fetchone("SELECT * FROM self_tools WHERE name=?", (f"proposal:{proposal_id}",))
@@ -410,6 +517,9 @@ class SelfExtension:
             raise SelfExtError(f"Vorschlag '{proposal_id}' gibt es nicht.")
         if row["status"] == "active":
             raise SelfExtError("Dieser Vorschlag wurde bereits umgesetzt.")
+        verification = self.verification(proposal_id)
+        if not verification or verification.get("status") != "passed":
+            raise SelfExtError("Core-Änderung nicht freigegeben: self.verify muss vorher serverseitig bestehen.")
         rel = row["last_error"]          # hier steht die Zieldatei
         target = self._own_path(rel)
         draft = Path(row["file"])
@@ -560,6 +670,7 @@ class SelfExtension:
         return [{"proposal_id": r["name"].split(":", 1)[1], "file": r["last_error"],
                  "reason": r["description"], "status": r["status"], "risk": r["risk"],
                  "critical": r["last_error"] in CRITICAL_FILES,
+                 "verification": self.verification(r["name"].split(":", 1)[1]),
                  "by": r["written_by"], "applied_by": r["activated_by"],
                  "updated_at": r["updated_at"]} for r in rows]
 

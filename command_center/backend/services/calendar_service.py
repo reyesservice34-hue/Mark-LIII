@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sys
 import time
 from dataclasses import asdict
@@ -63,6 +64,54 @@ GOOGLE_API = "https://www.googleapis.com/calendar/v3"
 
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
+
+
+# ── Terminkollisionen ─────────────────────────────────────────────────────────────────────────────────────────
+#
+# Nicht jede Überschneidung ist ein Problem. Ein privater Termin des Nutzers und eine Baustelle, auf der er gar
+# nicht eingeteilt ist, kollidieren nicht — das war ein Fehlalarm. Eine Kollision ist es nur, wenn beide Termine
+# den Nutzer betreffen: zwei persönliche Termine, zwei Baustellen (Personal/Fahrzeug), oder ein persönlicher
+# Termin und eine Baustelle, auf der der Nutzer ausdrücklich eingeteilt ist (sein Name steht im Titel oder in
+# den Notizen, z. B. „Team: Paul, Christoph“). Steht bei einer Baustelle nichts zum Team, gilt er als nicht
+# eingeteilt — lieber kein Alarm als ein falscher. Ganztägige Termine (Geburtstage, Urlaub) blockieren keine Zeit.
+
+def owner_names() -> list[str]:
+    """Wie der Nutzer in Titeln und Notizen vorkommt (CALENDAR_OWNER_NAMES, Komma-getrennt)."""
+    return [n.strip().lower() for n in _env("CALENDAR_OWNER_NAMES", "Paul,Jan Paul").split(",") if n.strip()]
+
+
+def _f(ev: Any, name: str) -> str:
+    return str(ev.get(name, "") if isinstance(ev, dict) else getattr(ev, name, "") or "")
+
+
+def involves_owner(ev: Any) -> bool:
+    text = (_f(ev, "title") + " " + _f(ev, "notes")).lower()
+    return any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", text) for n in owner_names())
+
+
+def _all_day(ev: Any) -> bool:
+    return _f(ev, "start").endswith("T00:00:00") and _f(ev, "end").endswith(("T23:59:00", "T00:00:00"))
+
+
+def clash_matters(a: Any, b: Any) -> bool:
+    ca, cb = _f(a, "category") or "ich", _f(b, "category") or "ich"
+    if "tour" in (ca, cb) and ca != cb:
+        return involves_owner(a if ca == "tour" else b)
+    return True
+
+
+def find_conflicts(events: list[Any]) -> list[tuple[Any, Any]]:
+    """Alle Paare, die sich zeitlich überschneiden UND den Nutzer wirklich betreffen (früherer Termin zuerst)."""
+    timed = sorted((e for e in events if "T" in _f(e, "start") and _f(e, "end") and not _all_day(e)),
+                   key=lambda e: _f(e, "start"))
+    out = []
+    for i, a in enumerate(timed):
+        for b in timed[i + 1:]:
+            if _f(b, "start") >= _f(a, "end"):
+                break
+            if clash_matters(a, b):
+                out.append((a, b))
+    return out
 
 
 class GoogleCalendarRest:
@@ -178,20 +227,76 @@ def _with_offset(iso_local: str) -> str:
 
 
 class N8nCalendarBridge:
-    """Google Kalender lesen über die n8n-Brücke (nur lesen).
+    """Google Kalender über die n8n-Brücke: lesen immer, anlegen/ändern/löschen, wenn CALENDAR_BRIDGE_WRITE_URL gesetzt ist.
 
     Die Google-Zugangsdaten bleiben in n8n; der Server ruft nur einen geschützten Webhook auf. Was der Webhook
     liefert, wird wie jeder andere Termin behandelt — damit sehen Kalender-Seite, Kollisionscheck und Jarvis
-    dieselben Termine. Schreiben geht bewusst NICHT über diesen Weg.
+    dieselben Termine. Ohne CALENDAR_BRIDGE_WRITE_URL bleibt es beim Lesen, wie bisher.
     """
 
     def __init__(self) -> None:
         self.urls = [u.strip() for u in _env("CALENDAR_BRIDGE_READ_URLS").split(",") if u.strip()]
+        self.write_url = _env("CALENDAR_BRIDGE_WRITE_URL")
         self.token = _env("CALENDAR_BRIDGE_TOKEN")
         self.header = _env("CALENDAR_BRIDGE_HEADER", "X-Jarvis-Bridge")
+        self._transport = None          # nur für Tests: ein Ersatz für das Netz
 
     def configured(self) -> bool:
         return bool(self.urls and self.token)
+
+    def can_write(self) -> bool:
+        return bool(self.write_url and self.token)
+
+    @staticmethod
+    def _aware(value: str) -> str:
+        """Lokale Zeit ohne Offset (so speichert Jarvis Termine) → ISO mit Offset, wie Google sie braucht."""
+        return datetime.fromisoformat(value).astimezone().isoformat(timespec="seconds")
+
+    def _to_event(self, e: dict) -> "Event":
+        return Event(uid=str(e.get("id", "")), title=str(e.get("summary") or "(ohne Titel)"),
+                     start=self._local(e.get("start")), end=self._local(e.get("end"), True),
+                     location=str(e.get("location") or ""), notes=str(e.get("description") or ""),
+                     backend="n8n", remote_id=str(e.get("id", "")))
+
+    async def _call(self, payload: dict) -> dict:
+        """Ein Schreibauftrag an die Brücke. Jeder Fehler kommt als CalendarError mit Klartext an, nie still."""
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=45, transport=self._transport) as c:
+                r = await c.post(self.write_url, headers={self.header: self.token}, json=payload)
+        except httpx.HTTPError as e:
+            raise CalendarError(f"Die Kalender-Brücke ist nicht erreichbar ({e.__class__.__name__}).") from e
+        if r.status_code in (401, 403):
+            raise CalendarError("Die Kalender-Brücke lehnt den Schlüssel ab (CALENDAR_BRIDGE_TOKEN prüfen).")
+        try:
+            data = r.json()
+        except ValueError:
+            raise CalendarError(f"Die Kalender-Brücke antwortete unlesbar (HTTP {r.status_code}).") from None
+        if r.status_code >= 400 or data.get("ok") is not True:
+            raise CalendarError("Google Kalender: " + str(data.get("error") or f"HTTP {r.status_code}"))
+        return data
+
+    async def create(self, event: "Event") -> "Event":
+        data = await self._call({"action": "create", "requestId": event.uid, "summary": event.title,
+                                 "start": self._aware(event.start), "end": self._aware(event.end),
+                                 "location": event.location, "description": event.notes})
+        return self._to_event(data["event"])
+
+    async def update(self, remote_id: str, *, title=None, location=None, notes=None, start=None, end=None) -> "Event":
+        """Nur die Felder senden, die sich ändern — alles andere bleibt in Google, wie es ist."""
+        payload: dict = {"action": "update", "eventId": remote_id}
+        if title is not None:
+            payload["summary"] = title
+        if location is not None:
+            payload["location"] = location
+        if notes is not None:
+            payload["description"] = notes
+        if start and end:
+            payload["start"], payload["end"] = self._aware(start), self._aware(end)
+        return self._to_event((await self._call(payload))["event"])
+
+    async def delete(self, remote_id: str) -> None:
+        await self._call({"action": "delete", "eventId": remote_id})
 
     @staticmethod
     def _local(value: Any, end_of_day: bool = False) -> str:
@@ -211,10 +316,10 @@ class N8nCalendarBridge:
             return []
         import httpx
         start = (datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
-                 + timedelta(days=max(0, offset)))
+                 + timedelta(days=max(-62, offset)))
         end = start + timedelta(days=max(1, min(days, 31)))
         events: list[Event] = []
-        async with httpx.AsyncClient(timeout=35) as c:
+        async with httpx.AsyncClient(timeout=35, transport=self._transport) as c:
             for url in self.urls:
                 r = await c.post(url, headers={self.header: self.token},
                                  json={"timeMin": start.isoformat(), "timeMax": end.isoformat()})
@@ -227,9 +332,7 @@ class N8nCalendarBridge:
                 for e in data["events"]:
                     if str(e.get("status", "")).lower() == "cancelled":
                         continue
-                    ev = Event(uid=str(e.get("id", "")), title=str(e.get("summary") or "(ohne Titel)"),
-                               start=self._local(e.get("start")), end=self._local(e.get("end"), True),
-                               location=str(e.get("location") or ""), backend="n8n", remote_id=str(e.get("id", "")))
+                    ev = self._to_event(e)
                     if not query or query.lower() in (ev.title + " " + ev.location).lower():
                         events.append(ev)
         events.sort(key=lambda x: x.start)
@@ -323,9 +426,14 @@ class CalendarService:
         if self._write_google():
             created = await self.google.create(event)
             return asdict(created), "google", ""
+        if self._write_bridge():
+            # Zuerst Google. Nur was dort wirklich angekommen ist, steht danach auch hier — nie umgekehrt.
+            created = await self.bridge.create(event)
+            m = self._mirror(created, event.category)
+            return asdict(m), "n8n", "Im Google Kalender eingetragen." + seen + self._clash_note(m)
         created = self.local.create(event)
         return (asdict(created), "local",
-                "Im lokalen Kalender auf dem Server gespeichert." + seen)
+                "Im lokalen Kalender auf dem Server gespeichert." + seen + self._clash_note(created))
 
     async def find(self, query: str) -> tuple[list[dict], str]:
         self._require()
@@ -392,10 +500,90 @@ class CalendarService:
         """Schreiben nach Google nur, wenn es ausdrücklich so eingestellt ist (Standard: lokal)."""
         return _env("CALENDAR_WRITE_BACKEND", "local").lower() == "google" and bool(self.google and self.google.configured())
 
+    def _write_bridge(self) -> bool:
+        """Schreiben nach Google über die n8n-Brücke: CALENDAR_WRITE_BACKEND=n8n und eine Schreib-URL."""
+        return _env("CALENDAR_WRITE_BACKEND", "local").lower() in ("n8n", "bridge") and self.bridge.can_write()
+
+    def _mirror(self, ev: "Event", category: str = "") -> "Event":
+        """Einen Google-Termin sofort im lokalen Spiegel ablegen oder ersetzen — die Seite zeigt ihn ohne Warten
+        auf den nächsten Abgleich. Der Abgleich bleibt die Wahrheit und korrigiert alles, was hier abweicht."""
+        m = Event(uid="g-" + (ev.remote_id or ev.uid), title=ev.title, start=ev.start, end=ev.end,
+                  location=ev.location, notes=ev.notes, backend="google", remote_id=ev.remote_id,
+                  category=category or ev.category)
+        events = [e for e in self.local._load() if e.uid != m.uid]
+        events.append(m)
+        events.sort(key=lambda x: x.start)
+        self.local._save(events)
+        return m
+
+    def _clash_note(self, ev: "Event") -> str:
+        """Ein Satz, wenn der neue Termin mit einem anderen kollidiert, der den Nutzer betrifft. Sonst nichts."""
+        try:
+            others = [e for e in self.local._load() if e.uid != ev.uid]
+            hits = [b if a.uid == ev.uid else a for a, b in find_conflicts([*others, ev]) if ev.uid in (a.uid, b.uid)]
+        except Exception:  # noqa: BLE001
+            return ""
+        if not hits:
+            return ""
+        return (" ACHTUNG, Kollision: überschneidet sich mit "
+                + "; ".join(f"„{h.title}“ ({h.start[11:16]}–{h.end[11:16]} Uhr)" for h in hits[:3]) + ".")
+
+    def _unmirror(self, uid: str) -> None:
+        self.local._save([e for e in self.local._load() if e.uid != uid])
+
+    def _bridge_event(self, ev: "Event") -> bool:
+        """Ein Termin, den die Brücke ändern kann: aus Google übernommen, mit Google-Kennung, Schreiben eingeschaltet."""
+        return ev.backend == "google" and bool(ev.remote_id) and self._write_bridge()
+
+    async def update_any(self, uid: str, *, title=None, when=None, at=None, duration=None, location=None,
+                         notes=None, category=None) -> dict:
+        """Termin ändern — Google-Termine in Google, eigene lokale Termine lokal."""
+        self._require()
+        ev = next((e for e in self.local._load() if e.uid == uid), None)
+        if ev is None or not self._bridge_event(ev):
+            return self.update(uid, title=title, when=when, at=at, duration=duration, location=location,
+                               notes=notes, category=category)
+        start, length = ev.start_dt(), ev.end_dt() - ev.start_dt()
+        moved = bool(when or at or duration is not None)
+        if when or at:
+            d = parse_date(when) if when else start.date()
+            t = parse_time(at) if at else start.time()
+            start = datetime.combine(d, t)
+        if duration is not None:
+            length = timedelta(minutes=parse_duration(duration))
+        fields: dict = {}
+        if title is not None and title.strip():
+            fields["title"] = title.strip()
+        if location is not None:
+            fields["location"] = location.strip()
+        if notes is not None:
+            fields["notes"] = notes.strip()
+        if moved:
+            fields["start"] = start.isoformat(timespec="seconds")
+            fields["end"] = (start + length).isoformat(timespec="seconds")
+        keep = ev.category if category is None else category.strip().lower()
+        if not fields:                        # nur die Farbe/Kategorie: das gibt es nur hier, nicht in Google
+            ev.category = keep
+            self._mirror(ev, keep)
+            return asdict(ev)
+        return asdict(self._mirror(await self.bridge.update(ev.remote_id, **fields), keep))
+
+    async def delete_any(self, uid: str) -> dict:
+        """Termin löschen — Google-Termine in Google, eigene lokale Termine lokal."""
+        self._require()
+        ev = next((e for e in self.local._load() if e.uid == uid), None)
+        if ev is None or not self._bridge_event(ev):
+            return self.delete_uid(uid)
+        await self.bridge.delete(ev.remote_id)
+        self._unmirror(ev.uid)
+        return asdict(ev)
+
     async def _find_writable(self, query: str) -> tuple[list[dict], str]:
         """Treffer, die Jarvis ändern darf. Übernommene Google-Termine sind nur lesbar und werden klar abgelehnt."""
         if self._write_google():
             return await self.find(query)
+        if self._write_bridge():
+            return [asdict(e) for e in self.local.find(query)], "n8n"
         found = [asdict(e) for e in self.local.find(query)]
         own = [e for e in found if e.get("backend") != "google"]
         if not own and found:
@@ -414,7 +602,7 @@ class CalendarService:
         fresh: dict[str, Event] = {}
         prev = {e.uid: e for e in self.local._load() if e.backend == "google"}
         budget = 25                                         # höchstens so viele neue Termine pro Abgleich einordnen
-        for off in range(0, days, 31):
+        for off in range(-31, days, 31):                    # ab einem Monat zurück: die Seite zeigt auch Vergangenes
             for e in await self.bridge.list(days=min(31, days - off), offset=off):
                 uid = "g-" + (e.remote_id or e.uid)
                 cat = prev[uid].category if uid in prev and prev[uid].category not in ("", "google") else ""
@@ -428,7 +616,8 @@ class CalendarService:
                         except Exception:  # noqa: BLE001
                             pass
                 fresh[uid] = Event(uid=uid, title=e.title, start=e.start, end=e.end, location=e.location,
-                                   notes="Aus dem Google Kalender übernommen (nur lesbar).", backend="google",
+                                   notes=e.notes or ("" if self._write_bridge() else "Aus dem Google Kalender übernommen (nur lesbar)."),
+                                   backend="google",
                                    remote_id=e.remote_id, category=cat)
         own = [e for e in self.local._load() if e.backend != "google"]
         merged = sorted([*own, *fresh.values()], key=lambda x: x.start)
@@ -448,6 +637,14 @@ class CalendarService:
         if backend == "google":
             moved = await self.google.move(Event(**event), new_start)
             return asdict(moved), backend
+        if backend == "n8n":
+            ev = Event(**event)
+            if self._bridge_event(ev):
+                new_end = new_start + (ev.end_dt() - ev.start_dt())
+                updated = await self.bridge.update(ev.remote_id, start=new_start.isoformat(timespec="seconds"),
+                                                   end=new_end.isoformat(timespec="seconds"))
+                return asdict(self._mirror(updated, ev.category)), backend
+            return asdict(self.local.move(ev, new_start)), "local"
         return asdict(self.local.move(Event(**event), new_start)), backend
 
     async def cancel(self, query: str) -> tuple[dict, str]:
@@ -456,6 +653,9 @@ class CalendarService:
         event = self._one(matches, query)
         if backend == "google":
             await self.google.delete(Event(**event))
+        elif backend == "n8n" and self._bridge_event(Event(**event)):
+            await self.bridge.delete(event["remote_id"])
+            self._unmirror(event["uid"])
         else:
             self.local.delete(Event(**event))
         return event, backend

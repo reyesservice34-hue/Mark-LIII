@@ -36,12 +36,15 @@ export function relative(iso?: string | null, now = Date.now()): string {
   const t = new Date(iso).getTime();
   if (isNaN(t)) return iso;
   const diff = Math.round((now - t) / 1000);
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(t).toLocaleDateString();
+  if (diff < 5) return "gerade eben";
+  if (diff < 60) return `vor ${diff} Sek.`;
+  if (diff < 3600) return `vor ${Math.floor(diff / 60)} Min.`;
+  if (diff < 86400) return `vor ${Math.floor(diff / 3600)} Std.`;
+  if (diff < 86400 * 7) {
+    const days = Math.floor(diff / 86400);
+    return days === 1 ? "vor 1 Tag" : `vor ${days} Tagen`;
+  }
+  return new Date(t).toLocaleDateString("de-DE");
 }
 
 export function time(iso?: string | null): string {

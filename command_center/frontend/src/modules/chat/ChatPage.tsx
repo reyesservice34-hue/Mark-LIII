@@ -5,7 +5,7 @@ import { useApi } from "@/lib/useApi";
 import { useEvent } from "@/lib/events";
 import { useAuth } from "@/lib/auth";
 import { toast } from "@/lib/toast";
-import { Activity, MessageSquare, Sparkles } from "@/lib/icons";
+import { Activity, MessageSquare, Mic, Sparkles, Volume2, VolumeX } from "@/lib/icons";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import type { StatusPayload } from "@/app/shell/TopStatusBar";
 import { ConversationList } from "./ConversationList";
@@ -14,11 +14,9 @@ import { ChatComposer } from "./ChatComposer";
 import { ExecutionPanel } from "./ExecutionPanel";
 import type { Attachment, Conversation, Message, RunState } from "./types";
 import "./chat.css";
-import { requestMic, speakReply, speechMode } from "@/app/voice/spoken";
-import { SpeechToggle } from "@/app/voice/SpeechToggle";
-import { resolveVoiceBackend } from "@/app/voice/voice";
+import { closeLine, openLine, sayOnLine, toggleLineMuted, useLive } from "@/app/voice/liveStore";
 
-const LABELS: Record<string, string> = { planning: "ANALYZING REQUEST", executing: "TASK IN PROGRESS", waiting: "AWAITING APPROVAL", completed: "TASK COMPLETED", failed: "TASK FAILED", cancelled: "STOPPED" };
+const LABELS: Record<string, string> = { planning: "ANFRAGE WIRD GEPRÜFT", executing: "AUFGABE WIRD BEARBEITET", waiting: "WARTET AUF FREIGABE", completed: "AUFGABE ERLEDIGT", failed: "AUFGABE FEHLGESCHLAGEN", cancelled: "ABGEBROCHEN", delegated: "AN SPEZIALAGENT ÜBERGEBEN" };
 
 export default function ChatPage() {
   const { conversationId } = useParams();
@@ -28,7 +26,6 @@ export default function ChatPage() {
   const [query, setQuery] = useState("");
   const convs = useApi<{ conversations: Conversation[] }>(`/api/chat/conversations${query ? `?q=${encodeURIComponent(query)}` : ""}`, { refreshOn: ["conversation.*"] });
   const status = useApi<StatusPayload>("/api/status", { refreshOn: ["master.status"] });
-  const agents = useApi<{ agents: any[] }>("/api/agents");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadErr, setLoadErr] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -39,6 +36,7 @@ export default function ChatPage() {
   const [listOpen, setListOpen] = useState(false);
   const stopRef = useRef<(() => void) | null>(null);
   const masterOffline = status.data ? !status.data.master.online : false;
+  const live = useLive();
 
   // ── load conversation ────────────────────────────────────────────────
   useEffect(() => {
@@ -55,46 +53,41 @@ export default function ChatPage() {
   useEffect(() => {
     if (params.get("new") !== "1") return;
     const q = params.get("q") || "";
+    const wantLive = params.get("live") === "1";
     api.post<{ conversation: Conversation }>("/api/chat/conversations", {}).then((r) => {
       convs.reload();
-      nav(`/chat/${r.conversation.id}${q ? `?q=${encodeURIComponent(q)}` : ""}`, { replace: true });
-    }).catch((e) => toast({ title: "Could not create conversation", body: e.message, tone: "err" }));
+      const next = new URLSearchParams();
+      if (q) next.set("q", q);
+      if (wantLive) next.set("live", "1");
+      nav(`/chat/${r.conversation.id}${next.toString() ? `?${next.toString()}` : ""}`, { replace: true });
+    }).catch((e) => toast({ title: "Sitzung konnte nicht erstellt werden", body: e.message, tone: "err" }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
+  // Eine neue oder verlinkte Sitzung bleibt Textchat. Das Mikrofon startet nur
+  // nach einem ausdrücklichen Klick auf „Sprachchat starten“.
+  useEffect(() => {
+    if (!conversationId || params.get("live") !== "1") return;
+    setParams({}, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
+
   // ── live updates that can arrive outside our own stream (desktop, other tabs) ──
   useEvent("message.created", (ev) => { if (ev.data.conversation_id === conversationId) setMessages((ms) => ms.some((m) => m.id === ev.data.id) ? ms : [...ms, ev.data]); }, [conversationId]);
-  // ── gesprochene Antworten ────────────────────────────────────────────
-  // Eine fertige Antwort wird vorgelesen, sobald der Modus das vorsieht; im
-  // Freihandmodus geht danach das Mikrofon von selbst wieder an. Jede Antwort
-  // wird höchstens einmal gesprochen, auch wenn dasselbe Ereignis zweimal
-  // ankommt (Stream und Event-Bus liefern beide).
-  const spokenIds = useRef<Set<string>>(new Set());
-  const speakIfWanted = useCallback((m: { id: string; role: string; status: string; content: string }) => {
-    if (m.role !== "assistant" || m.status !== "complete") return;
-    if (speechMode.get() === "off" || spokenIds.current.has(m.id)) return;
-    spokenIds.current.add(m.id);
-    resolveVoiceBackend().then(async (backend) => {
-      const spoke = await speakReply(backend, m.content,
-        (reason) => toast({ title: "Vorlesen fehlgeschlagen", body: reason, tone: "err" }));
-      if (spoke && speechMode.get() === "handsfree") requestMic();
-    });
-  }, []);
-
-  useEvent("message.updated", (ev) => { if (ev.data.conversation_id === conversationId) { setMessages((ms) => ms.map((m) => m.id === ev.data.id ? { ...ev.data, content: ev.data.status === "streaming" && m.content.length > ev.data.content.length ? m.content : ev.data.content } : m)); speakIfWanted(ev.data); } }, [conversationId, speakIfWanted]);
+  useEvent("message.updated", (ev) => { if (ev.data.conversation_id === conversationId) setMessages((ms) => ms.map((m) => m.id === ev.data.id ? { ...ev.data, content: ev.data.status === "streaming" && m.content.length > ev.data.content.length ? m.content : ev.data.content } : m)); }, [conversationId]);
   useEvent("chat.delta", (ev) => { if (ev.data.conversation_id === conversationId && !stopRef.current) applyDelta(ev.data.message_id, ev.data.text); }, [conversationId]);
   useEvent("run.activity", (ev) => { if (ev.data.conversation_id === conversationId) addStep(ev.data.run_id || ev.data.parent_run_id, ev.data); }, [conversationId]);
   useEvent("run.status", (ev) => { if (ev.data.conversation_id === conversationId) setRunStatus(ev.data.id, ev.data.status, ev.data.label); }, [conversationId]);
   useEvent("run.finished", (ev) => { if (ev.data.conversation_id === conversationId) setRunStatus(ev.data.id, ev.data.status, LABELS[ev.data.status]); }, [conversationId]);
 
   const attachRun = (runId: string, messageId: string | null) => {
-    setRuns((r) => r[runId] ? r : { ...r, [runId]: { id: runId, status: "planning", label: "ANALYZING REQUEST", agent_id: "master", steps: [], toolCalls: [] } });
+    setRuns((r) => r[runId] ? r : { ...r, [runId]: { id: runId, status: "planning", label: LABELS.planning, agent_id: "master", steps: [], toolCalls: [] } });
     setCurrentRun(runId);
     if (messageId) setMessages((ms) => ms.map((m) => m.id === messageId ? { ...m, run_id: runId } : m));
   };
   const applyDelta = (messageId: string, text: string) => setMessages((ms) => ms.map((m) => m.id === messageId ? { ...m, content: m.content + text, status: "streaming" } : m));
   const addStep = (runId: string, step: any) => setRuns((r) => {
-    const run = r[runId] || { id: runId, status: "executing", label: "TASK IN PROGRESS", agent_id: step.agent_id || "master", steps: [], toolCalls: [] };
+    const run = r[runId] || { id: runId, status: "executing", label: LABELS.executing, agent_id: step.agent_id || "master", steps: [], toolCalls: [] };
     const steps = [...run.steps, { ts: step.ts, kind: step.kind, text: step.text, tool: step.tool, ok: step.ok, agent_id: step.agent_id }];
     let toolCalls = run.toolCalls;
     if (step.kind === "tool_call") toolCalls = [...toolCalls, { tool: step.tool, pending: true }];
@@ -111,17 +104,21 @@ export default function ChatPage() {
       case "chat.delta": applyDelta(d.message_id, d.text); break;
       case "run.activity": addStep(d.run_id || d.parent_run_id, d); break;
       case "run.status": setRunStatus(d.id, d.status, d.label); break;
-      case "message.updated": setMessages((ms) => ms.map((m) => m.id === d.id ? { ...d, content: d.status === "streaming" && m.content.length > d.content.length ? m.content : d.content } : m)); speakIfWanted(d); break;
+      case "message.updated": setMessages((ms) => ms.map((m) => m.id === d.id ? { ...d, content: d.status === "streaming" && m.content.length > d.content.length ? m.content : d.content } : m)); break;
       case "run.finished": setRunStatus(d.id, d.status, LABELS[d.status]); break;
       default: break;
     }
-  }, [speakIfWanted]);
+  }, []);
 
   const send = async (text: string, attachments: Attachment[], agentId?: string) => {
     if (!conversationId) return;
+    if (live.open && live.conversationId === conversationId && !attachments.length && !agentId) {
+      sayOnLine(text);
+      return;
+    }
     setBusy(true);
     const stop = streamPost(`/api/chat/conversations/${conversationId}/messages`, { content: text, attachments, agent_id: agentId || null },
-      handleStream, (err) => { stopRef.current = null; setBusy(false); if (err) toast({ title: "Message failed", body: err.message, tone: "err" }); convs.reload(); });
+      handleStream, (err) => { stopRef.current = null; setBusy(false); if (err) toast({ title: "Nachricht fehlgeschlagen", body: err.message, tone: "err" }); convs.reload(); });
     stopRef.current = stop;
   };
   const stop = async () => {
@@ -139,7 +136,7 @@ export default function ChatPage() {
     stopRef.current = streamPost(`/api/chat/conversations/${conversationId}/messages/${m.id}/regenerate`, {}, (ev) => {
       if (ev.type === "run.accepted") { setMessages((ms) => ms.filter((x) => x.id !== m.id)); api.get<{ messages: Message[] }>(`/api/chat/conversations/${conversationId}`).then((r) => setMessages(r.messages)); }
       handleStream(ev);
-    }, (err) => { stopRef.current = null; setBusy(false); if (err) toast({ title: "Regenerate failed", body: err.message, tone: "err" }); });
+    }, (err) => { stopRef.current = null; setBusy(false); if (err) toast({ title: "Antwort konnte nicht neu erstellt werden", body: err.message, tone: "err" }); });
   };
   const retry = (m: Message) => {
     const idx = messages.findIndex((x) => x.id === m.id);
@@ -160,8 +157,8 @@ export default function ChatPage() {
   }, [conversationId, loading]);
 
   const newConversation = () => nav("/chat?new=1");
-  const rename = async (c: Conversation) => { const t = window.prompt("Rename conversation", c.title); if (t && t !== c.title) { await api.patch(`/api/chat/conversations/${c.id}`, { title: t }); convs.reload(); } };
-  const remove = async (c: Conversation) => { if (window.confirm(`Delete “${c.title}”? This cannot be undone.`)) { await api.del(`/api/chat/conversations/${c.id}`); convs.reload(); if (c.id === conversationId) nav("/chat"); } };
+  const rename = async (c: Conversation) => { const t = window.prompt("Sitzung umbenennen", c.title); if (t && t !== c.title) { await api.patch(`/api/chat/conversations/${c.id}`, { title: t }); convs.reload(); } };
+  const remove = async (c: Conversation) => { if (window.confirm(`Sitzung „${c.title}“ wirklich löschen? Das kann nicht rückgängig gemacht werden.`)) { await api.del(`/api/chat/conversations/${c.id}`); convs.reload(); if (c.id === conversationId) nav("/chat"); } };
 
   const run = currentRun ? runs[currentRun] : null;
   const runActive = run && ["planning", "executing", "waiting", "delegated"].includes(run.status);
@@ -175,31 +172,36 @@ export default function ChatPage() {
       <div className="panel chat-col">
         <div className="panel-head" style={{ padding: "8px 12px" }}>
           <div className="row grow" style={{ minWidth: 0 }}>
-            <button className="btn sm ghost mobile-only" onClick={() => setListOpen((v) => !v)} aria-label="Conversations"><MessageSquare /></button>
-            <h2 className="truncate">{list.find((c) => c.id === conversationId)?.title || (conversationId ? "Conversation" : "JARVIS Chat")}</h2>
+            <button className="btn sm ghost mobile-only" onClick={() => setListOpen((v) => !v)} aria-label="Sitzungsverläufe"><MessageSquare /></button>
+            <h2 className="truncate">{(() => {
+              const title = list.find((c) => c.id === conversationId)?.title;
+              return title === "New conversation" ? "Neue Sitzung" : title || (conversationId ? "Sitzung" : "MIA Sitzung");
+            })()}</h2>
           </div>
           <div className="row">
-            {runActive && <span className="state-line" style={{ padding: 0 }}><span className="dot info live" />{run?.label}</span>}
-            {!runActive && !busy && <span className="state-line" style={{ padding: 0, color: masterOffline ? "var(--err)" : "var(--text-3)" }}>{masterOffline ? "MASTER AGENT OFFLINE" : "JARVIS READY"}</span>}
-            <SpeechToggle />
-            <button className={`btn icon sm ${panelOpen ? "" : "ghost"}`} onClick={() => setPanelOpen((v) => !v)} title="Ausführung anzeigen" aria-label="Ausführungsbereich umschalten"><Activity /></button>
+            {live.open && <span className="state-line" style={{ padding: 0 }}><span className="dot ok live" />SPRACHCHAT · {live.muted ? "STUMM" : "AKTIV"}</span>}
+            {runActive && <span className="state-line" style={{ padding: 0 }}><span className="dot info live" />{LABELS[run?.status || ""] || run?.label}</span>}
+            {!runActive && !busy && <span className="state-line" style={{ padding: 0, color: masterOffline ? "var(--err)" : "var(--text-3)" }}>{masterOffline ? "MASTER-AGENT OFFLINE" : "MIA BEREIT"}</span>}
+            {conversationId && live.open && live.conversationId === conversationId && <button className={`btn sm ${live.muted ? "primary" : "ghost"}`} onClick={toggleLineMuted} title={live.muted ? "Mikrofon einschalten" : "Mikrofon stummschalten"}>{live.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}{live.muted ? "Stumm" : "Mikrofon an"}</button>}
+            {conversationId && <button className={`btn sm ${live.open && live.conversationId === conversationId ? "danger" : "ghost"}`} onClick={() => live.open ? void closeLine() : void openLine(conversationId).catch((e: any) => toast({ title: "Sprachchat konnte nicht gestartet werden", body: e?.message, tone: "err" }))} title={live.open ? "Sprachchat beenden" : "Sprachchat mit Mikrofon starten"}><Mic size={14} />{live.open && live.conversationId === conversationId ? "Sprachchat beenden" : "Sprachchat starten"}</button>}
+            <button className={`btn icon sm ${panelOpen ? "" : "ghost"}`} onClick={() => setPanelOpen((v) => !v)} title="Arbeitsschritte anzeigen" aria-label="Arbeitsschritte ein- oder ausblenden"><Activity /></button>
           </div>
         </div>
         {loadErr && <div style={{ padding: 12 }}><ErrorState error={loadErr} /></div>}
         {!conversationId ? (
-          <EmptyState icon={<Sparkles size={30} />} title="Talk to JARVIS">
+          <EmptyState icon={<Sparkles size={30} />} title="Mit MIA sprechen">
             <div className="stack" style={{ alignItems: "center" }}>
-              <span>Pick a conversation or start a new one.</span>
-              <button className="btn primary" onClick={newConversation}>New conversation</button>
-              <span className="tiny muted">Try: “Check the server.” · “Create a task to review the logs.” · “Ask the coding agent to fix the dashboard.”</span>
+              <span>Wähle einen Sitzungsverlauf oder starte eine neue Sitzung.</span>
+              <button className="btn primary" onClick={newConversation}><MessageSquare size={14} />Live-Chat starten</button>
+              <span className="tiny muted">Zum Beispiel: „Prüfe den Server.“ · „Erstelle eine Aufgabe zur Protokollprüfung.“ · „Repariere das Dashboard.“</span>
             </div>
           </EmptyState>
         ) : loading && messages.length === 0 ? <div style={{ padding: 20 }}><Skeleton rows={4} height={40} /></div> : (
           <>
-            {messages.length === 0 && <EmptyState icon={<Sparkles size={26} />} title="JARVIS READY">Say what you need. Multi-step work becomes a task you can follow.</EmptyState>}
+            {messages.length === 0 && <EmptyState icon={<Sparkles size={26} />} title="MIA BEREIT">Sag oder schreib, was du brauchst. Mehrstufige Arbeit wird als Aufgabe sichtbar.</EmptyState>}
             <MessageList messages={messages} runs={runs} onRegenerate={regenerate} onRetry={retry} canAct={can("operator")} />
-            <ChatComposer onSend={send} onStop={stop} busy={busy || !!runActive} disabled={!can("operator")} agents={agents.data?.agents || []} initial={prefill}
-              offlineHint={masterOffline ? "Master agent offline — configure a provider in Settings" : ""} />
+            <ChatComposer onSend={send} onStop={stop} busy={busy || !!runActive} disabled={!can("operator")} initial={prefill}
+              offlineHint={masterOffline ? "Master-Agent offline – bitte den KI-Anbieter unter Einstellungen prüfen" : ""} />
           </>
         )}
       </div>

@@ -46,7 +46,7 @@ export default function TeachPage() {
     setBusy(true);
     try {
       const r = await api.post("/api/teach/recordings", { title: form.title, goal: form.goal });
-      toast({ title: "Recording", body: "Do the work with JARVIS now. Everything is captured.", tone: "ok" });
+      toast({ title: "Recording", body: "Do the work with MIA now. Everything is captured.", tone: "ok" });
       setStarting(false); setParams({}); setForm({ title: "", goal: "" });
       setOpenRec(r.recording.id); recordings.reload();
     } catch (e: any) { toast({ title: "Could not start", body: e.message, tone: "err" }); }
@@ -119,7 +119,7 @@ export default function TeachPage() {
         <Panel title={<span className="row"><span className="rec-dot" />Recording</span>}
           actions={<button className="btn sm danger" onClick={() => stop(active)}><Square />Stop</button>}>
           <div className="stack">
-            <p className="small">Work with JARVIS as you normally would. What you say, every tool it runs and every
+            <p className="small">Work with MIA as you normally would. What you say, every tool it runs and every
               action on your PC is being written down. Add a note whenever the reason behind a step matters.</p>
             <div className="row">
               <input className="input" placeholder="Note: why this step happens, or a rule to remember"
@@ -137,7 +137,7 @@ export default function TeachPage() {
           {!recordings.data ? <div className="panel-body"><Skeleton /></div> :
             recordings.data.recordings.length === 0 ?
               <EmptyState icon={<GraduationCap size={26} />} title="Nothing recorded yet">
-                Start a recording, then do the job once with JARVIS. It writes down what really happened and can
+                Start a recording, then do the job once with MIA. It writes down what really happened and can
                 turn it into a procedure and a specialist.
               </EmptyState> : (
                 <div className="list">
@@ -166,7 +166,7 @@ export default function TeachPage() {
                 </div>)}
         </Panel>
 
-        <Panel title="What JARVIS has learned" icon={<BookOpen size={15} />} flush>
+        <Panel title="What MIA has learned" icon={<BookOpen size={15} />} flush>
           {!procedures.data ? <div className="panel-body"><Skeleton /></div> :
             procedures.data.procedures.length === 0 ?
               <EmptyState icon={<BookOpen size={26} />} title="No procedures yet">
@@ -276,7 +276,7 @@ export default function TeachPage() {
           foot={<><button className="btn" onClick={() => { setStarting(false); setParams({}); }}>Cancel</button>
             <button className="btn primary" onClick={start} disabled={!form.title.trim() || busy}>Start recording</button></>}>
           <div className="stack">
-            <p className="small">Give it a name, then do the job once with JARVIS. What you say and every tool it
+            <p className="small">Give it a name, then do the job once with MIA. What you say and every tool it
               uses is written down. Afterwards it can turn that into a repeatable procedure and a specialist agent.</p>
             <div className="field"><label>What are you showing it?</label>
               <input className="input" autoFocus value={form.title} placeholder="e.g. Angebot für einen Kunden erstellen"

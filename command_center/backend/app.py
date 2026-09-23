@@ -52,6 +52,10 @@ from .services.mcp import McpRegistry
 from .services.selfext import SelfExtension
 from .services.skills import SkillLibrary
 from .services.knowledge import KnowledgeBase
+from .services.learning import LearningLedger
+from .services.auto_learning import AutoLearningService
+from .services.core_evolution import CoreEvolutionService
+from .services.self_healing import SelfHealingService
 from .services.tasks import TaskService
 from .services.teaching import TeachingService
 from .services.voice_service import VoiceService
@@ -96,6 +100,10 @@ def build_state(settings: Settings | None = None) -> AppState:
     # (Verzeichnis, Protokoll), deshalb erst hier und nicht in der Liste oben.
     state.services["skills"] = SkillLibrary(state)
     state.services["knowledge"] = KnowledgeBase(db, bus)
+    state.services["learning"] = LearningLedger(db, bus, log)
+    state.services["auto_learning"] = AutoLearningService(state)
+    state.services["core_evolution"] = CoreEvolutionService(state)
+    state.services["self_healing"] = SelfHealingService(state)
     state.services["mcp"] = McpRegistry(state)
     state.integrations = IntegrationRegistry(db, bus)
     state.workflows = WorkflowHub(db, bus)
@@ -116,6 +124,10 @@ def build_state(settings: Settings | None = None) -> AppState:
         log.info("selfext", f"{restored} selbstgeschriebene(s) Werkzeug(e) wieder geladen")
         state.tools.snapshot(db)
     state.scheduler = Scheduler(bus, log)
+    state.scheduler.add("mia:self-heal", "MIA Self-Healing", 120,
+                        state.services["self_healing"].run_once,
+                        description="Prüft MIA-Dienste und repariert nur allowlistete sichere Fehler.",
+                        silent=True, run_immediately=False)
     _seed_memory(db)
     return state
 
@@ -130,6 +142,12 @@ SEEDED_MEMORY = [
     "or cannot be undone.",
     "Standing instruction from the user: never announce a plan instead of doing the work, and "
     "never claim something was done unless a tool confirmed it.",
+    "Operational rule learned from the source.write permission incident: distinguish read, "
+    "write and execute permissions from the failing operation and exact path. An EACCES while "
+    "writing under /repo is a source-tree ownership or group-rights problem, not evidence that "
+    "Python execution is forbidden or that root cannot change permissions. Inspect the runtime "
+    "user and mount ownership, state the verified cause, and never suggest moving code to a "
+    "different folder as a substitute for repairing the configured source workspace.",
 ]
 
 

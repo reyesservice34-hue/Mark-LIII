@@ -35,7 +35,16 @@ class FileService:
 
     # ── path safety ──────────────────────────────────────────────────────
     def resolve(self, rel: str, *, must_exist: bool = False) -> Path:
-        rel = (rel or "").replace("\\", "/").strip().lstrip("/")
+        rel = (rel or "").replace("\\", "/").strip()
+        # The host project is mounted read-only at workspace/Mark-LIII. Users
+        # naturally quote its host path, so translate that one explicit prefix
+        # before applying the ordinary workspace confinement below.
+        if rel in ("/root/Mark-LIII", "root/Mark-LIII"):
+            rel = "Mark-LIII"
+        elif rel.startswith(("/root/Mark-LIII/", "root/Mark-LIII/")):
+            rel = "Mark-LIII/" + rel.split("root/Mark-LIII/", 1)[1]
+        else:
+            rel = rel.lstrip("/")
         candidate = (self.root / rel).resolve() if rel else self.root
         try:
             candidate.relative_to(self.root)

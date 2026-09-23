@@ -1,4 +1,5 @@
 import { useState } from "react";
+import QRCode from "qrcode";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -17,6 +18,8 @@ export default function SettingsPage() {
   const [newToken, setNewToken] = useState<{ name: string; actor: string; role: string } | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [phonePair, setPhonePair] = useState<{ url: string; qr: string; expires_at: string } | null>(null);
+  const [pairing, setPairing] = useState(false);
 
   const changePw = async () => { try { await api.post("/api/auth/password", pw); toast({ title: "Password changed", tone: "ok" }); setPw({ current_password: "", new_password: "" }); } catch (e: any) { toast({ title: "Failed", body: e.message, tone: "err" }); } };
   const createUser = async () => { if (!newUser) return; try { await api.post("/api/auth/users", newUser); toast({ title: "User created", tone: "ok" }); setNewUser(null); users.reload(); } catch (e: any) { toast({ title: "Failed", body: e.message, tone: "err" }); } };
@@ -25,6 +28,15 @@ export default function SettingsPage() {
   const deleteUser = async (u: any) => { if (window.confirm(`Benutzer „${u.username}“ endgültig löschen? Laufende Anmeldungen enden sofort.`)) { try { await api.del(`/api/auth/users/${u.id}`); users.reload(); } catch (e: any) { toast({ title: "Löschen fehlgeschlagen", body: e.message, tone: "err" }); } } };
   const purgeToken = async (t: any) => { if (window.confirm(`Token „${t.name}“ endgültig löschen? Er verschwindet aus der Liste und kann nie wieder benutzt werden.`)) { try { await api.del(`/api/auth/tokens/${t.id}?purge=true`); tokens.reload(); } catch (e: any) { toast({ title: "Löschen fehlgeschlagen", body: e.message, tone: "err" }); } } };
   const revoke = async (id: string) => { if (window.confirm("Revoke this token? Clients using it will be disconnected.")) { await api.del(`/api/auth/tokens/${id}`); tokens.reload(); } };
+  const createPhonePair = async () => {
+    setPairing(true);
+    try {
+      const r = await api.post<{ pair_url: string; expires_at: string }>("/api/auth/pairing", {});
+      const qr = await QRCode.toDataURL(r.pair_url, { width: 300, margin: 1, errorCorrectionLevel: "M" });
+      setPhonePair({ url: r.pair_url, qr, expires_at: r.expires_at });
+    } catch (e: any) { toast({ title: "QR-Kopplung fehlgeschlagen", body: e.message, tone: "err" }); }
+    finally { setPairing(false); }
+  };
   const s = settings.data;
 
   return (
@@ -44,6 +56,20 @@ export default function SettingsPage() {
           {!s ? <Skeleton /> : <KeyValue items={[["Terminal tool", <Badge status={s.capabilities.terminal ? "ok" : "offline"}>{s.capabilities.terminal ? "enabled (approval-gated)" : "disabled"}</Badge>], ["Docker actions", <Badge status={s.capabilities.docker_actions ? "ok" : "offline"}>{s.capabilities.docker_actions ? "enabled" : "disabled"}</Badge>], ["Service restarts", <Badge status={s.capabilities.service_restart ? "ok" : "offline"}>{s.capabilities.service_restart ? "enabled" : "disabled"}</Badge>], ["Monitored services", s.capabilities.monitored_services.join(", ") || "—"], ["Approval from risk", s.capabilities.approval_threshold], ["Approval timeout", `${s.capabilities.approval_timeout_minutes} min`], ["Secure cookies", s.security.secure_cookies], ["Session TTL", `${s.security.session_ttl_hours} h`], ["Trust proxy headers", s.security.trust_proxy ? "yes" : "no"], ["Login rate limit", `${s.security.login_rate_limit_per_minute}/min`], ["Data dir", <code>{s.paths.data_dir}</code>], ["Workspace", <code>{s.paths.workspace_dir}</code>], ["Agent roster", s.paths.agent_roster || "built-in"]]} />}
         </Panel>
       </div>
+      <Panel title="Handy / PWA koppeln" icon={<Radio size={15} />}>
+        <div className="stack small">
+          <p>Öffne MIA auf deinem Handy ohne Passwort-Eingabe. Der QR-Code gilt nur einmal und maximal fünf Minuten.</p>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <button className="btn primary" onClick={createPhonePair} disabled={pairing}>{pairing ? "Erzeuge …" : "QR-Code erzeugen"}</button>
+            {phonePair && <button className="btn" onClick={() => navigator.clipboard?.writeText(phonePair.url)}>Link kopieren</button>}
+          </div>
+          {phonePair && <div className="stack" style={{ alignItems: "center", padding: 12 }}>
+            <img src={phonePair.qr} alt="Einmaliger QR-Code zum Koppeln von MIA auf dem Handy" style={{ width: 300, maxWidth: "100%", borderRadius: 16, background: "white", padding: 8 }} />
+            <span className="tiny muted">Einmalig · läuft um {new Date(phonePair.expires_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} ab</span>
+          </div>}
+        </div>
+      </Panel>
+
       <Panel title="Desktop pairing (Mark-LIII remote)" icon={<Radio size={15} />}>
         {!s ? <Skeleton /> : <div className="stack small">
           <p>{s.desktop_pairing.instructions}</p>

@@ -10,7 +10,7 @@
  * Die Zustände sind gemessen, nicht gemalt. Ein Kasten, der grün ist, weil er
  * so gezeichnet wurde, wäre Dekoration.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { Network } from "@/lib/icons";
 import { Modal, Skeleton } from "@/components/ui";
@@ -37,6 +37,11 @@ export function ArchitectureView() {
     refreshOn: ["master.status", "integration.status", "desktop.*", "approval.*"],
   });
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const show = () => setOpen(true);
+    window.addEventListener("mia:brain-map", show);
+    return () => window.removeEventListener("mia:brain-map", show);
+  }, []);
 
   if (loading && !data) return <div className="core-strip loading"><Skeleton rows={1} height={16} /></div>;
   if (!data) return null;
@@ -66,7 +71,7 @@ export function ArchitectureView() {
       </button>
 
       {open && (
-        <Modal wide title="Aufbau" onClose={() => setOpen(false)}
+        <Modal wide title="MIA Gehirn · Aufbau" onClose={() => setOpen(false)}
           foot={<span className="small muted">
             {data.totals.tools} Werkzeuge · {data.totals.integrations_connected} Dienste verbunden ·{" "}
             {data.totals.mcp} MCP-Server · {data.totals.skills} Fähigkeiten ·{" "}

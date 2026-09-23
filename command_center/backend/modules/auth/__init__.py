@@ -1,7 +1,12 @@
 """Auth module: login/logout/session, users (admin), machine tokens."""
 from __future__ import annotations
 
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from ...auth import Principal
@@ -66,6 +71,58 @@ async def login(body: LoginBody, request: Request, response: Response, state: Ap
     principal = Principal(kind="user", id=user["id"], name=user["display_name"] or user["username"],
                           role=user["role"], actor=user["username"])
     return {"user": principal.public(), "csrf_token": csrf}
+
+
+@router.post("/pairing")
+async def create_browser_pairing(request: Request, state: AppState = Depends(get_state),
+                                 principal: Principal = Depends(current_principal)):
+    """Create a short-lived, one-time link that logs the same user into another browser.
+
+    The plaintext secret exists only in the returned URL. The database stores its SHA-256 hash.
+    It expires after five minutes and is deleted on first use.
+    """
+    if principal.kind != "user":
+        raise HTTPException(status_code=400, detail="QR pairing is only available for browser users")
+    state.db.execute("CREATE TABLE IF NOT EXISTS browser_pairings ("
+                     "id TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at TEXT NOT NULL, "
+                     "expires_at TEXT NOT NULL, created_by TEXT NOT NULL)")
+    now = datetime.now(timezone.utc)
+    state.db.execute("DELETE FROM browser_pairings WHERE expires_at < ?", (now.isoformat(),))
+    secret = secrets.token_urlsafe(32)
+    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    expires = now + timedelta(minutes=5)
+    state.db.insert("browser_pairings", {"id": digest, "user_id": principal.id, "created_at": now_iso(),
+                                         "expires_at": expires.isoformat(), "created_by": principal.actor})
+    base = str(request.base_url).rstrip("/")
+    pair_url = f"{base}/api/auth/pair/{secret}"
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="auth.pairing.create",
+                    status="ok", meta={"expires_minutes": 5})
+    return {"pair_url": pair_url, "expires_at": expires.isoformat()}
+
+
+@router.get("/pair/{secret}")
+async def consume_browser_pairing(secret: str, request: Request, state: AppState = Depends(get_state)):
+    """Consume a one-time QR link and establish the normal HttpOnly browser session."""
+    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    row = state.db.fetchone("SELECT * FROM browser_pairings WHERE id=?", (digest,))
+    now = datetime.now(timezone.utc)
+    if not row or datetime.fromisoformat(row["expires_at"]) < now:
+        if row:
+            state.db.execute("DELETE FROM browser_pairings WHERE id=?", (digest,))
+        return HTMLResponse("<!doctype html><meta name='viewport' content='width=device-width'><title>MIA</title>"
+                            "<body style='background:#05070b;color:#eee;font-family:system-ui;display:grid;place-items:center;height:100vh'>"
+                            "<div style='text-align:center'><h2>QR-Code abgelaufen</h2><p>Erzeuge im MIA Command Center einen neuen Code.</p></div></body>",
+                            status_code=410)
+    # One-time means consume before creating the session. A refresh cannot reuse it.
+    state.db.execute("DELETE FROM browser_pairings WHERE id=?", (digest,))
+    raw, csrf = state.auth.create_session(row["user_id"], user_agent=request.headers.get("user-agent", ""),
+                                          ip=client_ip(request, state.settings.trust_proxy) or "unknown")
+    response = RedirectResponse(url="/", status_code=303)
+    _set_cookies(request, response, state, raw, csrf)
+    user = state.auth.get_user(row["user_id"])
+    state.log.audit(actor_type="user", actor_id=(user or {}).get("username", row["created_by"]),
+                    action="auth.pairing.consume", status="ok")
+    return response
 
 
 @router.post("/logout")

@@ -11,7 +11,7 @@ interface StatusForBadges { tasks: Record<string, number>; approvals_pending: nu
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { modules, user, logout, version } = useAuth();
   const conn = useConnection();
-  const nav = [{ id: "home", title: "JARVIS Home", icon: "home", path: "/", description: "Command center" }, ...modules];
+  const nav = [{ id: "home", title: "MIA", icon: "home", path: "/", description: "Kommandozentrale" }, ...modules];
   // Damit man von der Seitenleiste aus sieht, wo gerade etwas los ist, ohne
   // erst hineinzuklicken: Aufgaben, die laufen oder warten, und Freigaben,
   // die eine Entscheidung brauchen — letzteres in Warnfarbe, weil dort
@@ -28,7 +28,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`} aria-label="Primary navigation">
       <div className="brand">
         <span className="core" aria-hidden><span className={`ring ${conn.state}`} /><span className="nucleus" /></span>
-        {!collapsed && <span className="brand-text"><strong>JARVIS</strong><span className="label">Command Center</span></span>}
+        {!collapsed && <span className="brand-text"><strong>MIA</strong><span className="label">Command Center</span></span>}
       </div>
       <nav className="nav">
         {nav.map((m) => {

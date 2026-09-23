@@ -21,8 +21,8 @@ Kein Dienst und keine Administratorrechte: Ein Dienst liefe ohne angemeldeten
 Benutzer und könnte weder tippen noch klicken noch den Bildschirm sehen —
 genau das, wofür die Kopplung da ist.
 
-Gestartet wird die Brücke ohne Fenster (`desktop_agent.py` über `pythonw`).
-Wer das große Fenster will, startet JARVIS.bat zusätzlich.
+Gestartet wird die zentrale MIA-Bridge ohne Fenster (`MIA.ps1 start`).
+Sie startet Desktop-Bridge und den lokalen Hey-MIA-Wake-Listener gemeinsam.
 """
 from __future__ import annotations
 
@@ -32,8 +32,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-NAME = "JARVIS-Bruecke.cmd"
-TASK = "JARVIS Desktop Bridge"
+NAME = "MIA-Bruecke.cmd"
+TASK = "MIA Windows Bridge"
 
 
 def startup_dir() -> Path | None:
@@ -74,18 +74,13 @@ def enabled() -> bool:
 
 
 def _launcher_text() -> str:
-    """Eine Zeile, die die Brücke ohne Fenster startet.
-
-    `start ""` mit pythonw: kein schwarzes Fenster beim Anmelden, und die cmd
-    beendet sich sofort wieder, statt im Autostart hängen zu bleiben.
-    """
-    pyw = Path(sys.executable).with_name("pythonw.exe")
-    exe = pyw if pyw.exists() else Path(sys.executable)
+    """Fallback launcher for the user's Startup folder."""
+    ps1 = ROOT / "MIA.ps1"
     return (
         "@echo off\r\n"
         "REM Von autostart.py angelegt. Loeschen schaltet den Autostart ab.\r\n"
         f'cd /d "{ROOT}"\r\n'
-        f'start "" "{exe}" "{ROOT / "desktop_agent.py"}"\r\n'
+        f'start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{ps1}" start\r\n'
     )
 
 
@@ -101,11 +96,11 @@ def turn_on() -> str:
 
     # Erst die Aufgabenplanung: sie startet auch nach einem Absturz neu und
     # überlebt einen aufgeräumten Autostart-Ordner.
-    cmd = f'"{_exe()}" "{ROOT / "desktop_agent.py"}"'
+    cmd = f'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{ROOT / "MIA.ps1"}\" start'
     code, out = _schtasks("/create", "/tn", TASK, "/tr", cmd, "/sc", "onlogon", "/f", "/rl", "limited")
     if code == 0:
         return (f"Eingetragen als Aufgabe {TASK!r} (startet beim Anmelden).\n"
-                "JARVIS meldet sich ab dem nächsten Anmelden von selbst am Server.")
+                "MIA Bridge und Hey-MIA-Listener starten ab dem nächsten Anmelden automatisch.")
 
     d = startup_dir()
     if d is None:

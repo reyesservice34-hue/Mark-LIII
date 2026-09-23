@@ -90,7 +90,7 @@ async def create_event(body: EventCreate, state: AppState = Depends(get_state),
 async def update_event(uid: str, body: EventUpdate, state: AppState = Depends(get_state),
                        principal: Principal = Depends(require_role("operator"))):
     try:
-        event = state.services["calendar"].update(uid, **body.model_dump())
+        event = await state.services["calendar"].update_any(uid, **body.model_dump())
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(e))
     state.log.audit(actor_type="user", actor_id=principal.actor, action="calendar.update",
@@ -103,7 +103,7 @@ async def update_event(uid: str, body: EventUpdate, state: AppState = Depends(ge
 async def delete_event(uid: str, state: AppState = Depends(get_state),
                        principal: Principal = Depends(require_role("operator"))):
     try:
-        event = state.services["calendar"].delete_uid(uid)
+        event = await state.services["calendar"].delete_any(uid)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(e))
     state.log.audit(actor_type="user", actor_id=principal.actor, action="calendar.delete",
@@ -152,8 +152,9 @@ def _startup(state: AppState) -> None:
     async def job() -> None:
         await cal.sync_google()
 
-    state.scheduler.add("calendar_sync", "Google-Termine übernehmen", 600, job, silent=True,
-                        description="Termine aus dem Google Firmenkalender (nur lesen) in den lokalen Kalender übernehmen",
+    state.scheduler.add("calendar_sync", "Google-Termine übernehmen", 180, job, silent=True,
+                        description="Termine aus dem Google Kalender in den lokalen Kalender übernehmen (Spiegel; "
+                                    "Änderungen von Jarvis gehen zuerst nach Google)",
                         enabled=cal.bridge.configured(), run_immediately=True)
 
 

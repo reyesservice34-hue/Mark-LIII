@@ -25,7 +25,7 @@ export default function LoginPage() {
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit} aria-busy={busy || loading}>
         <div className="login-core" aria-hidden><span className="ring r1" /><span className="ring r2" /><span className="nucleus" /></div>
-        <h1>JARVIS</h1>
+        <h1>MIA</h1>
         <p className="label" style={{ textAlign: "center" }}>Kommandozentrale · Anmeldung erforderlich</p>
         <div className="field"><label htmlFor="u">Benutzername</label><input id="u" className="input" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus /></div>
         <div className="field"><label htmlFor="p">Passwort</label><input id="p" className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>

@@ -1,7 +1,7 @@
 {
-  "name": "JARVIS Command Center",
-  "short_name": "JARVIS",
-  "description": "The operating dashboard for your AI infrastructure",
+  "name": "MIA Command Center",
+  "short_name": "MIA",
+  "description": "The operating dashboard for MIA on your own server",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

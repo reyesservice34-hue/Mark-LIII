@@ -71,7 +71,7 @@ export default function TasksPage() {
       <ErrorState error={list.error} retry={() => list.reload(false)} />
       <div className="grid" style={{ gridTemplateColumns: taskId ? "minmax(0, 1fr) minmax(380px, 520px)" : "1fr" }}>
         <Panel title="Tasks" icon={<ListChecks size={15} />} flush>
-          {!list.data ? <div className="panel-body"><Skeleton rows={4} /></div> : list.data.tasks.length === 0 ? <EmptyState icon={<ListChecks size={26} />} title="No tasks match">Tasks appear when JARVIS plans multi-step work or when you create one.</EmptyState> : <TaskTimeline tasks={list.data.tasks} />}
+          {!list.data ? <div className="panel-body"><Skeleton rows={4} /></div> : list.data.tasks.length === 0 ? <EmptyState icon={<ListChecks size={26} />} title="No tasks match">Tasks appear when MIA plans multi-step work or when you create one.</EmptyState> : <TaskTimeline tasks={list.data.tasks} />}
         </Panel>
         {taskId && (
           <Panel title={t ? t.title : "Task"} actions={<button className="btn sm ghost" onClick={() => nav("/tasks")}>Close</button>}>
@@ -130,7 +130,7 @@ export default function TasksPage() {
             <div className="field"><label>Description / instructions</label><textarea className="textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
             <div className="grid cols-2">
               <div className="field"><label>Priority</label><select className="select" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option>low</option><option>normal</option><option>high</option><option>critical</option></select></div>
-              <div className="field"><label>Agent</label><select className="select" value={form.assigned_agent} onChange={(e) => setForm({ ...form, assigned_agent: e.target.value })}><option value="">JARVIS (master)</option>{(agents.data?.agents || []).filter((a) => a.kind !== "master").map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+              <div className="field"><label>Agent</label><select className="select" value={form.assigned_agent} onChange={(e) => setForm({ ...form, assigned_agent: e.target.value })}><option value="">MIA (master)</option>{(agents.data?.agents || []).filter((a) => a.kind !== "master").map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
             </div>
             <label className="row small"><input type="checkbox" checked={form.start} onChange={(e) => setForm({ ...form, start: e.target.checked })} /> Start immediately</label>
           </div>

@@ -11,6 +11,7 @@ import { ApprovalDialog } from "@/modules/approvals/ApprovalDialog";
 import { Sidebar } from "./Sidebar";
 import { TopStatusBar } from "./TopStatusBar";
 import { LiveBar } from "./LiveBar";
+import { armHeyMia } from "@/app/voice/wake";
 
 export function JarvisShell() {
   const { modules, logout } = useAuth();
@@ -19,9 +20,25 @@ export function JarvisShell() {
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("jcc.sidebar") === "1"; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem("jcc.sidebar", collapsed ? "1" : "0"); } catch { /* ignore */ } }, [collapsed]);
 
+  // Browsers require a real user gesture before microphone recognition may start.
+  // After the first click/key press, keep the lightweight "Hey MIA" listener armed.
+  useEffect(() => {
+    let done = false;
+    const arm = () => {
+      if (done) return;
+      done = true;
+      try { armHeyMia(); } catch { /* unsupported/permission denied */ }
+      window.removeEventListener("pointerdown", arm);
+      window.removeEventListener("keydown", arm);
+    };
+    window.addEventListener("pointerdown", arm, { once: true });
+    window.addEventListener("keydown", arm, { once: true });
+    return () => { window.removeEventListener("pointerdown", arm); window.removeEventListener("keydown", arm); };
+  }, []);
+
   // Commands from backend modules + shell-level ones.
   useEffect(() => registerCommands([
-    { id: "home", title: "JARVIS Home", path: "/", group: "Navigate", shortcut: "g h" },
+    { id: "home", title: "MIA Home", path: "/", group: "Navigate", shortcut: "g h" },
     ...modules.flatMap((m) => [
       { id: `nav.${m.id}`, title: `Open ${m.title}`, path: m.path, group: "Navigate", keywords: m.description },
       ...m.commands.map((c) => ({ id: c.id, title: c.title, path: c.path, shortcut: c.shortcut, group: m.title })),
@@ -50,14 +67,14 @@ export function JarvisShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [nav]);
 
-  // JARVIS kann zeigen, wovon er redet: dashboard.open schickt einen Hinweis
+  // MIA kann zeigen, wovon er redet: dashboard.open schickt einen Hinweis
   // über den Ereignisbus, und hier wird er zur Navigation. Mit einer Meldung
   // dazu — eine Seite, die von selbst wechselt, ohne dass jemand sagt warum,
   // ist gruselig, keine Hilfe.
   useEvent("ui.open", (ev) => {
     const path = String(ev.data?.path || "");
     if (!path.startsWith("/")) return;
-    toast({ title: "JARVIS zeigt dir etwas", body: ev.data?.reason || path, tone: "info" });
+    toast({ title: "MIA zeigt dir etwas", body: ev.data?.reason || path, tone: "info" });
     nav(path);
   });
 

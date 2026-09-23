@@ -120,11 +120,12 @@ class RealtimeSession:
     Same public shape as realtime.RealtimeSession (connect/from_browser/pump/
     close), so modules/live/__init__.py can use either interchangeably."""
 
-    def __init__(self, state, principal, *, instructions: str = "",
+    def __init__(self, state, principal, *, instructions: str = "", conversation_id: str = "",
                  send_down: Callable[[dict], Awaitable[None]]) -> None:
         self.state = state
         self.principal = principal
         self.instructions = instructions
+        self.conversation_id = conversation_id
         self.send_down = send_down
         self.session: Any = None
         self._live_cm: Any = None
@@ -197,6 +198,11 @@ class RealtimeSession:
                 c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "input_text"
             ).strip()
             if text:
+                if self.conversation_id:
+                    self.state.services["chat"].add_message(
+                        self.conversation_id, "user", text,
+                        meta={"via": "live_text", "actor": self.principal.actor})
+                    self.state.services["chat"].maybe_title(self.conversation_id, text)
                 await self.session.send_client_content(
                     turns={"role": "user", "parts": [{"text": text}]},
                     turn_complete=True,
@@ -212,52 +218,62 @@ class RealtimeSession:
         """Read from Gemini until the line closes, translating each event into
         the same shape the OpenAI-backed line already sends the browser."""
         assert self.session is not None
-        async for response in self.session.receive():
-            if self._closed:
-                return
-
-            sc = getattr(response, "server_content", None)
-            if sc and sc.interrupted:
-                await self.send_down({"type": "input_audio_buffer.speech_started"})
-
-            if response.data:
-                if not self._turn_open:
-                    self._turn_open = True
-                    self._said = ""
-                    await self.send_down({"type": "response.created"})
-                await self.send_down({
-                    "type": "response.output_audio.delta",
-                    "delta": base64.b64encode(response.data).decode("ascii"),
-                })
-
-            if sc:
-                if sc.output_transcription and sc.output_transcription.text:
+        while not self._closed:
+            async for response in self.session.receive():
+                if self._closed:
+                    return
+    
+                sc = getattr(response, "server_content", None)
+                if sc and sc.interrupted:
+                    await self.send_down({"type": "input_audio_buffer.speech_started"})
+    
+                if response.data:
                     if not self._turn_open:
                         self._turn_open = True
                         self._said = ""
                         await self.send_down({"type": "response.created"})
-                    self._said += sc.output_transcription.text
                     await self.send_down({
-                        "type": "response.output_audio_transcript.delta",
-                        "delta": sc.output_transcription.text,
+                        "type": "response.output_audio.delta",
+                        "delta": base64.b64encode(response.data).decode("ascii"),
                     })
-                if sc.input_transcription and sc.input_transcription.text:
-                    self._heard.append(sc.input_transcription.text)
-                if sc.turn_complete:
-                    full_in = " ".join(self._heard).strip()
-                    self._heard = []
-                    if full_in:
+    
+                if sc:
+                    if sc.output_transcription and sc.output_transcription.text:
+                        if not self._turn_open:
+                            self._turn_open = True
+                            self._said = ""
+                            await self.send_down({"type": "response.created"})
+                        self._said += sc.output_transcription.text
                         await self.send_down({
-                            "type": "conversation.item.input_audio_transcription.completed",
-                            "transcript": full_in,
+                            "type": "response.output_audio_transcript.delta",
+                            "delta": sc.output_transcription.text,
                         })
-                    await self.send_down({"type": "response.done"})
-                    self._turn_open = False
-
-            if getattr(response, "tool_call", None):
-                for fc in response.tool_call.function_calls:
-                    asyncio.create_task(self._run_tool(fc))
-
+                    if sc.input_transcription and sc.input_transcription.text:
+                        self._heard.append(sc.input_transcription.text)
+                    if sc.turn_complete:
+                        full_in = " ".join(self._heard).strip()
+                        self._heard = []
+                        if full_in:
+                            if self.conversation_id:
+                                self.state.services["chat"].add_message(
+                                    self.conversation_id, "user", full_in,
+                                    meta={"via": "voice", "actor": self.principal.actor})
+                                self.state.services["chat"].maybe_title(self.conversation_id, full_in)
+                            await self.send_down({
+                                "type": "conversation.item.input_audio_transcription.completed",
+                                "transcript": full_in,
+                            })
+                        if self.conversation_id and self._said.strip():
+                            self.state.services["chat"].add_message(
+                                self.conversation_id, "assistant", self._said.strip(),
+                                meta={"via": "voice", "agent_id": "jarvis"})
+                        await self.send_down({"type": "response.done"})
+                        self._turn_open = False
+    
+                if getattr(response, "tool_call", None):
+                    for fc in response.tool_call.function_calls:
+                        asyncio.create_task(self._run_tool(fc))
+    
     # ── tools ────────────────────────────────────────────────────────────
     async def _run_tool(self, fc) -> None:
         from ..orchestrator.tool_registry import ToolContext
@@ -267,6 +283,7 @@ class RealtimeSession:
         args = dict(fc.args or {})
 
         ctx = ToolContext(state=self.state, principal=self.principal, agent_id="jarvis",
+                          conversation_id=self.conversation_id or None,
                           emit=lambda kind, data: None)
         executor = self.state.runtime.executor
         try:

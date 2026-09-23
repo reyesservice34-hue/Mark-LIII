@@ -1,5 +1,5 @@
 /**
- * Geräte — was mit diesem JARVIS verbunden ist, und was man damit tun kann.
+ * Geräte — was mit diesem MIA verbunden ist, und was man damit tun kann.
  *
  * Vorher war das eine Statusanzeige mit einem Rohformular für JSON-Parameter:
  * richtig, aber nur für jemanden brauchbar, der die Aktionsnamen auswendig
@@ -143,7 +143,7 @@ export default function DesktopPage() {
           <h1><Monitor size={20} /> Geräte</h1>
           <p className="muted">
             {data ? `${data.stats.online} von ${data.stats.devices} Rechnern online`
-              : "Was mit diesem JARVIS verbunden ist"}
+              : "Was mit diesem MIA verbunden ist"}
             {data?.stats.queued ? ` · ${data.stats.queued} Aufträge warten` : ""}
           </p>
         </div>

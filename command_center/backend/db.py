@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -155,6 +155,28 @@ CREATE TABLE IF NOT EXISTS memory (
   id TEXT PRIMARY KEY, text TEXT NOT NULL, actor TEXT NOT NULL DEFAULT '',
   conversation_id TEXT, created_at TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS learning_records (
+  id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
+  problem TEXT NOT NULL DEFAULT '', lesson TEXT NOT NULL DEFAULT '',
+  failed_attempts TEXT NOT NULL DEFAULT '[]', verification TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '', conversation_id TEXT, confidence REAL NOT NULL DEFAULT 1.0,
+  tags TEXT NOT NULL DEFAULT '[]', uses INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learning_kind_updated ON learning_records(kind, updated_at);
+CREATE TABLE IF NOT EXISTS core_evolution_checks (
+  proposal_id TEXT PRIMARY KEY, file TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
+  checks TEXT NOT NULL DEFAULT '[]', baseline TEXT NOT NULL DEFAULT '{}', candidate TEXT NOT NULL DEFAULT '{}',
+  capability_gain TEXT NOT NULL DEFAULT '', verification_plan TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auto_learning_patterns (
+  fingerprint TEXT PRIMARY KEY, signature TEXT NOT NULL DEFAULT '', success_count INTEGER NOT NULL DEFAULT 0,
+  tools TEXT NOT NULL DEFAULT '[]', last_goal TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '[]',
+  promoted_skill TEXT NOT NULL DEFAULT '', procedure_id TEXT NOT NULL DEFAULT '',
+  specialist_notified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auto_learning_updated ON auto_learning_patterns(updated_at);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS metrics (
   ts TEXT NOT NULL, cpu REAL, ram REAL, disk REAL, load REAL, net_rx REAL, net_tx REAL

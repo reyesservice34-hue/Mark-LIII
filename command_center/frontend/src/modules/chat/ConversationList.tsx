@@ -15,24 +15,24 @@ export function ConversationList({ items, activeId, onNew, onSearch, onRename, o
       <div className="panel-head" style={{ padding: "10px 12px" }}>
         <div className="row grow" style={{ gap: 6 }}>
           <Search size={14} style={{ color: "var(--text-3)", flex: "none" }} />
-          <input className="input" style={{ height: 28, border: 0, background: "transparent", padding: 0, boxShadow: "none" }} placeholder="Search conversations" value={query} onChange={(e) => onSearch(e.target.value)} aria-label="Search conversations" />
+          <input className="input" style={{ height: 28, border: 0, background: "transparent", padding: 0, boxShadow: "none" }} placeholder="Sitzungsverläufe durchsuchen" value={query} onChange={(e) => onSearch(e.target.value)} aria-label="Sitzungsverläufe durchsuchen" />
         </div>
-        <button className="btn icon sm primary" onClick={onNew} title="New conversation" aria-label="New conversation"><Plus /></button>
+        <button className="btn icon sm primary" onClick={onNew} title="Neue Sitzung" aria-label="Neue Sitzung"><Plus /></button>
       </div>
       <div className="conv-list">
-        {items.length === 0 && <EmptyState title={query ? "No matches" : "No conversations"}>{query ? "Try another term." : "Start one and JARVIS will remember it."}</EmptyState>}
+        {items.length === 0 && <EmptyState title={query ? "Keine Treffer" : "Keine Sitzungen"}>{query ? "Versuche einen anderen Suchbegriff." : "Starte eine Sitzung. MIA speichert den Verlauf auf dem Server."}</EmptyState>}
         {items.map((c) => (
           <Link key={c.id} to={`/chat/${c.id}`} className={`conv-item ${c.id === activeId ? "active" : ""}`} onMouseLeave={() => setMenu(null)}>
-            <div className="row between"><span className="title truncate">{c.title}</span>
+            <div className="row between"><span className="title truncate">{c.title === "New conversation" ? "Neue Sitzung" : c.title}</span>
               <span className="row" style={{ gap: 2 }} onClick={(e) => e.preventDefault()}>
                 {menu === c.id ? <>
-                  <button className="btn icon ghost sm" title="Rename" onClick={() => onRename(c)}><Pencil /></button>
-                  <button className="btn icon ghost sm" title="Delete" onClick={() => onDelete(c)}><Trash2 /></button>
-                </> : <button className="btn ghost sm" style={{ height: 22 }} onClick={() => setMenu(c.id)} aria-label="More">…</button>}
+                  <button className="btn icon ghost sm" title="Umbenennen" onClick={() => onRename(c)}><Pencil /></button>
+                  <button className="btn icon ghost sm" title="Löschen" onClick={() => onDelete(c)}><Trash2 /></button>
+                </> : <button className="btn ghost sm" style={{ height: 22 }} onClick={() => setMenu(c.id)} aria-label="Weitere Aktionen">…</button>}
               </span>
             </div>
             <span className="preview truncate">{c.preview || "—"}</span>
-            <span className="tiny muted">{relative(c.updated_at)} · {c.message_count ?? 0} messages</span>
+            <span className="tiny muted">{relative(c.updated_at)} · {c.message_count ?? 0} Nachrichten</span>
           </Link>
         ))}
       </div>

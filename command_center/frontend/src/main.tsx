@@ -22,6 +22,23 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 // registration failure (an older browser, a blocked worker) break the app.
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => { /* not installable, still usable */ });
+    navigator.serviceWorker.register("/sw.js").then((reg) => {
+      // MIA lives on the server: new UI builds should arrive automatically.
+      // Conversation/task/calendar data is server-side, so this only refreshes the shell.
+      const activate = () => reg.waiting?.postMessage({ type: "SKIP_WAITING" });
+      if (reg.waiting) activate();
+      reg.addEventListener("updatefound", () => {
+        reg.installing?.addEventListener("statechange", () => {
+          if (reg.waiting) activate();
+        });
+      });
+      window.setInterval(() => void reg.update(), 5 * 60 * 1000);
+    }).catch(() => { /* not installable, still usable */ });
+    let reloading = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloading) return;
+      reloading = true;
+      window.location.reload();
+    });
   });
 }

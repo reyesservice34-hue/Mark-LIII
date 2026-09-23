@@ -29,7 +29,35 @@ def _openai():
         model=os.environ.get("JARVIS_AI_MODEL") or os.environ.get("OPENAI_MODEL") or "gpt-4.1")
 
 
+_CHAIN_DEFS = {
+    "groq": ("Groq", "https://api.groq.com/openai", "GROQ_API_KEY", "JARVIS_GROQ_MODEL", "openai/gpt-oss-120b"),
+    "together": ("Together", "https://api.together.xyz", "TOGETHER_API_KEY", "JARVIS_TOGETHER_MODEL",
+                 "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+    "deepseek": ("DeepSeek", "https://api.deepseek.com", "DEEPSEEK_API_KEY", "JARVIS_DEEPSEEK_MODEL", "deepseek-flash"),
+}
+
+
+def _chain():
+    from .chain import ChainProvider
+    from .openai_compat import OpenAICompatProvider
+    provs, labels = [], []
+    for name in os.environ.get("JARVIS_CHAIN", "").replace(" ", "").split(","):
+        d = _CHAIN_DEFS.get(name)
+        if not d or not os.environ.get(d[2]):
+            continue
+        prov = OpenAICompatProvider(provider_id=name, base_url=d[1], api_key=os.environ[d[2]],
+                                    model=os.environ.get(d[3]) or d[4])
+        prov.include_usage = True
+        provs.append(prov)
+        labels.append(d[0])
+    if not provs:
+        raise KeyError("JARVIS_CHAIN")
+    return ChainProvider(provs, labels)
+
+
 def _local():
+    if os.environ.get("JARVIS_CHAIN", "").strip():
+        return _chain()
     from .openai_compat import OpenAICompatProvider
     return OpenAICompatProvider(
         provider_id="local",

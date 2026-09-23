@@ -39,6 +39,7 @@ BASE_DIR    = Path(__file__).resolve().parent.parent
 STATIC_DIR  = Path(__file__).parent / "static"
 PORT        = 8000
 MAX_UPLOAD_MB = 500
+AUDIO_OUT_RATE = 24000   # must match main.py's RECEIVE_SAMPLE_RATE
 
 
 def _make_uploads_dir() -> Path:
@@ -446,6 +447,53 @@ class DashboardServer:
                 dead.add(ws)
         self._clients -= dead
 
+    async def broadcast_audio(self, pcm_bytes: bytes) -> None:
+        """Stream a chunk of JARVIS's spoken reply (raw 16-bit PCM) to every
+        connected phone/browser client. Skips _history — audio isn't replayed
+        on reconnect, only the text transcript is (via broadcast())."""
+        if not self._clients or not pcm_bytes:
+            return
+        msg = {
+            "type": "audio",
+            "data": base64.b64encode(pcm_bytes).decode("ascii"),
+            "rate": AUDIO_OUT_RATE,
+        }
+        dead: set[WebSocket] = set()
+        for ws in list(self._clients):
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                dead.add(ws)
+        self._clients -= dead
+
+    async def broadcast_call(self) -> None:
+        """Ring connected clients — JARVIS wants to speak on its own initiative
+        (a monitor alert, a proactive check-in) and there's nobody on the line
+        to hear it yet. The client answers by opening its normal mic/playback
+        channels, same as tapping the mic button."""
+        if not self._clients:
+            return
+        dead: set[WebSocket] = set()
+        for ws in list(self._clients):
+            try:
+                await ws.send_json({"type": "incoming_call"})
+            except Exception:
+                dead.add(ws)
+        self._clients -= dead
+
+    async def broadcast_audio_stop(self) -> None:
+        """Tell clients to flush any queued playback — mirrors the local
+        barge-in behaviour when the user interrupts JARVIS mid-speech."""
+        if not self._clients:
+            return
+        dead: set[WebSocket] = set()
+        for ws in list(self._clients):
+            try:
+                await ws.send_json({"type": "audio_stop"})
+            except Exception:
+                dead.add(ws)
+        self._clients -= dead
+
     # ── FastAPI app ───────────────────────────────────────────────────────
 
     def _build_app(self) -> "FastAPI":
@@ -576,6 +624,22 @@ class DashboardServer:
             count = len(self._device_sessions)
             self._device_sessions.clear()
             return JSONResponse({"ok": True, "revoked": count})
+
+        @app.get("/api/system-status")
+        async def system_status(req: Request):
+            """Return non-sensitive runtime health used by the dashboard status deck."""
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            return JSONResponse({
+                "ok": True,
+                "live_clients": len(self._clients),
+                "paired_devices": len(self._device_sessions),
+                "active_tokens": len(self._tokens),
+                "encrypted_sessions": len(self._token_keys),
+                "command_queue": self._command_queue.qsize(),
+                "session_events": len(self._history),
+                "voice_queue": self._phone_audio_queue.qsize(),
+            })
 
         @app.post("/api/command")
         async def command(req: Request):

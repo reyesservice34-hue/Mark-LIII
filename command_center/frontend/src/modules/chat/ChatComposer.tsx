@@ -2,17 +2,15 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api } from "@/lib/api";
 import { bytes } from "@/lib/format";
 import { Paperclip, Send, Square, X } from "@/lib/icons";
-import { VoiceControl } from "@/app/voice/VoiceControl";
 import { toast } from "@/lib/toast";
 import type { Attachment } from "./types";
 
-export function ChatComposer({ onSend, onStop, busy, disabled, agents, initial, offlineHint = "" }: {
+export function ChatComposer({ onSend, onStop, busy, disabled, initial, offlineHint = "" }: {
   onSend: (text: string, attachments: Attachment[], agentId?: string) => void; onStop: () => void; busy: boolean; disabled: boolean;
-  agents: { id: string; name: string; kind: string; enabled: boolean }[]; initial?: string; offlineHint?: string;
+  initial?: string; offlineHint?: string;
 }) {
   const [text, setText] = useState(initial || "");
   const [files, setFiles] = useState<Attachment[]>([]);
-  const [agent, setAgent] = useState("");
   const [uploading, setUploading] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -23,20 +21,10 @@ export function ChatComposer({ onSend, onStop, busy, disabled, agents, initial, 
   const submit = () => {
     const t = text.trim();
     if ((!t && !files.length) || busy || disabled) return;
-    onSend(t, files, agent || undefined);
+    onSend(t, files);
     setText(""); setFiles([]);
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } };
-
-  // Im Freihandmodus geht das Gesagte sofort raus — sonst wäre es Diktat und
-  // kein Gespräch. Sonst landet es im Feld, damit man es noch ändern kann.
-  const fromVoice = (spokenText: string, sendNow: boolean) => {
-    if (!sendNow) { setText((x) => (x ? `${x} ${spokenText}` : spokenText)); return; }
-    const t = spokenText.trim();
-    if (!t || busy || disabled) { setText((x) => (x ? `${x} ${spokenText}` : spokenText)); return; }
-    onSend(t, files, agent || undefined);
-    setText(""); setFiles([]);
-  };
 
   const upload = async (list: FileList | null) => {
     if (!list?.length) return;
@@ -57,21 +45,16 @@ export function ChatComposer({ onSend, onStop, busy, disabled, agents, initial, 
       {offlineHint && <div className="row small" style={{ color: "var(--warn)", gap: 6 }} role="status"><span className="dot warn" />{offlineHint}</div>}
       <div className="composer-box">
         <textarea ref={ta} rows={1} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} disabled={disabled}
-          placeholder={disabled ? "Deine Rolle darf keine Befehle senden" : "Nachricht an JARVIS …"} aria-label="Nachricht" />
+          placeholder={disabled ? "Deine Rolle darf keine Befehle senden" : "Nachricht an MIA schreiben …"} aria-label="Nachricht" />
         <input ref={fileInput} type="file" multiple hidden onChange={(e) => upload(e.target.files)} aria-hidden />
         <button className="btn icon ghost" onClick={() => fileInput.current?.click()} disabled={uploading || disabled} title="Dateien anhängen" aria-label="Dateien anhängen">{uploading ? <span className="spinner" /> : <Paperclip />}</button>
-        <VoiceControl onTranscript={fromVoice} />
         {busy ? <button className="btn danger icon" onClick={onStop} title="Abbrechen" aria-label="Abbrechen"><Square /></button>
           : <button className="btn primary icon" onClick={submit} disabled={disabled || (!text.trim() && !files.length)} title="Senden (Enter)" aria-label="Senden"><Send /></button>}
       </div>
       <div className="hint">
         <span className="desktop-only">Enter sendet · Umschalt+Enter neue Zeile · Dateien hierher ziehen</span>
-        <label className="row" style={{ gap: 6 }}>weiterleiten an
-          <select className="select" style={{ height: 22, padding: "0 22px 0 6px", fontSize: 11, width: "auto" }} value={agent} onChange={(e) => setAgent(e.target.value)} aria-label="An Agent weiterleiten">
-            <option value="">JARVIS (Master)</option>
-            {agents.filter((a) => a.kind !== "master" && a.enabled).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </label>
+        <span>Textchat bleibt ohne Mikrofon. Sprachchat startest du oben ausdrücklich.</span>
+
       </div>
     </div>
   );

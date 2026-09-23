@@ -233,10 +233,10 @@ function Editor({ init, onClose, onDone }: { init: { ev?: Ev; date?: string; fro
       <button className="btn" onClick={onClose}>{readOnly ? "Schließen" : "Abbrechen"}</button>
       {!readOnly && <button className="btn primary" onClick={save} disabled={busy || !f.title || !f.date}>{busy ? "Speichere …" : ev ? "Speichern" : "Eintragen"}</button>}
     </>}>
-      {readOnly && <p className="small muted">Dieser Termin kommt aus deinem Google Firmenkalender. Jarvis kann Google-Termine nur lesen, bitte direkt in Google ändern.</p>}
+      {readOnly && <p className="small muted">Dieser Termin kommt aus deinem Google Firmenkalender. MIA kann Google-Termine nur lesen, bitte direkt in Google ändern.</p>}
       <div className="field"><label>Was</label><input className="input" value={f.title} disabled={readOnly} autoFocus onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Tour Karben: Christoph, Jürgen" /></div>
       <div className="field"><label>Kategorie</label><select className="select" value={f.category} disabled={readOnly} onChange={(e) => setF({ ...f, category: e.target.value })}>
-        {!ev && <option value="">Automatisch (Jarvis erkennt es)</option>}{CATS.filter((c) => c.id !== "google").map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}{readOnly && <option value="google">Google Firma</option>}</select></div>
+        {!ev && <option value="">Automatisch (MIA erkennt es)</option>}{CATS.filter((c) => c.id !== "google").map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}{readOnly && <option value="google">Google Firma</option>}</select></div>
       <div className="row" style={{ gap: 10 }}>
         <div className="field" style={{ flex: 2 }}><label>Tag</label><input className="input" type="date" value={f.date} disabled={readOnly} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
         <div className="field" style={{ flex: 1 }}><label>Von</label><input className="input" type="time" value={f.from} disabled={readOnly} onChange={(e) => setF({ ...f, from: e.target.value })} /></div>

@@ -59,6 +59,62 @@ services:
       # der .env sind die Werkzeuge aus und sagen das auch; der Mount allein
       # schaltet nichts frei. Zum Abschalten die Zeile entfernen.
       - ${JARVIS_CC_SOURCE_MOUNT:-.}:/repo
+      # Mark-LIII lives outside the Command-Center repository. Expose it in
+      # MIA's normal workspace as read-only so filesystem.read can inspect the
+      # real files without granting the container write access to the project.
+      - /root/Mark-LIII:/data/workspace/Mark-LIII:ro
+      # Semantisches Gedaechtnis (2026-09-20): Sucht nach Bedeutung statt nach Woertern. Diese drei Dateien
+      # liegen hier statt im Abbild, damit kein Neubau noetig war. Bei einem Neubau stecken sie ohnehin im
+      # Abbild, dann duerfen die drei Zeilen weg. Originale: /root/aufbewahrt-2026-09-19/vor-migration/code-original
+      - ./command_center/backend/ai/embeddings.py:/app/command_center/backend/ai/embeddings.py:ro
+      - ./command_center/backend/ai/__init__.py:/app/command_center/backend/ai/__init__.py:ro
+      - ./command_center/backend/ai/chain.py:/app/command_center/backend/ai/chain.py:ro
+      - ./command_center/backend/ai/openai_compat.py:/app/command_center/backend/ai/openai_compat.py:ro
+      - ./command_center/backend/orchestrator/runtime.py:/app/command_center/backend/orchestrator/runtime.py:ro
+      - ./command_center/backend/app.py:/app/command_center/backend/app.py:ro
+      - ./command_center/backend/db.py:/app/command_center/backend/db.py:ro
+      - ./command_center/backend/services/auto_learning.py:/app/command_center/backend/services/auto_learning.py:ro
+      - ./command_center/backend/services/selfext.py:/app/command_center/backend/services/selfext.py:ro
+      - ./command_center/backend/services/source.py:/app/command_center/backend/services/source.py:ro
+      - ./command_center/backend/services/core_evolution.py:/app/command_center/backend/services/core_evolution.py:ro
+      - ./command_center/backend/services/self_healing.py:/app/command_center/backend/services/self_healing.py:ro
+      - ./command_center/backend/orchestrator/agent_registry.py:/app/command_center/backend/orchestrator/agent_registry.py:ro
+      - ./command_center/backend/orchestrator/builtin_tools.py:/app/command_center/backend/orchestrator/builtin_tools.py:ro
+      - ./command_center/backend/app.py:/app/command_center/backend/app.py:ro
+      - ./command_center/backend/db.py:/app/command_center/backend/db.py:ro
+      - ./command_center/backend/services/learning.py:/app/command_center/backend/services/learning.py:ro
+      - ./command_center/backend/services/files.py:/app/command_center/backend/services/files.py:ro
+      # MIA Windows/PowerShell Bridge (2026-09-22)
+      - ./command_center/backend/services/installer.py:/app/command_center/backend/services/installer.py:ro
+      - ./command_center/backend/modules/desktop/__init__.py:/app/command_center/backend/modules/desktop/__init__.py:ro
+      # MIA Live-Sitzungen + persistente Sprach/Text-Verlaeufe (2026-09-22)
+      - ./command_center/backend/modules/live/__init__.py:/app/command_center/backend/modules/live/__init__.py:ro
+      - ./command_center/backend/services/realtime.py:/app/command_center/backend/services/realtime.py:ro
+      - ./command_center/backend/services/realtime_gemini.py:/app/command_center/backend/services/realtime_gemini.py:ro
+      - ./command_center/backend/static:/app/command_center/backend/static:ro
+      - ./command_center/backend/modules/chat/__init__.py:/app/command_center/backend/modules/chat/__init__.py:ro
+      - ./command_center/backend/modules/auth/__init__.py:/app/command_center/backend/modules/auth/__init__.py:ro
+      # Google-Kalender lesen UND schreiben (2026-09-20), Zeit in Berlin. Ebenfalls ohne Neubau eingehaengt.
+      - ./command_center/backend/services/calendar_service.py:/app/command_center/backend/services/calendar_service.py:ro
+      - ./command_center/backend/modules/calendar/__init__.py:/app/command_center/backend/modules/calendar/__init__.py:ro
+      - ./command_center/backend/modules/heartbeat/__init__.py:/app/command_center/backend/modules/heartbeat/__init__.py:ro
+      # Buchhalter-Agent (2026-09-20): Lexware-Client und -Werkzeuge, Belegleser, Anhaenge aus Mails, Postfach-Ueberwachung.
+      - ./command_center/backend/services/lexware.py:/app/command_center/backend/services/lexware.py:ro
+      - ./command_center/backend/services/beleg_reader.py:/app/command_center/backend/services/beleg_reader.py:ro
+      - ./command_center/backend/services/email_service.py:/app/command_center/backend/services/email_service.py:ro
+      - ./command_center/backend/orchestrator/lexware_tools.py:/app/command_center/backend/orchestrator/lexware_tools.py:ro
+      - ./command_center/backend/modules/buchhaltung/__init__.py:/app/command_center/backend/modules/buchhaltung/__init__.py:ro
+      # Spracherkennung mit Wortvorrat-Hinweis (2026-09-20)
+      - ./command_center/backend/services/voice_service.py:/app/command_center/backend/services/voice_service.py:ro
+      # Standort/Puenktlichkeit (2026-09-20)
+      - ./command_center/backend/modules/standort/__init__.py:/app/command_center/backend/modules/standort/__init__.py:ro
+      - ./command_center/backend/modules/meldungen/__init__.py:/app/command_center/backend/modules/meldungen/__init__.py:ro
+      - ./command_center/backend/services/notifications.py:/app/command_center/backend/services/notifications.py:ro
+      - ./command_center/backend/services/phone.py:/app/command_center/backend/services/phone.py:ro
+      - ./command_center/backend/modules/__init__.py:/app/command_center/backend/modules/__init__.py:ro
+      # Der lokale Kalender-Spiegel gehoert aufs dauerhafte Volume: sonst ist er nach jedem Neustart leer und alle
+      # Kategorien werden neu per Sprachmodell bestimmt (kostet Geld und dauert).
+      - /var/lib/docker/volumes/jarvis_jarvis-cc-data/_data/calendar:/app/memory/calendar
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
       interval: 30s
@@ -68,6 +124,27 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
+
+  mia-core-watchdog:
+    image: jarvis-command-center:latest
+    container_name: mia-core-watchdog
+    restart: unless-stopped
+    user: root
+    command: ["python", "/watchdog.py"]
+    group_add:
+      - "${JARVIS_CC_DOCKER_GID:-65534}"
+    networks:
+      - default
+    volumes:
+      - jarvis-cc-data:/data
+      - ${JARVIS_CC_SOURCE_MOUNT:-.}:/repo
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - ./command_center/core_watchdog.py:/watchdog.py:ro
+    depends_on:
+      - jarvis-command-center
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
 
   # ── Ollama im selben Netz ───────────────────────────────────────────────
   # Aus, bis man es ausdrücklich will:

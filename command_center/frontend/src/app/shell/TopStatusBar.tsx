@@ -42,7 +42,7 @@ export function TopStatusBar() {
   return (
     <header className="topbar" role="banner">
       <div className="status-group">
-        <span className="chip hero"><StatusIndicator status={conn.state === "online" ? "ok" : conn.state === "offline" ? "err" : "warn"} live={conn.state !== "online"} />{conn.state === "online" ? "JARVIS ONLINE" : conn.state === "offline" ? "JARVIS OFFLINE" : "VERBINDE NEU"}</span>
+        <span className="chip hero"><StatusIndicator status={conn.state === "online" ? "ok" : conn.state === "offline" ? "err" : "warn"} live={conn.state !== "online"} />{conn.state === "online" ? "MIA ONLINE" : conn.state === "offline" ? "MIA OFFLINE" : "VERBINDE NEU"}</span>
         <span className="sep desktop-only" />
         <span className="chip desktop-only" title={master?.error || master?.provider?.label || ""}><StatusIndicator status={masterTone} live={!!master?.active_runs?.length} />{label || (master ? (master.online ? (master.active_runs?.length ? "MASTER AGENT ARBEITET" : "MASTER AGENT BEREIT") : "MASTER AGENT OFFLINE") : "…")}</span>
         <span className="sep desktop-only" />

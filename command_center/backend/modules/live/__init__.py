@@ -65,6 +65,13 @@ async def live(ws: WebSocket):
         return
 
     await ws.accept()
+    conversation_id = str(ws.query_params.get("conversation_id") or "").strip()
+    if conversation_id:
+        conv = state.services["chat"].get_conversation(conversation_id, principal.id)
+        if not conv:
+            await ws.send_text(json.dumps({"type": "jarvis.unavailable", "detail": "Sitzung nicht gefunden."}))
+            await ws.close(code=4404)
+            return
     realtime = _provider()
     if not realtime.configured():
         await ws.send_text(json.dumps({"type": "jarvis.unavailable",
@@ -73,8 +80,21 @@ async def live(ws: WebSocket):
         return
 
     instructions = state.runtime.live_instructions(principal)
+    if conversation_id:
+        history = state.services["chat"].messages(conversation_id, limit=30)
+        if history:
+            context = "\n".join(
+                f"{'NUTZER' if m.get('role') == 'user' else 'MIA'}: {m.get('content','')[:1200]}"
+                for m in history
+                if m.get("role") in ("user", "assistant") and m.get("content")
+            )
+            instructions += (
+                "\n\nDIESE LIVE-LEITUNG GEHÖRT ZUR GESPEICHERTEN MIA-SITZUNG. "
+                "Sprache und getippter Text sind dieselbe Sitzung. "
+                "Nutze diesen bisherigen Verlauf als Kontext:\n" + context[-12000:]
+            )
     session = realtime.RealtimeSession(
-        state, principal, instructions=instructions,
+        state, principal, instructions=instructions, conversation_id=conversation_id,
         send_down=lambda ev: ws.send_text(json.dumps(ev)))
 
     try:

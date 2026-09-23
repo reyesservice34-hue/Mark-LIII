@@ -76,3 +76,19 @@ command_center/frontend/dist/
 command_center/backend/static/
 # sqlite db, workspace, secret.key
 data/
+# runtime backups left by change-tracking scripts and manual snapshots
+.deploy-backups/
+.mia-backups/
+.mia-change-backups/
+docker-compose.command-center.yml.bak-*
+docker-compose.command-center.yml.backup-*
+docker-compose.command-center.yml.pre-*
+**/*.bak-*
+**/*.bak
+**/*.backup-*
+**/*pre-mark-*
+**/*pre-mia-*
+**/*pre-source-*
+command_center/backend/static.pre-mia-*/
+# user file uploads (runtime data, not source)
+uploads/

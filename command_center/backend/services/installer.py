@@ -56,110 +56,62 @@ def branch() -> str:
 
 
 def powershell(server_url: str, token: str, device_name: str = "") -> str:
-    """Das Windows-Skript, mit Adresse und Token schon eingesetzt."""
-    repo = repo_url()
-    zweig = branch()
-    zip_url = f"{repo}/archive/refs/heads/{zweig}.zip"
-    name_zeile = f'$DeviceName = "{device_name}"' if device_name else '$DeviceName = $env:COMPUTERNAME'
-    return f"""# JARVIS auf diesem Rechner einrichten.
+    """Install the current MIA desktop bridge directly from this server."""
+    name_line = f'$DeviceName = "{device_name}"' if device_name else '$DeviceName = $env:COMPUTERNAME'
+    return f"""# MIA Windows Bridge installieren.
 # Erzeugt vom Server {server_url}. Enthaelt dein Geraetetoken - nicht weitergeben.
 $ErrorActionPreference = "Stop"
-
 $Server = "{server_url}"
 $Token  = "{token}"
-{name_zeile}
-$Ziel   = "$env:USERPROFILE\\JARVIS"
+{name_line}
+$Ziel   = "$env:USERPROFILE\\MIA"
+$Bundle = "$Server/api/desktop/bundle.zip?token=$([uri]::EscapeDataString($Token))"
 
 Write-Host ""
-Write-Host "  JARVIS wird eingerichtet" -ForegroundColor Cyan
+Write-Host "  MIA Windows Bridge wird eingerichtet" -ForegroundColor Cyan
 Write-Host "  Server: $Server"
 Write-Host "  Geraet: $DeviceName"
-Write-Host ""
 
-# 1. Python - wir installieren es nicht selbst, das gehoert dir.
 $py = Get-Command python -ErrorAction SilentlyContinue
-if (-not $py) {{
-    Write-Host "  Python fehlt." -ForegroundColor Red
-    Write-Host ""
-    Write-Host "  1. https://www.python.org/downloads/ oeffnen"
-    Write-Host "  2. Herunterladen und installieren"
-    Write-Host "  3. WICHTIG: 'Add python.exe to PATH' ankreuzen"
-    Write-Host "  4. Neues Fenster oeffnen und diesen Befehl erneut einfuegen"
-    Write-Host ""
-    return
-}}
-Write-Host "  [ok] Python gefunden: $((python --version 2>&1))"
+if (-not $py) {{ throw "Python fehlt oder ist nicht im PATH." }}
+Write-Host "  [ok] $((python --version 2>&1))"
 
-# 2. Quelltext holen - als ZIP, damit kein git noetig ist.
-$tmp = Join-Path $env:TEMP "jarvis-setup.zip"
-Write-Host "  ... lade JARVIS herunter"
-try {{
-    Invoke-WebRequest -Uri "{zip_url}" -OutFile $tmp -UseBasicParsing
-}} catch {{
-    Write-Host "  Download fehlgeschlagen: $_" -ForegroundColor Red
-    Write-Host "  Erreichbar? {zip_url}"
-    return
-}}
-
-if (Test-Path $Ziel) {{
-    $sicher = "$Ziel-alt-$(Get-Date -Format yyyyMMdd-HHmmss)"
-    Write-Host "  ... vorhandene Installation beiseite gelegt: $sicher"
-    Move-Item $Ziel $sicher
-}}
-$aus = Join-Path $env:TEMP "jarvis-entpackt"
+$tmp = Join-Path $env:TEMP "mia-desktop.zip"
+$aus = Join-Path $env:TEMP "mia-desktop-entpackt"
+Invoke-WebRequest -Uri $Bundle -OutFile $tmp -UseBasicParsing
 if (Test-Path $aus) {{ Remove-Item $aus -Recurse -Force }}
 Expand-Archive -Path $tmp -DestinationPath $aus -Force
-$inner = Get-ChildItem $aus | Select-Object -First 1
-Move-Item $inner.FullName $Ziel
-Remove-Item $tmp, $aus -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host "  [ok] entpackt nach $Ziel"
-
-# 3. Abhaengigkeiten.
-Set-Location $Ziel
-Write-Host "  ... installiere Abhaengigkeiten (das dauert einen Moment)"
-python -m pip install --quiet --upgrade pip 2>&1 | Out-Null
-python -m pip install --quiet -r requirements.txt
-if ($LASTEXITCODE -ne 0) {{
-    Write-Host "  Einige Abhaengigkeiten fehlen. JARVIS startet trotzdem," -ForegroundColor Yellow
-    Write-Host "  einzelne Faehigkeiten koennen aber fehlen."
-}} else {{
-    Write-Host "  [ok] Abhaengigkeiten installiert"
+if (Test-Path $Ziel) {{
+  $sicher = "$Ziel-alt-$(Get-Date -Format yyyyMMdd-HHmmss)"
+  Move-Item $Ziel $sicher
+  Write-Host "  [ok] alte Installation gesichert: $sicher"
 }}
+Move-Item $aus $Ziel
+Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+Set-Location $Ziel
 
-# 4. Token eintragen - dorthin, wo der Desktop es sucht.
+python -m pip install --quiet -r requirements.txt
 New-Item -ItemType Directory -Force -Path "$Ziel\\config" | Out-Null
 $cfgPfad = "$Ziel\\config\\api_keys.json"
-$cfg = @{{}}
-if (Test-Path $cfgPfad) {{
-    try {{ $cfg = Get-Content $cfgPfad -Raw | ConvertFrom-Json -AsHashtable }} catch {{ $cfg = @{{}} }}
+$cfg = @{{
+  "JARVIS_GATEWAY_URL" = $Server
+  "JARVIS_GATEWAY_TOKEN" = $Token
+  "JARVIS_DEVICE_NAME" = $DeviceName
+  "jarvis_gateway_url" = $Server
+  "jarvis_gateway_token" = $Token
+  "desktop_device_name" = $DeviceName
 }}
-$cfg["JARVIS_GATEWAY_URL"]   = $Server
-$cfg["JARVIS_GATEWAY_TOKEN"] = $Token
-$cfg["JARVIS_DEVICE_NAME"]   = $DeviceName
 $cfg | ConvertTo-Json -Depth 5 | Set-Content $cfgPfad -Encoding UTF8
-Write-Host "  [ok] Geraetetoken eingetragen"
 
-# 5. Nachsehen, ob der Server wirklich antwortet - statt es zu behaupten.
-Write-Host "  ... pruefe die Verbindung"
-try {{
-    $r = Invoke-RestMethod -Uri "$Server/api/health" -TimeoutSec 15 -UseBasicParsing
-    Write-Host "  [ok] Server antwortet (Zustand: $($r.status))" -ForegroundColor Green
-}} catch {{
-    Write-Host "  Server nicht erreichbar: $_" -ForegroundColor Yellow
-    Write-Host "  Eingerichtet ist trotzdem alles - spaeter mit PRUEFEN.bat nachsehen."
-}}
-
-# 6. Autostart, wenn gewuenscht.
-if ($env:JARVIS_AUTOSTART -eq "1") {{
-    python autostart.py an
-}}
-
+Write-Host "  [ok] Verbindung eingerichtet"
+& powershell -ExecutionPolicy Bypass -File "$Ziel\\MIA.ps1" status
 Write-Host ""
-Write-Host "  Fertig." -ForegroundColor Green
-Write-Host ""
-Write-Host "  Starten:        $Ziel\\JARVIS.bat"
-Write-Host "  Dauerhaft an:   python $Ziel\\autostart.py an"
-Write-Host "  Nachsehen:      $Ziel\\PRUEFEN.bat"
+Write-Host "  Steuerung:" -ForegroundColor Cyan
+Write-Host "    powershell -File $Ziel\\MIA.ps1 start"
+Write-Host "    powershell -File $Ziel\\MIA.ps1 stop"
+Write-Host "    powershell -File $Ziel\\MIA.ps1 status"
+Write-Host "    powershell -File $Ziel\\MIA.ps1 repair"
+Write-Host "    powershell -File $Ziel\\MIA.ps1 autostart-on"
 Write-Host ""
 """
 

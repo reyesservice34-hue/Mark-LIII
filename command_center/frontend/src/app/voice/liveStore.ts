@@ -23,9 +23,11 @@ export interface LiveSnapshot {
   /** Warum die Leitung nicht zustande kam — leer, solange alles geht. */
   error: string;
   open: boolean;
+  muted: boolean;
+  conversationId: string;
 }
 
-const EMPTY: LiveSnapshot = { phase: "closed", heard: "", said: "", tools: [], error: "", open: false };
+const EMPTY: LiveSnapshot = { phase: "closed", heard: "", said: "", tools: [], error: "", open: false, muted: false, conversationId: "" };
 
 let snapshot: LiveSnapshot = EMPTY;
 let line: LiveLine | null = null;
@@ -34,6 +36,10 @@ const listeners = new Set<() => void>();
 function set(patch: Partial<LiveSnapshot>) {
   snapshot = { ...snapshot, ...patch };
   listeners.forEach((l) => l());
+  if (typeof window !== "undefined") {
+    const level = snapshot.phase === "speaking" ? 0.72 : snapshot.phase === "thinking" ? 0.48 : snapshot.phase === "listening" ? 0.28 : 0.08;
+    window.postMessage({ jarvis: "live", state: snapshot.phase === "closed" ? "idle" : snapshot.phase, level }, window.location.origin);
+  }
 }
 
 function subscribe(l: () => void) {
@@ -54,23 +60,23 @@ export function isLineOpen(): boolean {
  * Leitung öffnen. Ein zweiter Aufruf, während sie schon steht, tut nichts —
  * zwei offene Mikrofone auf dieselbe Sitzung wären nur Rückkopplung.
  */
-export async function openLine(): Promise<void> {
+export async function openLine(conversationId = ""): Promise<void> {
   if (snapshot.open || snapshot.phase === "connecting") return;
-  set({ heard: "", said: "", tools: [], error: "", phase: "connecting", open: true });
+  set({ heard: "", said: "", tools: [], error: "", phase: "connecting", open: true, muted: false, conversationId });
   const l = new LiveLine({
     onState: (phase) => set({ phase, open: phase !== "closed" }),
     onHeard: (heard) => set({ heard, said: "" }),
     onSaid: (said) => set({ said }),
     onTool: (name, ok) => set({ tools: [...snapshot.tools.slice(-4), { name, ok }] }),
     onError: (error) => set({ error }),
-    onClose: () => { line = null; set({ phase: "closed", open: false }); },
-  });
+    onClose: () => { line = null; set({ phase: "closed", open: false, muted: false }); },
+  }, conversationId);
   line = l;
   try {
     await l.start();
   } catch (e: any) {
     line = null;
-    set({ phase: "closed", open: false, error: e?.message || "Die Leitung kam nicht zustande." });
+    set({ phase: "closed", open: false, muted: false, error: e?.message || "Die Leitung kam nicht zustande." });
     throw e;
   }
 }
@@ -79,7 +85,17 @@ export async function closeLine(): Promise<void> {
   const l = line;
   line = null;
   await l?.stop();
-  set({ phase: "closed", open: false });
+  set({ phase: "closed", open: false, muted: false, conversationId: "" });
+}
+
+export function setLineMuted(muted: boolean): void {
+  if (!line || !snapshot.open) return;
+  line.setMuted(muted);
+  set({ muted });
+}
+
+export function toggleLineMuted(): void {
+  setLineMuted(!snapshot.muted);
 }
 
 /** Etwas Getipptes einwerfen, ohne zu sprechen. */

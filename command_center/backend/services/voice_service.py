@@ -51,6 +51,8 @@ _EXT = {"audio/webm": "webm", "video/webm": "webm", "audio/ogg": "ogg", "audio/m
         "audio/x-wav": "wav", "audio/wave": "wav", "audio/flac": "flac"}
 
 
+DEFAULT_STT_PROMPT = "Mia, Master, Reyes Service, Lexware, Umsatzsteuer-Voranmeldung, Beleg, Baustelle, Kalender, Neuberg, Karben."
+
 class VoiceError(Exception):
     """Something the user needs to hear, phrased plainly."""
 
@@ -85,6 +87,7 @@ class VoiceService:
         # models via OpenRouter) only speak raw pcm — set this to "pcm" for
         # those and the response is wrapped into a WAV header below.
         self.tts_format = _env("JARVIS_CC_TTS_FORMAT", "mp3")
+        self.tts_speed = _env("JARVIS_CC_TTS_SPEED")
         self.language = _env("JARVIS_CC_STT_LANGUAGE")
         self.eleven_key = _env("ELEVENLABS_API_KEY")
         self.eleven_voice = _env("ELEVENLABS_VOICE_ID")
@@ -209,6 +212,13 @@ class VoiceService:
         lang = language or self.language
         if lang:
             data["language"] = lang
+        # Ein Wortvorrat als Hinweis: Das kleine Erkennungsmodell versteht „Jarvis“ sonst als „ja, Wiss“ und „Lexware“ als
+        # „Lex wer“. Gemessen: mit Hinweis kamen Jarvis, Voranmeldung, Lexware und Neuberg richtig an. Abschalten oder ändern:
+        # JARVIS_CC_STT_PROMPT (leer = aus).
+        hint = os.environ.get("JARVIS_CC_STT_PROMPT")
+        hint = DEFAULT_STT_PROMPT if hint is None else hint.strip()
+        if hint:
+            data["prompt"] = hint
         headers = {"Authorization": f"Bearer {self.stt_key}"} if self.stt_key else {}
         try:
             async with httpx.AsyncClient(timeout=120.0) as c:
@@ -244,6 +254,8 @@ class VoiceService:
         headers = {"Authorization": f"Bearer {self.tts_key}"} if self.tts_key else {}
         body = {"model": self.tts_model, "voice": voice or self.tts_voice, "input": text,
                 "response_format": self.tts_format}
+        if self.tts_speed:
+            body["speed"] = float(self.tts_speed)
         try:
             async with httpx.AsyncClient(timeout=120.0) as c:
                 r = await c.post(_endpoint(self.tts_url, "/audio/speech"), json=body, headers=headers)

@@ -61,9 +61,15 @@ VOICE_HINT = (
     "Server, Dateien, Desktop, Code, Automatisierung), lade sie mit tools.load nach."
 )
 
+LAZY_HINT = (
+    "\n\nWERKZEUGE: Dir stehen zuerst die häufigsten Werkzeuge zur Verfügung (Gedächtnis, Aufgaben, Kalender, "
+    "E-Mail, Web und was zur Frage passt). Brauchst du weitere (zum Beispiel Server, Dateien, Desktop, Code, "
+    "Automatisierung), lade sie mit tools.load nach."
+)
+
 # Sprachmodus: nicht alle 100 Werkzeuge bei jeder Frage mitschicken (das kostet bei jedem Zug Sekunden). Ein
 # kleiner Grundstock plus die Gruppen, die zur Frage passen; alles Übrige lädt der Agent mit tools.load nach.
-_VOICE_CORE = ("memory.", "think.", "tools.", "task.", "approval.", "notify.user", "dashboard.", "conversation.")
+_VOICE_CORE = ("memory.", "learning.", "think.", "tools.", "task.", "approval.", "notify.user", "dashboard.", "conversation.")
 _VOICE_ALWAYS = ("calendar", "email", "web")
 _VOICE_GROUPS: dict[str, tuple[tuple[str, ...], str]] = {
     "calendar": (("calendar.",), r"termin|kalender|verschieb|erinner|frei|zeit|morgen|heute|woche|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|kollision|uhr"),
@@ -74,7 +80,7 @@ _VOICE_GROUPS: dict[str, tuple[tuple[str, ...], str]] = {
     "desktop": (("desktop.",), r"pc|rechner|desktop|bildschirm|öffne|starte|programm|klick|tipp|schließ|maus"),
     "code": (("github.", "repo.", "source.", "self."), r"github|repo|code|verbesser|erweiter|fähigkeit|änder dich|update"),
     "automation": (("workflow.", "mcp.", "composio."), r"workflow|n8n|automat|verbind|composio"),
-    "learning": (("skill.", "procedure.", "teach."), r"lern|zeig dir|prozedur|skill|beibring"),
+    "learning": (("skill.", "procedure.", "teach.", "learning."), r"lern|wissenslücke|loesungsweg|lösungsweg|fehlerweg|strategie|claude|lehrer|prozedur|skill|beibring"),
     "whatsapp": (("notify.whatsapp",), r"whatsapp"),
     "agents": (("agent.",), r"delegier|spezialist|agent"),
 }
@@ -356,7 +362,7 @@ class MasterRuntime:
         elif active:
             label = "TASK IN PROGRESS"
         else:
-            label = "JARVIS READY"
+            label = "MIA READY"
         return {
             "mode": self.mode, "online": online, "label": label,
             "provider": self.provider.info.public() if self.provider else (
@@ -374,7 +380,7 @@ class MasterRuntime:
         from ..ai.free import FREE_DEEP, FREE_FAST, FreeChain, allow_paid
         from ..ai.openai_compat import OpenAICompatProvider
         base = self.provider
-        if allow_paid() or not isinstance(base, OpenAICompatProvider) or base.info.model.endswith(":free"):
+        if allow_paid() or not isinstance(base, OpenAICompatProvider) or base.info.model.endswith(":free") or any(host in base.base_url.lower() for host in ("127.0.0.1", "localhost", "host.docker.internal", "ollama")):
             return
         self.provider = FreeChain(base, FREE_DEEP, "Kostenlos")
         self.fast_provider = FreeChain(base, FREE_FAST, "Kostenlos (schnell)")
@@ -491,6 +497,21 @@ class MasterRuntime:
             if handle.task_id:
                 tasks.set_status(handle.task_id, "COMPLETED", output=text, note="Task completed")
             st.agents.bump(handle.agent_id, "completed")
+            auto = st.services.get("auto_learning")
+            if auto is not None and handle.depth == 0:
+                try:
+                    goal_text = ""
+                    if user_message:
+                        goal_text = str(user_message.get("content", ""))
+                    elif task:
+                        goal_text = f"{task.get('title','')} {task.get('description','')}".strip()
+                    learned = auto.observe_success(run_id=handle.id, conversation_id=handle.conversation_id or "",
+                                                   task_id=handle.task_id or "", agent_id=handle.agent_id,
+                                                   goal=goal_text)
+                    if learned and learned.get("promoted_skill"):
+                        self._step(handle, "learned", f"Neue Fähigkeit erkannt: {learned['promoted_skill']}")
+                except Exception as learn_err:  # learning must never break completed work
+                    st.log.warning("learning", f"Auto-learning skipped: {learn_err}", run_id=handle.id)
         except asyncio.CancelledError:
             error = "cancelled"
             self._set_status(handle, "cancelled", "Stopped by user")
@@ -570,10 +591,13 @@ class MasterRuntime:
         tools_all = st.tools.for_agent(agent.tools, handle.principal.role)
         if handle.depth >= self.settings.max_delegation_depth:
             tools_all = [t for t in tools_all if t.name != "agent.delegate"]
-        tools = voice_tools(tools_all, goal, handle.loaded) if handle.voice else tools_all
+        lazy = handle.voice or (agent.kind == "master" and os.environ.get("JARVIS_CC_LAZY_TOOLS", "1") != "0")
+        tools = voice_tools(tools_all, goal, handle.loaded) if lazy else tools_all
         system = self._system_prompt(agent, tools)
         if handle.voice:
             system += VOICE_HINT
+        elif lazy:
+            system += LAZY_HINT
         if agent.kind == "master":
             recalled = recall_memory(st, goal)
             try:
@@ -583,6 +607,9 @@ class MasterRuntime:
             except Exception:  # noqa: BLE001
                 semantic = ""
             recalled = "\n\n".join(part for part in (semantic, recalled) if part)
+            learning = st.services.get("learning")
+            experience = learning.context(goal) if learning is not None else ""
+            recalled = "\n\n".join(part for part in (recalled, experience) if part)
             if recalled:
                 system += "\n\n" + recalled
         if self.fast_provider is not None and agent.kind == "master":
@@ -618,7 +645,7 @@ class MasterRuntime:
             stop_reason = "end_turn"
             segment: list[str] = []
             provider = self.provider_for(handle)
-            if handle.voice and steps > 1:
+            if lazy and steps > 1:
                 tool_defs = [t.to_def() for t in voice_tools(tools_all, goal, handle.loaded)] if tool_defs else tool_defs
             async for ev in provider.stream(system=system, messages=messages, tools=tool_defs):
                 if handle.cancel.is_set():
@@ -869,6 +896,13 @@ class MasterRuntime:
                          "task with task.create first, then do the work. High-risk tools pause for the "
                          "user's approval automatically — explain the reason in the 'reason' argument.")
             parts.append(
+                "MIA LEARNING ENGINE: learn continuously, but only from evidence. There are four layers. "
+                "KNOWLEDGE = factual/reference material; use knowledge.search/open before guessing. "
+                "SKILLS = reusable how-to instructions; open an existing skill before this kind of work and use skill.save after a new workflow has been demonstrated or independently verified. "
+                "EXPERIENCE = solutions, failures, preferences and strategies; learning.search is your first stop before retrying a familiar problem, and record durable lessons after verification. "
+                "CORE EVOLUTION = changes to your own source/orchestration. You may inspect, propose and test such improvements, but NEVER activate a core change on your own. A core change is only eligible when it demonstrably adds capability or improves reliability, speed or cost without regression. Build/test it in isolation first, compare old vs new, create a rollback point, then request the user's explicit approval through the existing approval-gated self tools. Security rules, approval gates and owner authority are not self-editable constraints. "
+                "When Claude Code, another specialist, a user demonstration, documentation or the web teaches you something useful, extract the transferable lesson instead of merely copying an answer. Store facts as knowledge, repeatable methods as skills/procedures, and failures/solutions as experience. Never store unverified web claims as trusted knowledge or skills.")
+            parts.append(
                 "THE USER'S PC: when they ask you to open, close or drive something on their computer, use "
                 "desktop.open_app or desktop.run — the paired desktop carries it out. Check desktop.devices "
                 "first if you are unsure which machine or which action exists. If no desktop is online, say "
@@ -929,7 +963,7 @@ class MasterRuntime:
         if core:
             parts.append(core)
         parts.append(
-            "OPERATING CONTEXT: You run inside the JARVIS Command Center on the user's server. The user "
+            "OPERATING CONTEXT: You run inside the MIA Command Center on the user's server. The user "
             "watches a live dashboard: every tool call, task and approval you trigger is visible there. "
             "Tool results are ground truth — never claim an action happened unless a tool confirmed it. "
             "If a tool is unavailable or an action is rejected, say so plainly. Use Markdown for structure "

@@ -32,7 +32,7 @@ def allow_paid() -> bool:
 
 def free_or(model: str, chain: list[str] | None = None) -> str:
     """Bezahltes Modell nur, wenn erlaubt; sonst das erste kostenlose der Kette."""
-    if allow_paid() or model.endswith(":free"):
+    if allow_paid() or model.endswith(":free") or any(host in os.environ.get("LOCAL_LLM_URL", "").lower() for host in ("127.0.0.1", "localhost", "host.docker.internal", "ollama")):
         return model
     return (chain or FREE_FAST)[0]
 

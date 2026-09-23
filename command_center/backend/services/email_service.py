@@ -227,7 +227,7 @@ class EmailService:
                             "For Gmail or Outlook an app password is usually required.")
         return conn
 
-    def _fetch_sync(self, acc: Account, criterion: str, limit: int, with_body: bool, folder: str) -> list[dict]:
+    def _fetch_sync(self, acc: Account, criterion: str, limit: int, with_body: bool, folder: str, cap: int = MAX_RESULTS) -> list[dict]:
         conn = self._connect(acc)
         try:
             typ, _ = conn.select(folder, readonly=True)   # nur lesen: nichts wird als „gelesen“ markiert
@@ -238,7 +238,7 @@ class EmailService:
                 raise MailError("The mail server did not accept that search.")
             ids = (data[0] or b"").split()
             out: list[dict] = []
-            for num in reversed(ids[-max(1, min(limit, MAX_RESULTS)):]):
+            for num in reversed(ids[-max(1, min(limit, cap)):]):
                 typ, raw = conn.fetch(num, "(RFC822)")
                 if typ != "OK" or not raw or not raw[0]:
                     continue
@@ -269,13 +269,13 @@ class EmailService:
             except Exception:
                 pass
 
-    async def _gather(self, account: str, criterion: str, limit: int, with_body: bool, folder: str) -> list[dict]:
+    async def _gather(self, account: str, criterion: str, limit: int, with_body: bool, folder: str, cap: int = MAX_RESULTS) -> list[dict]:
         """Ein Postfach, oder — ohne Angabe — alle, jeweils mit Herkunft."""
         if not self.accounts:
             self._pick(account)   # wirft die passende Fehlermeldung
         accs = [self._pick(account)] if account else list(self.accounts.values())
         results = await asyncio.gather(
-            *[asyncio.to_thread(self._fetch_sync, a, criterion, limit, with_body, folder) for a in accs],
+            *[asyncio.to_thread(self._fetch_sync, a, criterion, limit, with_body, folder, cap) for a in accs],
             return_exceptions=True)
         out: list[dict] = []
         errors: list[str] = []
@@ -301,6 +301,86 @@ class EmailService:
             return await self.recent(limit, folder, account)
         criterion = f'(OR OR SUBJECT "{safe}" FROM "{safe}" BODY "{safe}")'
         return await self._gather(account, criterion, limit, with_body, folder)
+
+    # ── Belege eines Zeitraums (Vollständigkeitsprüfung) ─────
+    _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+    @classmethod
+    def imap_date(cls, d) -> str:
+        """IMAP verlangt englische Monatsnamen, unabhängig von der Spracheinstellung des Servers."""
+        return f"{d.day:02d}-{cls._MONTHS[d.month - 1]}-{d.year}"
+
+    async def attachments_between(self, date_from, date_to, account: str = "", folder: str = "INBOX", limit: int = 200) -> list[dict]:
+        """Alle Mails von date_from bis einschließlich date_to, die eine Belegdatei (pdf, png, jpg, xml) anhängen.
+
+        Gedacht für die Frage „ist im Monat kein Beleg liegen geblieben?“; die Mails werden nur gelesen. Die Antwort nennt
+        auch, wie viele Mails im Zeitraum insgesamt da waren und ob die Obergrenze erreicht wurde, damit nichts still fehlt.
+        """
+        import datetime as dt
+        criterion = f"(SINCE {self.imap_date(date_from)} BEFORE {self.imap_date(date_to + dt.timedelta(days=1))})"
+        items = await self._gather(account, criterion, limit, False, folder, cap=limit)
+        hits = [m for m in items if any(a.lower().endswith(self.ATTACH_TYPES) for a in m.get("attachments", []))]
+        return [{"account": m["account"], "message_id": m["message_id"], "from": m["from"], "subject": m["subject"], "date": m["date"],
+                 "attachments": m["attachments"]} for m in hits] + [{"_summary": {"mails_im_zeitraum": len(items), "mit_beleg": len(hits),
+                                                                                 "obergrenze_erreicht": len(items) >= limit}}]
+
+    # ── Anhänge speichern (Belege) ───────────────────────────
+    ATTACH_TYPES = (".pdf", ".png", ".jpg", ".jpeg", ".xml")
+    ATTACH_MAX = 10 * 1024 * 1024
+
+    def _save_sync(self, acc: Account, message_id: str, folder: str, dest, tag: str) -> list[dict]:
+        """Die Belegdateien EINER Mail (gesucht nach Message-ID) in den Zielordner legen. Nur lesen am Server."""
+        import hashlib
+        from pathlib import Path
+        safe_id = re.sub(r'["\\\r\n]', " ", message_id).strip()
+        if not safe_id:
+            raise MailError("Ohne Message-ID kann keine Mail gefunden werden.")
+        conn = self._connect(acc)
+        try:
+            typ, _ = conn.select(folder, readonly=True)
+            if typ != "OK":
+                raise MailError(f"The mailbox has no folder '{folder}'.")
+            typ, data = conn.search(None, f'(HEADER Message-ID "{safe_id}")')
+            ids = (data[0] or b"").split() if typ == "OK" else []
+            if not ids:
+                raise MailError("Diese Mail wurde im Postfach nicht gefunden.")
+            typ, raw = conn.fetch(ids[-1], "(RFC822)")
+            if typ != "OK" or not raw or not raw[0]:
+                raise MailError("Die Mail konnte nicht geladen werden.")
+            msg = email_mod.message_from_bytes(raw[0][1])
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            try:
+                conn.logout()
+            except Exception:
+                pass
+        dest = Path(dest)
+        dest.mkdir(parents=True, exist_ok=True)
+        saved: list[dict] = []
+        for part in msg.walk():
+            name = _decode(part.get_filename() or "")
+            if not name or part.get_content_maintype() == "multipart":
+                continue
+            ext = Path(name).suffix.lower()
+            if ext not in self.ATTACH_TYPES:
+                continue
+            payload = part.get_payload(decode=True) or b""
+            if not payload or len(payload) > self.ATTACH_MAX:
+                continue
+            stem = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(name).stem)[:60] or "beleg"
+            digest = hashlib.sha256(payload).hexdigest()
+            target = dest / f"{tag}_{digest[:8]}_{stem}{ext}"
+            if not target.exists():
+                target.write_bytes(payload)
+            saved.append({"file": target, "name": name, "bytes": len(payload), "sha256": digest})
+        return saved
+
+    async def save_attachments(self, message_id: str, dest, tag: str, folder: str = "INBOX", account: str = "") -> list[dict]:
+        acc = self._pick(account)
+        return await asyncio.to_thread(self._save_sync, acc, message_id, folder, dest, tag)
 
     async def read(self, query: str, folder: str = "INBOX", account: str = "") -> dict:
         items = await self.search(query, limit=3, folder=folder, with_body=True, account=account)

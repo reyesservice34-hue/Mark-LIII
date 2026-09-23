@@ -34,7 +34,36 @@ class NotificationService:
         out = self._row(row)
         self.bus.publish("notification.created", out,
                          user_id=None if out["user_id"] == "*" else out["user_id"])
+        self._maybe_push(out, meta or {})
         return out
+
+    def _maybe_push(self, out: dict, meta: dict) -> None:
+        """Wichtiges zusätzlich aufs Handy (ntfy): Warnungen, Fehler, Freigaben und alles, was ein Agent ausdrücklich meldet.
+
+        Nicht doppelt: Meldungen der Kategorie „system“ (Herzschlag, Standort) schicken ihren Push selbst. Ohne laufende Ereignisschleife
+        (Tests, Skripte) oder ohne eingerichtetes Thema passiert nichts. Abschalten: JARVIS_CC_PUSH_MIN=off.
+        """
+        import asyncio
+        import os
+        mn = os.environ.get("JARVIS_CC_PUSH_MIN", "warning").strip().lower()
+        if mn == "off" or out["category"] == "system" or meta.get("push") is False:
+            return
+        want = bool(meta.get("push")) or SEVERITIES.index(out["severity"]) >= SEVERITIES.index(mn if mn in SEVERITIES else "warning")
+        if not want:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        try:
+            from ..modules.heartbeat import push
+            loop.create_task(push("Jarvis: " + out["title"][:70], out["body"] or out["title"], out["severity"]))
+            if out["severity"] == "critical" and meta.get("call") is not False:
+                from . import phone
+                if phone.auto_min() != "off" and phone.configured():          # dringend: zusätzlich anrufen (mit Abkühlzeit)
+                    loop.create_task(phone.call(f'{out["title"]}. {out["body"]}'.strip()))
+        except Exception:  # noqa: BLE001  — ein Push darf nie eine Meldung verhindern
+            pass
 
     def list(self, user_id: str, *, unread_only: bool = False, category: str = "",
              limit: int = 100, before: str = "") -> list[dict]:

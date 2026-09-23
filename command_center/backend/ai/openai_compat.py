@@ -25,7 +25,7 @@ class OpenAICompatProvider:
                                  label=f"{'OpenAI' if provider_id == 'openai' else 'Local model'} · {model}")
 
     def _headers(self) -> dict:
-        h = {"Content-Type": "application/json"}
+        h = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (compatible; jarvis-cc/1.0)"}
         if self.api_key:
             h["Authorization"] = f"Bearer {self.api_key}"
         return h
@@ -75,6 +75,8 @@ class OpenAICompatProvider:
             "model": self.info.model, "stream": True, "max_tokens": max_tokens,
             "messages": self._convert_messages(system, messages, names.wire),
         }
+        if getattr(self, "include_usage", False):
+            body["stream_options"] = {"include_usage": True}
         if tools:
             body["tools"] = [{"type": "function", "function": {
                 "name": names.wire(t.name), "description": t.description,
@@ -198,7 +200,9 @@ class OpenAICompatProvider:
                 return {"status": "offline", "detail": "API key rejected"}
             if r.status_code >= 400:
                 return {"status": "degraded", "detail": f"HTTP {r.status_code} from /models"}
-            ids = [m.get("id") for m in (r.json().get("data") or [])]
+            j = r.json()
+            items = j if isinstance(j, list) else (j.get("data") or [])
+            ids = [m.get("id") for m in items]
             if ids and self.info.model not in ids and not any(
                     str(i).startswith(self.info.model) for i in ids):
                 return {"status": "degraded", "detail": f"model {self.info.model} not listed by server"}

@@ -94,7 +94,7 @@ export function VoiceConsole() {
   if (local && !blocked) {
     return (
       <section className="voice-console vc-embed-wrap" aria-label="Sprachkonsole">
-        <iframe className="vc-embed" src="https://dashboard.jarvis-reyes.de/" title="Jarvis Live-Gespräch"
+        <iframe className="vc-embed" src="https://dashboard.jarvis-reyes.de/" title="MIA Live-Gespräch"
           allow="microphone; autoplay" />
       </section>
     );
@@ -123,7 +123,7 @@ export function VoiceConsole() {
           <p className="vc-blocked">{blocked}</p>
         ) : local ? (
           <p className="vc-hint">
-            Öffne die Live-Seite und sprich. Jarvis hört über die lokale Spracherkennung zu, denkt mit Claude
+            Öffne die Live-Seite und sprich. MIA hört über die lokale Spracherkennung zu, denkt mit Claude
             und antwortet mit seiner Stimme. Fällst du ihm ins Wort, hört er sofort auf.
           </p>
         ) : (

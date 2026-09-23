@@ -34,7 +34,7 @@ export function VoiceControl({ onTranscript }: { onTranscript?: (text: string, s
     : !backend.available ? `Sprache nicht verfügbar: ${backend.reason}`
       : phase === "recording" ? "Aufnahme beenden und übertragen"
         : phase === "transcribing" ? "Übertrage …"
-          : "Sprich mit JARVIS";
+          : "Sprich mit MIA";
 
   const click = async () => {
     if (!backend?.available || phaseRef.current !== "idle") {

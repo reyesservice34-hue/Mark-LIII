@@ -51,6 +51,8 @@ MAX_LIST = 400
 VERBOTEN = (".env", ".git/", "data/", "node_modules/", "__pycache__/",
             "config/api_keys.json", "backend/static/")
 
+EXTERNE_NUR_LESEN_PFADE = ("Mark-LIII", "root/Mark-LIII")
+
 
 class SourceError(Exception):
     pass
@@ -86,6 +88,12 @@ def _pruefe_pfad(rel: str) -> str:
     rel = (rel or "").strip().lstrip("/")
     if not rel:
         raise SourceError("Es fehlt der Pfad der Datei.")
+    if any(rel == prefix or rel.startswith(prefix + "/")
+           for prefix in EXTERNE_NUR_LESEN_PFADE):
+        raise SourceError(
+            f"{rel} gehört zum getrennten Projekt Mark-LIII und ist in MIA nur lesbar. "
+            "Das ist keine fehlende Root- oder Ausführungsberechtigung. Nutze zum Lesen "
+            "source.read bzw. filesystem.read; Änderungen müssen im Projekt selbst erfolgen.")
     root = source_dir()
     if root is None:
         raise SourceError(unavailable_reason())
@@ -130,7 +138,7 @@ class SourceService:
         if root is None:
             raise SourceError(unavailable_reason())
         proc = await asyncio.create_subprocess_exec(
-            "git", *args, cwd=str(root),
+            "git", "-c", f"safe.directory={root}", *args, cwd=str(root),
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "true",
                  "GIT_AUTHOR_NAME": "JARVIS", "GIT_AUTHOR_EMAIL": "jarvis@localhost",
                  "GIT_COMMITTER_NAME": "JARVIS", "GIT_COMMITTER_EMAIL": "jarvis@localhost"},
@@ -216,8 +224,16 @@ class SourceService:
 
         datei = source_dir() / posix                     # type: ignore[operator]
         neu = not datei.exists()
-        datei.parent.mkdir(parents=True, exist_ok=True)
-        datei.write_text(inhalt, encoding="utf-8")
+        try:
+            datei.parent.mkdir(parents=True, exist_ok=True)
+            datei.write_text(inhalt, encoding="utf-8")
+        except PermissionError as exc:
+            raise SourceError(
+                f"Schreibzugriff auf {posix} wurde vom Betriebssystem abgelehnt. "
+                "Das ist ein Schreibrechtefehler des MIA-Dienstkontos, kein Beleg für "
+                "ein Ausführungsverbot. Prüfe Eigentümer und Gruppenrechte von "
+                f"{datei.parent}; führe die Datei nicht in einem anderen Ordner aus. "
+                f"Technisches Detail: {exc}") from None
 
         code, out = await self._git("add", "--", posix)
         if code != 0:

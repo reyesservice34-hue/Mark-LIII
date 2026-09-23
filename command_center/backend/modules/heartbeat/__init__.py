@@ -82,6 +82,23 @@ async def _collect(state: AppState) -> list[dict]:
     except Exception as e:  # noqa: BLE001
         add("brain", "Denken (Master-Agent)", "err", f"nicht erreichbar ({e.__class__.__name__})")
 
+    # ── Guthaben der Zugänge (Kette) ────────────────────────────────────
+    try:
+        prov = state.runtime.provider
+        if hasattr(prov, "budget") and os.environ.get("JARVIS_BUDGET_WATCH", "1") != "0":
+            for b in prov.budget():
+                rem = b.get("remaining_usd")
+                if rem is not None:
+                    lvl = "err" if rem < 0.3 else "warn" if rem < 1.0 else "ok"
+                    add("budget." + b["id"], b["label"] + "-Guthaben", lvl,
+                        f"noch etwa {rem:.2f} $ (geschätzt)" + (", bitte aufladen" if lvl != "ok" else ""))
+                rej = b.get("rejected")
+                if rej and rej["code"] in (401, 402) and time.time() - rej["at"] < 3600:
+                    add("reject." + b["id"], b["label"], "err",
+                        f"Zugang abgelehnt (HTTP {rej['code']}): Guthaben oder Schlüssel prüfen")
+    except Exception:  # noqa: BLE001
+        pass
+
     # ── Container ────────────────────────────────────────────────────────
     try:
         res = await state.services["metrics"].docker_containers(with_stats=False)
@@ -107,18 +124,11 @@ async def _collect(state: AppState) -> list[dict]:
         cal = state.services["calendar"]
         if cal.available():
             events, _backend = await cal.list(days=14)
-            evs = []
-            for e in events:
-                d = e if isinstance(e, dict) else getattr(e, "__dict__", {})
-                if d.get("start") and d.get("end") and "T" in str(d["start"]):
-                    evs.append((str(d["start"]), str(d["end"]), str(d.get("title", "Termin"))))
-            evs.sort()
-            clashes = []
-            for i, a in enumerate(evs):
-                for b in evs[i + 1:]:
-                    if b[0] >= a[1]:
-                        break
-                    clashes.append(f"„{a[2]}“ und „{b[2]}“ am {a[0][8:10]}.{a[0][5:7]}. um {b[0][11:16]} Uhr")
+            from ...services.calendar_service import find_conflicts
+            rows = [e if isinstance(e, dict) else getattr(e, "__dict__", {}) for e in events]
+            # Nur Überschneidungen, die den Nutzer betreffen (siehe calendar_service.find_conflicts).
+            clashes = [f"„{a.get('title', 'Termin')}“ und „{b.get('title', 'Termin')}“ am {str(a['start'])[8:10]}."
+                       f"{str(a['start'])[5:7]}. um {str(b['start'])[11:16]} Uhr" for a, b in find_conflicts(rows)]
             add("cal.overlap", "Terminkollision", "warn" if clashes else "ok",
                 "; ".join(clashes[:3]) if clashes else "keine Überschneidungen in den nächsten 14 Tagen")
     except Exception:  # noqa: BLE001
@@ -183,7 +193,7 @@ async def beat(state: AppState) -> dict:
             _say(f"Gute Nachricht, Master: {c['label']} läuft wieder.", "success")
     while _pending_push:                       # Meldungen dieses Durchlaufs aufs Handy
         text, sev = _pending_push.pop(0)
-        await push("Jarvis", text, sev)
+        await push("Mia", text, sev)
     worst = max((_ORDER[c["level"]] for c in checks), default=0)
     _beat.update(beats=_beat["beats"] + 1, last_at=time.time(), checks=checks,
                  last_duration_ms=int((time.monotonic() - t0) * 1000),
@@ -208,6 +218,16 @@ async def heartbeat(state: AppState = Depends(get_state), _: Principal = Depends
 async def inbox(since: float = 0, _: Principal = Depends(current_principal)):
     """Ungefragte Meldungen seit einem Zeitpunkt — die Live-Konsole holt sie ab und spricht sie aus."""
     return {"now": time.time(), "items": [m for m in _inbox if m["ts"] > since][:3]}
+
+
+@router.post("/kredit")
+async def set_credit(body: dict, state: AppState = Depends(get_state), _: Principal = Depends(require_role("operator"))):
+    """Guthaben eines Zugangs neu setzen, z. B. nach dem Aufladen: {"provider": "together", "usd": 20}."""
+    prov = state.runtime.provider
+    if not hasattr(prov, "set_credit"):
+        return {"ok": False, "detail": "keine Kette aktiv"}
+    prov.set_credit(str(body.get("provider", "")), float(body.get("usd", 0)))
+    return {"ok": True, "budget": prov.budget()}
 
 
 @router.post("/test-push")

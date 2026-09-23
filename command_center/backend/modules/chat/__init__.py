@@ -262,7 +262,7 @@ async def upload_attachment(file: UploadFile = File(...), state: AppState = Depe
 
 
 MODULE = ModuleSpec(
-    id="chat", title="Chat", router=router, icon="message-square", path="/chat", order=20, mobile_priority=100,
-    description="Mit JARVIS sprechen",
-    commands=[{"id": "chat.new", "title": "Talk to JARVIS", "path": "/chat?new=1", "shortcut": "g c"}],
+    id="chat", title="Sitzungsverläufe", router=router, icon="message-square", path="/chat", order=20, nav=True, mobile_priority=100,
+    description="Gespeicherte MIA-Sitzungen und Live-Gespräche",
+    commands=[{"id": "chat.new", "title": "MIA-Sitzung öffnen", "path": "/chat?new=1", "shortcut": "g c"}],
 )

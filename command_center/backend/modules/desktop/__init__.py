@@ -7,6 +7,9 @@ already uses for /v1/commands, so pairing is one token, not two.
 from __future__ import annotations
 
 import os
+import io
+import zipfile
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
@@ -259,6 +262,49 @@ def _server_url(request: Request) -> str:
 def _token_geprueft(state: AppState, token: str) -> None:
     if not token or state.auth.resolve_api_token(token) is None:
         raise HTTPException(status_code=401, detail="Ohne gültiges Gerätetoken gibt es kein Skript.")
+
+
+@router.get("/api/desktop/bundle.zip")
+async def desktop_bundle(token: str = "", state: AppState = Depends(get_state)):
+    """Serve a minimal, current desktop bundle from the active MIA source.
+
+    This deliberately excludes command_center, .env files, runtime data and
+    config/api_keys.json so the desktop gets code, never server secrets.
+    """
+    _token_geprueft(state, token)
+    from ...services.source import source_dir
+    root = source_dir()
+    if root is None:
+        raise HTTPException(status_code=503, detail="MIA source directory is not available.")
+    root = Path(root)
+    include_dirs = ("actions", "core", "plugins", "memory")
+    include_files = {
+        "desktop_agent.py", "desktop_voice.py", "jarvis_desktop.py", "autostart.py",
+        "check_connection.py", "install_desktop.py", "requirements.txt", "ui.py",
+        "MIA.ps1", "MIA-Wake.ps1", "JARVIS.bat", "PRUEFEN.bat", "SPRECHEN.bat", "AUTOSTART.bat"
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name in sorted(include_files):
+            f = root / name
+            if f.is_file():
+                zf.write(f, name)
+        cfg_init = root / "config" / "__init__.py"
+        if cfg_init.is_file():
+            zf.write(cfg_init, "config/__init__.py")
+        for dname in include_dirs:
+            base = root / dname
+            if not base.is_dir():
+                continue
+            for f in base.rglob("*"):
+                if not f.is_file() or "__pycache__" in f.parts:
+                    continue
+                if f.name.lower().endswith((".env", ".key", ".pem")):
+                    continue
+                zf.write(f, f.relative_to(root).as_posix())
+    from fastapi.responses import Response
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": "attachment; filename=mia-desktop.zip"})
 
 
 @router.get("/api/desktop/install.ps1")

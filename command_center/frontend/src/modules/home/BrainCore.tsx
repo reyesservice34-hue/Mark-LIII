@@ -1,6 +1,6 @@
 /**
  * Der Kern: ein goldenes Hologramm in Gehirnform — eine Wolke aus Lichtpunkten mit Längen- und Breitenlinien,
- * Nervenimpulsen, kreisenden Ringen und einer Skala. Wenn JARVIS spricht, pulsiert alles im Rhythmus seiner
+ * Nervenimpulsen, kreisenden Ringen und einer Skala. Wenn MIA spricht, pulsiert alles im Rhythmus seiner
  * echten Stimme: die Live-Konsole meldet Zustand und Lautstärke. Ohne Meldung atmet es nur leise.
  * Bewegung ist Zierde: mit „reduzierte Bewegung" steht es still.
  */
@@ -203,5 +203,5 @@ export function BrainCore({ thinking = false }: { thinking?: boolean }) {
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, []);
 
-  return <canvas ref={ref} className="brain-core" aria-label="JARVIS Kern" role="img" />;
+  return <canvas ref={ref} className="brain-core" aria-label="MIA Kern" role="img" />;
 }

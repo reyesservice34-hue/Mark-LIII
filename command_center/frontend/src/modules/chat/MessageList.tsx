@@ -12,10 +12,11 @@ function Bubble({ m, run, onRegenerate, onRetry, canAct }: { m: Message; run?: R
   const html = useMemo(() => (m.role === "assistant" ? renderMarkdown(m.content) : ""), [m.content, m.role]);
   const steps = run?.steps?.length ? run.steps : m.blocks || [];
   const toolChips = run?.toolCalls || steps.filter((s) => s.kind === "tool_result").map((s) => ({ tool: s.tool || "", ok: s.ok, pending: false, output: "" }));
+  const agentLabel = m.meta?.agent_id === "jarvis" ? "MIA" : m.meta?.agent_id;
   const copy = () => navigator.clipboard?.writeText(m.content).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); });
   return (
     <div className={`msg ${m.role}`}>
-      <div className="msg-avatar" aria-hidden>{m.role === "assistant" ? <Sparkles size={15} /> : m.role === "user" ? "YOU" : "SYS"}</div>
+      <div className="msg-avatar" aria-hidden>{m.role === "assistant" ? <Sparkles size={15} /> : m.role === "user" ? "DU" : "SYS"}</div>
       <div className="msg-body">
         {m.role === "user" && m.meta?.attachments?.length ? (
           <div className="attachments">{m.meta.attachments.map((a) => (
@@ -27,19 +28,19 @@ function Bubble({ m, run, onRegenerate, onRetry, canAct }: { m: Message; run?: R
         {(m.content || streaming) && (
           <div className={`bubble ${m.status === "error" ? "error" : ""}`}>
             {m.role === "assistant" ? <div className="md" dangerouslySetInnerHTML={{ __html: html }} onClick={handleMarkdownClick} /> : m.content}
-            {streaming && <span className="cursor" aria-label="generating" />}
+            {streaming && <span className="cursor" aria-label="Antwort wird erstellt" />}
           </div>
         )}
-        {m.status === "error" && <div className="error-state small">{m.meta?.error || "JARVIS could not complete this request."}{canAct && onRetry && <button className="btn sm" onClick={onRetry}>Retry</button>}</div>}
-        {m.status === "stopped" && <div className="tiny muted">Generation stopped.</div>}
+        {m.status === "error" && <div className="error-state small">{m.meta?.error || "MIA konnte diese Anfrage nicht abschließen."}{canAct && onRetry && <button className="btn sm" onClick={onRetry}>Erneut versuchen</button>}</div>}
+        {m.status === "stopped" && <div className="tiny muted">Antwort wurde abgebrochen.</div>}
         <div className="msg-meta">
           <span>{time(m.created_at)}</span>
-          {m.meta?.agent_id && m.meta.agent_id !== "master" && <span>· {m.meta.agent_id}</span>}
-          {m.meta?.via === "gateway" && <span>· via desktop</span>}
+          {agentLabel && agentLabel !== "master" && <span>· {agentLabel}</span>}
+          {m.meta?.via === "gateway" && <span>· über Desktop</span>}
           {m.meta?.usage?.output_tokens ? <span>· {m.meta.usage.input_tokens}↑ {m.meta.usage.output_tokens}↓ tok</span> : null}
-          {m.content && <button className="btn icon ghost sm" onClick={copy} title="Copy" aria-label="Copy message">{copied ? <Check /> : <Copy />}</button>}
-          {m.role === "assistant" && !streaming && canAct && onRegenerate && <button className="btn icon ghost sm" onClick={onRegenerate} title="Regenerate" aria-label="Regenerate"><RotateCcw /></button>}
-          {steps.length > 0 && <button className="btn ghost sm" onClick={() => setShowSteps((v) => !v)}>{showSteps ? <ChevronUp /> : <ChevronDown />}{steps.length} steps</button>}
+          {m.content && <button className="btn icon ghost sm" onClick={copy} title="Kopieren" aria-label="Nachricht kopieren">{copied ? <Check /> : <Copy />}</button>}
+          {m.role === "assistant" && !streaming && canAct && onRegenerate && <button className="btn icon ghost sm" onClick={onRegenerate} title="Antwort neu erstellen" aria-label="Antwort neu erstellen"><RotateCcw /></button>}
+          {steps.length > 0 && <button className="btn ghost sm" onClick={() => setShowSteps((v) => !v)}>{showSteps ? <ChevronUp /> : <ChevronDown />}{steps.length} Schritte</button>}
         </div>
         {showSteps && <div className="panel" style={{ padding: "6px 0" }}>{steps.map((s, i) => <div key={i} className={`exec-step ${s.kind} ${s.ok === false ? "err" : ""}`}><span className="pin" /><span><span className="t">{s.text}</span> <span className="ts">{time(s.ts)}</span></span></div>)}</div>}
       </div>
