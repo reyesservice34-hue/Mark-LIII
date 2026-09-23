@@ -51,9 +51,56 @@ def is_configured() -> bool:
     return bool(key and len(key) > 15)
 
 
+# ── Assistant identity ───────────────────────────────────────────────────────
+# MIA is the one and only assistant identity. Older installs stored the
+# previous name ("JARVIS") in api_keys.json; those values are treated as unset
+# so they can never reach the system prompt, the HUD or the dashboard again.
+DEFAULT_ASSISTANT_NAME = "MIA"
+_LEGACY_ASSISTANT_NAMES = {"jarvis", "j.a.r.v.i.s", "j.a.r.v.i.s."}
+
+
+def normalize_assistant_name(name) -> str:
+    """Return a usable assistant name: empty or legacy names become MIA."""
+    n = (name or "").strip() if isinstance(name, str) else ""
+    if not n or n.lower() in _LEGACY_ASSISTANT_NAMES:
+        return DEFAULT_ASSISTANT_NAME
+    return n
+
+
+def migrate_assistant_identity() -> bool:
+    """One-time migration of a legacy assistant name stored in api_keys.json.
+
+    Rewrites only the 'assistant_name' field, keeps every other key (API keys,
+    plugin credentials) untouched, and leaves a one-off backup of the original
+    file next to it. Returns True when the file was changed."""
+    if not CONFIG_FILE.exists():
+        return False
+    try:
+        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(data, dict) or "assistant_name" not in data:
+        return False
+    current = data.get("assistant_name")
+    fixed = normalize_assistant_name(current)
+    if current == fixed:
+        return False
+    backup = CONFIG_FILE.with_name(CONFIG_FILE.name + ".pre-mia.bak")
+    try:
+        if not backup.exists():
+            backup.write_text(CONFIG_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+    except Exception as e:
+        print(f"[Config] ⚠️ Could not back up api_keys.json before migration: {e}")
+        return False
+    data["assistant_name"] = fixed
+    CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
+    print(f"[Config] Assistant identity migrated to {fixed}")
+    return True
+
+
 def get_assistant_name() -> str:
-    """Return the configured assistant name, or 'JARVIS' if not set."""
-    return load_api_keys().get("assistant_name", "JARVIS") or "JARVIS"
+    """Return the configured assistant name, or 'MIA' if not set."""
+    return normalize_assistant_name(load_api_keys().get("assistant_name"))
 
 
 def get_user_name() -> str:
@@ -70,7 +117,7 @@ def save_assistant_config(assistant_name: str, user_name: str) -> None:
             data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         except Exception:
             data = {}
-    data["assistant_name"] = assistant_name.strip() or "JARVIS"
+    data["assistant_name"] = normalize_assistant_name(assistant_name)
     data["user_name"] = user_name.strip()
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
 
@@ -105,7 +152,7 @@ def save_voice(voice_name: str) -> None:
 
 
 def get_wake_word_enabled() -> bool:
-    """Whether local wake-word gating is on (assistant sleeps until 'Hey Jarvis')."""
+    """Whether local wake-word gating is on (assistant sleeps until the wake phrase)."""
     return load_api_keys().get("wake_word_enabled", False)
 
 

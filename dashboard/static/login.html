@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>JARVIS</title>
+  <title>MIA</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -195,7 +195,7 @@
     <div class="logo"><em>J</em>ARVIS</div>
     <div class="sub">Remote Access</div>
     <p id="reconnecting">Reconnecting…</p>
-    <p class="hint">Press <strong style="color:var(--text)">Remote Control</strong> in the JARVIS desktop app to get a QR code or session key.</p>
+    <p class="hint">Press <strong style="color:var(--text)">Remote Control</strong> in the MIA desktop app to get a QR code or session key.</p>
     <div class="key-wrap">
       <input class="key-input" id="key" type="text" maxlength="6"
              autocomplete="off" autocorrect="off" spellcheck="false"
@@ -206,15 +206,20 @@
     <p class="voice-note">
       🎤 <strong style="color:var(--text)">Voice commands:</strong> open
       <code>chrome://flags</code> on your phone, search
-      <code>Insecure origins treated as secure</code>, add your JARVIS URL, tap Relaunch.
+      <code>Insecure origins treated as secure</code>, add your MIA URL, tap Relaunch.
     </p>
   </div>
 
   <script>
     // Try auto-reconnect with stored device token (set on first QR login)
     (async function() {
-      const devTok = localStorage.getItem('jarvis_device_token');
+      // 'jarvis_device_token' is the key older pages stored — read it once so a
+      // phone paired before the rename stays paired, then keep only the new key.
+      const devTok = localStorage.getItem('mia_device_token')
+                  || localStorage.getItem('jarvis_device_token');
+      localStorage.removeItem('jarvis_device_token');
       if (!devTok) return;
+      localStorage.setItem('mia_device_token', devTok);
       document.getElementById('reconnecting').style.display = 'block';
       try {
         const r = await fetch('/api/device-login', {
@@ -224,14 +229,14 @@
         });
         const d = await r.json();
         if (d.ok && d.token) {
-          sessionStorage.setItem('jarvis_key', d.key);
-          sessionStorage.setItem('jarvis_token', d.token);
+          sessionStorage.setItem('mia_key', d.key);
+          sessionStorage.setItem('mia_token', d.token);
           location.replace('/');
           return;
         }
       } catch (_) {}
       // Device token rejected (server restarted) — clear it and show normal form
-      localStorage.removeItem('jarvis_device_token');
+      localStorage.removeItem('mia_device_token');
       document.getElementById('reconnecting').style.display = 'none';
     })();
 
@@ -260,8 +265,8 @@
         shake(); return;
       }
       if (data.ok && data.token) {
-        sessionStorage.setItem('jarvis_key', key);
-        sessionStorage.setItem('jarvis_token', data.token);
+        sessionStorage.setItem('mia_key', key);
+        sessionStorage.setItem('mia_token', data.token);
         location.href = '/';
       } else {
         inp.value = '';

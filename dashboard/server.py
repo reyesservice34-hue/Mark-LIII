@@ -1,5 +1,5 @@
 """
-dashboard/server.py — JARVIS Local HTTP Dashboard
+dashboard/server.py — MIA Local HTTP Dashboard
 
 Plain HTTP on port 8000 (no SSL warnings, no firewall issues).
 Security at the application layer: AES-256-CBC with session-key-derived key.
@@ -45,8 +45,8 @@ AUDIO_OUT_RATE = 24000   # must match main.py's RECEIVE_SAMPLE_RATE
 def _make_uploads_dir() -> Path:
     """Return (and create) the cross-platform uploads folder."""
     for candidate in [
-        Path.home() / "Downloads" / "JARVIS Uploads",
-        Path.home() / "Documents" / "JARVIS Uploads",
+        Path.home() / "Downloads" / "MIA Uploads",
+        Path.home() / "Documents" / "MIA Uploads",
         BASE_DIR / "uploads",
     ]:
         try:
@@ -71,6 +71,9 @@ _KEY_CHARS = [c for c in (string.ascii_uppercase + string.digits)
               if c not in ('O', 'I', 'L', '0', '1')]
 
 # ── AES-256-CBC ───────────────────────────────────────────────────────────────
+# Legacy protocol constant — must stay byte-identical to _AES_SALT in
+# static/app.html. It is a KDF salt, never displayed and not an identity; changing
+# it would break decryption for every phone still holding the old page.
 _AES_SALT = b'JARVIS-DASHBOARD-v1'
 
 
@@ -113,8 +116,12 @@ def _ensure_network_access(port: int) -> None:
     if sys.platform == "win32":
         import ctypes, time
 
-        port_rule = f"JARVIS Dashboard Port {port}"
-        prog_rule  = "JARVIS Dashboard Python"
+        port_rule = f"MIA Dashboard Port {port}"
+        prog_rule  = "MIA Dashboard Python"
+        # Rules registered by older installs under the previous name still open
+        # the same port — accept them so the UAC prompt does not reappear.
+        legacy_port_rule = f"JARVIS Dashboard Port {port}"
+        legacy_prog_rule = "JARVIS Dashboard Python"
         py_exe     = sys.executable
 
         def _netsh_rule_exists(name: str) -> bool:
@@ -140,8 +147,8 @@ def _ensure_network_access(port: int) -> None:
             except Exception:
                 return False
 
-        need_port    = not _netsh_rule_exists(port_rule)
-        need_prog    = not _netsh_rule_exists(prog_rule)
+        need_port    = not (_netsh_rule_exists(port_rule) or _netsh_rule_exists(legacy_port_rule))
+        need_prog    = not (_netsh_rule_exists(prog_rule) or _netsh_rule_exists(legacy_prog_rule))
         need_private = _network_is_public()
 
         if not need_port and not need_prog and not need_private:
@@ -170,7 +177,7 @@ def _ensure_network_access(port: int) -> None:
             )
 
         bat_body = "\r\n".join(bat_lines) + "\r\n"
-        fd, bat_path = tempfile.mkstemp(suffix=".bat", prefix="jarvis_fw_")
+        fd, bat_path = tempfile.mkstemp(suffix=".bat", prefix="mia_fw_")
         try:
             os.write(fd, bat_body.encode("mbcs"))   # Windows cmd.exe expects ANSI
             os.close(fd)
@@ -218,7 +225,7 @@ def _ensure_network_access(port: int) -> None:
                 print("[Dashboard] Refresh your phone browser to connect.")
             else:
                 print("[Dashboard] Setup was not allowed.")
-                print("[Dashboard] Phone connections may fail until JARVIS is run as Administrator.")
+                print("[Dashboard] Phone connections may fail until MIA is run as Administrator.")
         except Exception as e:
             print(f"[Dashboard] Firewall setup error: {e}")
         finally:
@@ -397,9 +404,22 @@ class DashboardServer:
         return key
 
     @staticmethod
-    def _ssl_enabled() -> bool:
+    def _cert_paths() -> tuple[Path, Path]:
+        """(key, cert) for the dashboard's TLS. mia.key/mia.crt are preferred;
+        certificates an older install placed as jarvis.key/jarvis.crt are still
+        used as-is so phones that already trust them keep working."""
         certs = BASE_DIR / "config" / "certs"
-        return (certs / "jarvis.key").exists() and (certs / "jarvis.crt").exists()
+        key, crt = certs / "mia.key", certs / "mia.crt"
+        if not (key.exists() and crt.exists()):
+            legacy_key, legacy_crt = certs / "jarvis.key", certs / "jarvis.crt"
+            if legacy_key.exists() and legacy_crt.exists():
+                return legacy_key, legacy_crt
+        return key, crt
+
+    @classmethod
+    def _ssl_enabled(cls) -> bool:
+        key, crt = cls._cert_paths()
+        return key.exists() and crt.exists()
 
     def get_url(self) -> str:
         proto = "https" if self._ssl_enabled() else "http"
@@ -448,7 +468,7 @@ class DashboardServer:
         self._clients -= dead
 
     async def broadcast_audio(self, pcm_bytes: bytes) -> None:
-        """Stream a chunk of JARVIS's spoken reply (raw 16-bit PCM) to every
+        """Stream a chunk of MIA's spoken reply (raw 16-bit PCM) to every
         connected phone/browser client. Skips _history — audio isn't replayed
         on reconnect, only the text transcript is (via broadcast())."""
         if not self._clients or not pcm_bytes:
@@ -467,7 +487,7 @@ class DashboardServer:
         self._clients -= dead
 
     async def broadcast_call(self) -> None:
-        """Ring connected clients — JARVIS wants to speak on its own initiative
+        """Ring connected clients — MIA wants to speak on its own initiative
         (a monitor alert, a proactive check-in) and there's nobody on the line
         to hear it yet. The client answers by opening its normal mic/playback
         channels, same as tapping the mic button."""
@@ -483,7 +503,7 @@ class DashboardServer:
 
     async def broadcast_audio_stop(self) -> None:
         """Tell clients to flush any queued playback — mirrors the local
-        barge-in behaviour when the user interrupts JARVIS mid-speech."""
+        barge-in behaviour when the user interrupts MIA mid-speech."""
         if not self._clients:
             return
         dead: set[WebSocket] = set()
@@ -560,7 +580,7 @@ class DashboardServer:
   h2{color:#f87171;margin-bottom:12px}p{color:#5e6a7e;font-size:14px}
 </style></head>
 <body><div><h2>Link Expired</h2>
-<p>Press <strong style="color:#dde3ed">Remote Control</strong> in JARVIS to get a new QR code.</p>
+<p>Press <strong style="color:#dde3ed">Remote Control</strong> in MIA to get a new QR code.</p>
 </div></body></html>""")
 
             del self._pending_keys[key]
@@ -586,12 +606,13 @@ class DashboardServer:
 </style></head>
 <body>
 <script>
-  sessionStorage.setItem('jarvis_token','{tok}');
-  sessionStorage.setItem('jarvis_key','{key}');
-  localStorage.setItem('jarvis_device_token','{dev_tok}');
+  sessionStorage.setItem('mia_token','{tok}');
+  sessionStorage.setItem('mia_key','{key}');
+  localStorage.setItem('mia_device_token','{dev_tok}');
+  localStorage.removeItem('jarvis_device_token');
   setTimeout(function(){{location.replace('/')}},400);
 </script>
-<p>Connecting to JARVIS…</p>
+<p>Connecting to MIA…</p>
 </body></html>""")
 
         @app.post("/api/device-login")
@@ -820,8 +841,7 @@ class DashboardServer:
         """Second HTTPS server on PORT+1 sharing the same app and in-memory state.
         Chrome HTTPS-upgrades any bare IP:PORT the user types, so this port also needs TLS.
         User types IP:8001 → Chrome tries https → self-signed cert warning → accept once → done."""
-        ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
-        ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
+        ssl_key, ssl_cert = self._cert_paths()
         asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, PORT + 1)
         cfg = uvicorn.Config(
             self.app, host="0.0.0.0", port=PORT + 1, log_level="warning",
@@ -841,8 +861,7 @@ class DashboardServer:
         asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, PORT)
 
         use_ssl  = self._ssl_enabled()
-        ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
-        ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
+        ssl_key, ssl_cert = self._cert_paths()
 
         if use_ssl:
             asyncio.create_task(self._serve_alias())
@@ -854,5 +873,5 @@ class DashboardServer:
 
         proto = "https" if use_ssl else "http"
         print(f"[Dashboard] {proto}://{self._ip}:{PORT}")
-        print("[Dashboard] Press 'Remote Control' in JARVIS UI to get the QR code.")
+        print("[Dashboard] Press 'Remote Control' in the MIA UI to get the QR code.")
         await uvicorn.Server(cfg).serve()

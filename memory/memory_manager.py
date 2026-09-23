@@ -177,6 +177,24 @@ def _pretty(key: str) -> str:
     return key.replace("_", " ").strip()
 
 
+# ── Legacy identity guard ────────────────────────────────────────────────────
+# The assistant used to be called JARVIS. Facts and session summaries written
+# back then can still sit in long_term.json ("assistant name: Jarvis", "Jarvis
+# helped with …"). Nothing is deleted from disk — the memory panel still lists
+# every entry so the user decides — but such entries are never fed back to the
+# model, so stored history cannot re-assert the old identity over MIA.
+_LEGACY_IDENTITY_RE = re.compile(r"\bj\.?\s?a\.?\s?r\.?\s?v\.?\s?i\.?\s?s\b\.?", re.IGNORECASE)
+
+
+def mentions_legacy_identity(*texts) -> bool:
+    return any(_LEGACY_IDENTITY_RE.search(str(t or "")) for t in texts)
+
+
+def scrub_legacy_identity(text: str) -> str:
+    """Replace the legacy assistant name with MIA in free text (display/prompt only)."""
+    return _LEGACY_IDENTITY_RE.sub("MIA", text or "")
+
+
 # Identity is always in the prompt; these categories compete for the remaining
 # budget by recency.
 _CATEGORY_LABELS = {
@@ -222,7 +240,7 @@ def format_memory_for_prompt(memory: dict | None) -> str:
     identity = memory.get("identity", {}) or {}
     for field in _IDENTITY_FIELDS:
         val = _entry_value(identity.get(field))
-        if not val:
+        if not val or mentions_legacy_identity(val):
             continue
         if field == "language":
             # Labelled as an observation, not a setting. A bare "Language:
@@ -237,7 +255,7 @@ def format_memory_for_prompt(memory: dict | None) -> str:
         if key in _IDENTITY_FIELDS:
             continue
         val = _entry_value(entry)
-        if val:
+        if val and not mentions_legacy_identity(key, val):
             core_lines.append(f"{_pretty(key).title()}: {val}")
 
     # 2. Everything else, most recently updated first
@@ -245,7 +263,7 @@ def format_memory_for_prompt(memory: dict | None) -> str:
     for cat in _CATEGORY_LABELS:
         for key, entry in (memory.get(cat, {}) or {}).items():
             val = _entry_value(entry)
-            if not val:
+            if not val or mentions_legacy_identity(key, val):
                 continue
             updated = (entry.get("updated", "") if isinstance(entry, dict) else "") or "0000-00-00"
             rest.append((updated, cat, key, val))
@@ -361,7 +379,7 @@ def search_memory(query: str, limit: int = 8) -> str:
             continue                     # skip 'sessions', which is a list
         for key, entry in items.items():
             val = _entry_value(entry)
-            if not val:
+            if not val or mentions_legacy_identity(key, val):
                 continue
             s = _score(words, cat, key, val) if words else 1
             if s > 0:
@@ -381,7 +399,7 @@ def search_memory(query: str, limit: int = 8) -> str:
 
 
 def all_entries_for_ui() -> list[dict]:
-    """Flat list for the memory panel: what JARVIS knows, and when it learned it.
+    """Flat list for the memory panel: what MIA knows, and when it learned it.
     Sorted newest first so the panel opens on what changed most recently."""
     memory = load_memory()
     rows = []
@@ -464,7 +482,11 @@ def recent_sessions_for_ui() -> list[dict]:
     sessions = memory.get("sessions", [])
     if not isinstance(sessions, list):
         return []
-    return list(reversed(sessions))
+    return [
+        {**s, "summary": scrub_legacy_identity(s.get("summary", ""))}
+        if isinstance(s, dict) else s
+        for s in reversed(sessions)
+    ]
 
 
 def pop_last_session() -> dict | None:
@@ -486,6 +508,8 @@ def pop_last_session() -> dict | None:
                 json.dumps(memory, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
+            if isinstance(entry, dict) and "summary" in entry:
+                entry = {**entry, "summary": scrub_legacy_identity(entry["summary"])}
             return entry
         except Exception as e:
             print(f"[Memory] ⚠️ pop_last_session error: {e}")
