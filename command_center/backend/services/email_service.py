@@ -19,6 +19,7 @@ import email.utils
 import imaplib
 import os
 import re
+import unicodedata
 import smtplib
 import ssl
 from dataclasses import dataclass
@@ -171,6 +172,24 @@ def _attachment_names(msg) -> list[str]:
     return names
 
 
+def _imap_search(conn, criterion: str):
+    """IMAP SEARCH that survives non-ASCII text ("heißt", "Müller").
+
+    imaplib encodes the command as ASCII, so a criterion with ß/ä/ö/ü failed with a codec error before it
+    reached the server. Ask for CHARSET UTF-8 first; if the server refuses, search the ASCII-folded text.
+    """
+    if criterion.isascii():
+        return conn.search(None, criterion)
+    try:
+        typ, data = conn.search("UTF-8", criterion.encode("utf-8"))
+        if typ == "OK":
+            return typ, data
+    except imaplib.IMAP4.error:
+        pass
+    folded = unicodedata.normalize("NFKD", criterion.replace("ß", "ss")).encode("ascii", "ignore").decode("ascii")
+    return conn.search(None, folded)
+
+
 class EmailService:
     """Async facade; every blocking call is pushed to a thread. Kann mehrere Postfächer."""
 
@@ -233,7 +252,7 @@ class EmailService:
             typ, _ = conn.select(folder, readonly=True)   # nur lesen: nichts wird als „gelesen“ markiert
             if typ != "OK":
                 raise MailError(f"The mailbox has no folder '{folder}'.")
-            typ, data = conn.search(None, criterion)
+            typ, data = _imap_search(conn, criterion)
             if typ != "OK":
                 raise MailError("The mail server did not accept that search.")
             ids = (data[0] or b"").split()

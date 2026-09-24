@@ -56,6 +56,13 @@ _ORDER_VERBS = re.compile(
     r"lösch\w*|entfern\w*|aktualisier\w*|änder\w*|nimm|füg\w*|bring\w*|und jetzt|jetzt)\b", re.I)
 _DEICTIC = re.compile(r"\b(das|dem|den|die|dort|damit|dabei|davon|dieses?|diesen|jenes?|da oben|da unten|das andere|"
                       r"den anderen|alles)\b", re.I)
+# Words that make a question a request to change something ("Kannst du einen Termin eintragen?").
+_CHANGE = re.compile(
+    r"\b(trag\w*|eintrag\w*|anleg\w*|leg\w*|erstell\w*|speicher\w*|merk\w*|notier\w*|buch\w*|verschieb\w*|lösch\w*|"
+    r"absag\w*|plan\w*|schreib\w*|schick\w*|send\w*|änder\w*|aktualisier\w*|erinner\w*|vergiss\w*|mach\w*|bau\w*|"
+    r"start\w*|stopp\w*|push\w*|deploy\w*|repar\w*|fix\w*|entfern\w*|setz\w*|stell\w*|bestell\w*|kauf\w*|"
+    r"zahl\w*|überweis\w*|ruf\w*|anruf\w*|weiterleit\w*|kopier\w*|verbind\w*|lad\w*|installier\w*)\b", re.I)
+_ANSWER_ONLY = re.compile(r"^\s*antworte?\s+(nur|kurz|mit)\b", re.I)
 _TIMEREF = re.compile(r"\bwie (gestern|vorgestern|letzte woche|vorhin|letztes mal|beim letzten mal)\b", re.I)
 _SPLIT = re.compile(r"\s*(?:,\s*)?\b(?:und\s+)?(?:danach|dann|anschlie(?:ß|ss)end|hinterher|und dann)\b\s*,?\s*", re.I)
 _FIRST = re.compile(r"^\s*(?:mach\s+)?(?:erst(?:mal)?|zuerst|als erstes)\b[,]?\s*", re.I)
@@ -310,11 +317,14 @@ class CommunicationLayer:
         if intent in ("approve", "reject"):
             policy = "approval_via_ui"
         confidence = "low" if bad else ("medium" if (fixes or referential) else "high")
-        needed = bool(refs or fixes or parts or referential or intent in ("continue", "correction", "stop", "approve", "reject")
+        # A plain question (or "answer only ...") is not an order to change anything: only reading tools may run.
+        answer_only = bool((intent == "question" and not _CHANGE.search(normalized)) or _ANSWER_ONLY.match(normalized))
+        needed = bool(refs or fixes or parts or referential or answer_only
+                      or intent in ("continue", "correction", "stop", "approve", "reject")
                       or len(words) <= self.SHORT_COMMAND_WORDS)
         u = {"raw": text, "normalized": normalized, "corrections": fixes, "intent": intent, "voice": voice,
              "subtasks": parts, "components": explicit or self._recent_components(history), "references": refs,
-             "policy": policy, "confidence": confidence, "pending_approvals": pending,
+             "policy": policy, "confidence": confidence, "pending_approvals": pending, "answer_only": answer_only,
              "brief_needed": needed}
         u["brief"] = self.brief(u) if needed else ""
         return u
@@ -354,6 +364,9 @@ class CommunicationLayer:
         if u["intent"] in ("approve", "reject"):
             lines.append(f"- Das ist eine Zustimmung/Ablehnung. Offene Freigaben im System: {u['pending_approvals']}. Freigaben werden nur über "
                          "den Freigabe-Weg erteilt; ein Chat-\"ja\" ersetzt sie nicht.")
+        if u.get("answer_only"):
+            lines.append("- Das ist eine Frage bzw. eine reine Antwort-Vorgabe, kein Auftrag zum Ändern: antworte direkt mit Text. "
+                         "Lege keine Aufgabe an, speichere nichts, ändere nichts; nur lesende Werkzeuge, und nur wenn nötig.")
         pol = {"ask": "Stelle GENAU EINE gezielte Rückfrage mit den Kandidaten. Keine ändernde Aktion, bevor der Bezug geklärt ist. Nichts raten.",
                "analyse": "Nur ungefährliche Analyse (lesen/prüfen). Bezug in der Antwort offen benennen, nichts verändern.",
                "proceed": "Bezug ist eindeutig: direkt umsetzen, keine unnötige Rückfrage.",

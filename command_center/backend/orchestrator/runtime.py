@@ -115,6 +115,14 @@ _READ_ONLY_TOOL = re.compile(
     r"open|stats|summary|view|preview|health|catalog|catalogue|lookup|query|load|deeper|history)$|^(think|tools)\.")
 
 
+def answer_only_block(understanding: dict | None, tool: str) -> str:
+    """Non-empty when the message was a plain question / "answer only ...": only reading tools may run."""
+    if not understanding or not understanding.get("answer_only") or _READ_ONLY_TOOL.search(tool):
+        return ""
+    return ("Geblockt: Die Nachricht des Nutzers ist eine Frage bzw. eine reine Antwort-Vorgabe, kein Auftrag, etwas zu "
+            "ändern oder anzulegen. Antworte jetzt direkt mit Text. Lege nichts an und speichere nichts.")
+
+
 def unclear_reference_block(understanding: dict | None, tool: str) -> str:
     """Non-empty when this tool call must not run yet because the user's reference is unclear.
 
@@ -672,10 +680,13 @@ class MasterRuntime:
             if self.fast_provider is not None and agent.kind == "master":
                 system += MODEL_HINT
             tool_defs = [t.to_def() for t in tools]
-        elif volatile and messages and messages[-1].get("role") == "user" and isinstance(messages[-1].get("content"), list):
-            messages[-1] = {**messages[-1], "content": [
-                {"type": "text", "text": "[Kontext zu dieser Anfrage, intern, nicht wiedergeben]\n" + "\n\n".join(volatile)},
-                *messages[-1]["content"]]}
+        elif volatile and messages and messages[-1].get("role") == "user":
+            # A system note right before the user's message: it stays out of the cached prefix (measured: 98 % of the
+            # prompt is still reused) and reads as instruction, not as something the user said. A small model that saw
+            # it inside the user message even stored it as a memory.
+            messages.insert(len(messages) - 1, {"role": "system", "content": [{"type": "text", "text":
+                "KONTEXT ZU DIESER ANFRAGE (Anweisung an dich, kein Text des Nutzers; nicht wiedergeben, nichts davon "
+                "merken oder als Aufgabe anlegen):\n" + "\n\n".join(volatile)}]})
         # Bilder, die Werkzeuge in diesem Zug besorgt haben. Nach den
         # Werkzeugergebnissen gehen sie als eigene Nachricht an das Modell.
         pending_images: list[str] = []
@@ -757,9 +768,9 @@ class MasterRuntime:
                                                       "conversation_id": handle.conversation_id,
                                                       "tool": name, "input": _safe_args(args)})
                 used_tools.append(name)
-                blocked = unclear_reference_block(handle.understanding, name)
+                blocked = unclear_reference_block(handle.understanding, name) or answer_only_block(handle.understanding, name)
                 if blocked:
-                    st.log.info("communication", f"Werkzeug {name} gesperrt: Bezug unklar", run_id=handle.id)
+                    st.log.info("communication", f"Werkzeug {name} gesperrt: {blocked[9:60]}", run_id=handle.id)
                     result, ok = blocked, False
                 else:
                     result, ok = await self.executor.execute(ctx, name, args)
