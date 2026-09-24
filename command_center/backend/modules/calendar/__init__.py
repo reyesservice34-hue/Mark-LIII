@@ -155,7 +155,8 @@ def _startup(state: AppState) -> None:
     state.scheduler.add("calendar_sync", "Google-Termine übernehmen", 180, job, silent=True,
                         description="Termine aus dem Google Kalender in den lokalen Kalender übernehmen (Spiegel; "
                                     "Änderungen von Jarvis gehen zuerst nach Google)",
-                        enabled=cal.bridge.configured(), run_immediately=True)
+                        enabled=cal.bridge.configured(), run_immediately=True,
+                        backoff_max=1800)   # Brücke down: 3 → 6 → 12 … höchstens alle 30 Minuten statt alle 3
 
 
 MODULE = ModuleSpec(

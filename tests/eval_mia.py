@@ -14,7 +14,7 @@ Two tiers, kept honest and separate:
 
 Categories: A conversation, B reasoning, C coding, D tool use, E agent routing,
 F memory, G task execution, H error recovery, I permissions, J hallucination,
-K learning, L self-healing, M core evolution, N communication layer.
+K learning, L self-healing, M core evolution, N communication layer, O scheduler backoff.
 
 Run:      python tests/eval_mia.py [--label before|after]
 Compare:  python tests/eval_mia.py --compare tests/eval_results/a.json tests/eval_results/b.json
@@ -549,6 +549,55 @@ with TestClient(app) as c:
     u = comm.understand(new_conv("comm-art"), "prüf das backend")
     case("N", "'check the backend': 'das' is an article, not an unresolved reference", "harness",
          u["references"] == [] and u["confidence"] == "high", (u["references"], u["confidence"]), t0)
+
+    # ── O scheduler: a permanently failing job backs off instead of hammering ──
+    import asyncio as _aio2  # noqa: PLC0415
+    from command_center.backend.modules.automations.scheduler import Scheduler  # noqa: PLC0415
+    t0 = time.time()
+    class _RecLog:
+        def __init__(self):
+            self.rows: list[tuple[str, str]] = []
+
+        def __getattr__(self, level):
+            return lambda src, msg, **kw: self.rows.append((level, msg))
+
+    reclog = _RecLog()
+    sched = Scheduler(state.bus, reclog)
+    flaky = {"fail": True, "calls": 0}
+
+    async def _job():
+        flaky["calls"] += 1
+        if flaky["fail"]:
+            raise RuntimeError("Server error '500 Internal Server Error'")
+
+    with_bo = sched.add("eval-bo", "EVAL backoff", 180, _job, backoff_max=1800, run_immediately=False)
+    without = sched.add("eval-plain", "EVAL plain", 180, _job, run_immediately=False)
+    delays = []
+    for _ in range(6):
+        _aio2.run(sched._run_once(with_bo))
+        delays.append(int(sched.next_delay(with_bo)))
+    case("O", "failing job: interval doubles per failure (360, 720, 1440, ...)", "harness",
+         delays[:3] == [360, 720, 1440], delays, t0)
+    case("O", "failing job: interval is capped at backoff_max (1800 s)", "harness",
+         max(delays) == 1800 and delays[-1] == 1800, delays, t0)
+    _aio2.run(sched._run_once(without))
+    _aio2.run(sched._run_once(without))
+    case("O", "a job without backoff_max keeps its normal interval (no change for other jobs)", "harness",
+         int(sched.next_delay(without)) == 180, sched.next_delay(without), t0)
+    flaky["fail"] = False
+    _aio2.run(sched._run_once(with_bo))
+    case("O", "first success resets the interval to normal and clears the failure count", "harness",
+         int(sched.next_delay(with_bo)) == 180 and with_bo.consecutive_errors == 0 and with_bo.last_status == "ok",
+         (sched.next_delay(with_bo), with_bo.consecutive_errors), t0)
+    case("O", "errors stay counted and visible after backing off", "harness",
+         with_bo.errors == 6 and with_bo.public()["consecutive_errors"] == 0, with_bo.errors, t0)
+    n_err_logs = sum(1 for lv, m in reclog.rows if lv == "error" and "EVAL backoff" in m)
+    n_quiet = sum(1 for lv, m in reclog.rows if lv == "debug" and "EVAL backoff" in m and "same cause" in m)
+    case("O", "the same failure repeated 6x is logged as ERROR once, the 5 repeats quietly", "harness",
+         n_err_logs == 1 and n_quiet == 5, (n_err_logs, n_quiet), t0)
+    n_plain = sum(1 for lv, m in reclog.rows if lv == "error" and "EVAL plain" in m)
+    case("O", "without backoff every failure is still logged as ERROR (unchanged behaviour)", "harness",
+         n_plain == 2, n_plain, t0)
 
     # safety and invisibility
     t0 = time.time()

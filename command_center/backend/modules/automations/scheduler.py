@@ -35,6 +35,8 @@ class Job:
     runs: int = 0
     errors: int = 0
     running: bool = False
+    backoff_max: float = 0.0          # >0: after repeated failures wait longer, up to this many seconds
+    consecutive_errors: int = 0
     _task: asyncio.Task | None = field(default=None, repr=False)
 
     def public(self) -> dict:
@@ -43,7 +45,8 @@ class Job:
                 "next_run_in": max(0, int(self.next_run_at - time.monotonic())) if self.enabled else None,
                 "last_status": self.last_status, "last_error": self.last_error,
                 "last_duration_ms": self.last_duration_ms, "runs": self.runs, "errors": self.errors,
-                "running": self.running}
+                "running": self.running, "consecutive_errors": self.consecutive_errors,
+                "backoff_max": self.backoff_max}
 
 
 class Scheduler:
@@ -54,9 +57,10 @@ class Scheduler:
         self._started = False
 
     def add(self, job_id: str, name: str, interval: float, fn, *, description: str = "",
-            enabled: bool = True, silent: bool = False, run_immediately: bool = True) -> Job:
+            enabled: bool = True, silent: bool = False, run_immediately: bool = True,
+            backoff_max: float = 0.0) -> Job:
         job = Job(id=job_id, name=name, interval=interval, fn=fn, description=description,
-                  enabled=enabled, silent=silent)
+                  enabled=enabled, silent=silent, backoff_max=backoff_max)
         job.next_run_at = time.monotonic() + (0 if run_immediately else interval)
         self._jobs[job_id] = job
         if self._started and enabled:
@@ -122,9 +126,16 @@ class Scheduler:
                 if not job.enabled:
                     break
                 await self._run_once(job)
-                job.next_run_at = time.monotonic() + job.interval
+                job.next_run_at = time.monotonic() + self.next_delay(job)
         except asyncio.CancelledError:
             pass
+
+    @staticmethod
+    def next_delay(job: Job) -> float:
+        """Normal interval; with backoff enabled it doubles per consecutive failure, capped at backoff_max."""
+        if job.backoff_max <= 0 or job.consecutive_errors <= 0:
+            return job.interval
+        return min(job.backoff_max, job.interval * (2 ** min(job.consecutive_errors, 16)))
 
     async def _run_once(self, job: Job) -> None:
         if job.running:
@@ -135,6 +146,10 @@ class Scheduler:
             result = job.fn()
             if inspect.isawaitable(result):
                 await result
+            if job.consecutive_errors:
+                self.log.info("scheduler", f"Job '{job.name}' läuft wieder nach {job.consecutive_errors} Fehlversuch(en)",
+                              data={"job": job.id})
+            job.consecutive_errors = 0
             job.last_status = "ok"
             job.last_error = ""
             if not job.silent:
@@ -142,10 +157,18 @@ class Scheduler:
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
+            previous = job.last_error
             job.last_status = "error"
             job.last_error = f"{e.__class__.__name__}: {str(e)[:300]}"
             job.errors += 1
-            self.log.error("scheduler", f"Job '{job.name}' failed: {job.last_error}", data={"job": job.id})
+            job.consecutive_errors += 1
+            # A job that keeps failing the same way is one problem, not one per run: report the first failure and
+            # every change of cause loudly, the repeats quietly (they stay visible in last_error/errors).
+            if job.backoff_max > 0 and job.consecutive_errors > 1 and job.last_error == previous:
+                self.log.debug("scheduler", f"Job '{job.name}' fails again ({job.consecutive_errors}x, same cause); "
+                               f"next try in {int(self.next_delay(job))}s", data={"job": job.id})
+            else:
+                self.log.error("scheduler", f"Job '{job.name}' failed: {job.last_error}", data={"job": job.id})
         finally:
             job.running = False
             job.runs += 1
