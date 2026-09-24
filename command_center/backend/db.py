@@ -321,6 +321,20 @@ class Database:
     # Server, der schon lief — und der Fehler kommt erst beim ersten Zugriff.
     ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "memory": {"pinned": "INTEGER NOT NULL DEFAULT 0"},
+        # core_evolution.py und core_watchdog.py schreiben diese Spalten; das
+        # ursprüngliche CREATE TABLE kannte sie nicht, verify() scheiterte daher
+        # an jeder Datenbank mit "no column named baseline_sha".
+        "core_evolution_checks": {
+            "baseline_sha": "TEXT NOT NULL DEFAULT ''",
+            "candidate_sha": "TEXT NOT NULL DEFAULT ''",
+            "stage": "TEXT NOT NULL DEFAULT 'verified'",
+            "activation_mode": "TEXT NOT NULL DEFAULT ''",
+            "verified_at": "TEXT",
+            "applied_at": "TEXT",
+            "activated_at": "TEXT",
+            "stable_at": "TEXT",
+            "rollback_at": "TEXT",
+        },
     }
 
     def _ensure_columns(self) -> None:

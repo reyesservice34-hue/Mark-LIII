@@ -727,10 +727,22 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         return items or "Es liegt kein Änderungsvorschlag vor."
 
     async def self_verify(ctx: ToolContext, args: dict):
-        return await selfext.verify_proposal(
-            str(args["proposal_id"]),
+        proposal_id = str(args["proposal_id"])
+        first = await selfext.verify_proposal(
+            proposal_id,
             capability_gain=str(args.get("capability_gain", "")),
             verification_plan=str(args.get("verification_plan", "")))
+        if not first.get("eligible_for_approval"):
+            return first
+        # self.apply gates on evolution.ensure_verified(), which needs the candidate
+        # hash, activation mode and stage that only this second stage records — and
+        # it adds the baseline comparison (public API, size benchmark).
+        second = await evolution.verify(proposal_id)
+        known = {c.get("name") for c in first.get("checks", [])}
+        return {**first, "status": second["status"],
+                "checks": [*first.get("checks", []), *[c for c in second["checks"] if c.get("name") not in known]],
+                "activation_mode": second["activation_mode"],
+                "eligible_for_approval": second["eligible_for_apply"]}
 
     async def self_apply(ctx: ToolContext, args: dict):
         verified = evolution.ensure_verified(str(args["proposal_id"]))

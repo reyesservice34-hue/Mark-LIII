@@ -1,0 +1,389 @@
+{
+  "label": "before",
+  "ts": "20260924T012453Z",
+  "live": false,
+  "summary": {
+    "total": 47,
+    "passed": 34,
+    "failed": 8,
+    "skipped": 5
+  },
+  "cases": [
+    {
+      "category": "A",
+      "name": "live: german answer to a plain question",
+      "tier": "live",
+      "status": "skipped",
+      "detail": "no provider or EVAL_LIVE unset",
+      "ms": 0
+    },
+    {
+      "category": "B",
+      "name": "live: multi-step arithmetic",
+      "tier": "live",
+      "status": "skipped",
+      "detail": "no provider or EVAL_LIVE unset",
+      "ms": 0
+    },
+    {
+      "category": "J",
+      "name": "live: does not invent an unknown fact",
+      "tier": "live",
+      "status": "skipped",
+      "detail": "no provider or EVAL_LIVE unset",
+      "ms": 0
+    },
+    {
+      "category": "F",
+      "name": "pinned fact is in every system prompt",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 141
+    },
+    {
+      "category": "F",
+      "name": "unpinned fact is NOT loaded into the prompt",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 141
+    },
+    {
+      "category": "F",
+      "name": "knowledge: title in prompt, body not",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 141
+    },
+    {
+      "category": "F",
+      "name": "skill: description in prompt, body not",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 141
+    },
+    {
+      "category": "F",
+      "name": "knowledge.open returns the full body on demand",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 141
+    },
+    {
+      "category": "F",
+      "name": "skill.open returns the full body on demand",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 142
+    },
+    {
+      "category": "K",
+      "name": "search ranks the matching record first",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 0
+    },
+    {
+      "category": "K",
+      "name": "nonsense query returns nothing (no invented context)",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 1
+    },
+    {
+      "category": "K",
+      "name": "unknown learning kind is rejected",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 1
+    },
+    {
+      "category": "K",
+      "name": "matching experience is injected into the run's prompt",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 11
+    },
+    {
+      "category": "K",
+      "name": "unrelated request does not receive that experience",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 21
+    },
+    {
+      "category": "K",
+      "name": "3 identical successes promote a skill",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 251
+    },
+    {
+      "category": "K",
+      "name": "and a procedure",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 251
+    },
+    {
+      "category": "K",
+      "name": "no pattern is promoted before 3 successes",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 251
+    },
+    {
+      "category": "D",
+      "name": "tool arguments arrive unchanged",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 19
+    },
+    {
+      "category": "G",
+      "name": "multi-step run completes",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 19
+    },
+    {
+      "category": "G",
+      "name": "no orphaned active task after completion",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 23
+    },
+    {
+      "category": "H",
+      "name": "unknown tool: run survives",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 22
+    },
+    {
+      "category": "H",
+      "name": "unknown tool: model is told it was an error",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 22
+    },
+    {
+      "category": "H",
+      "name": "failing tool call does not crash the run",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 36
+    },
+    {
+      "category": "I",
+      "name": "approval-required action pauses",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 22
+    },
+    {
+      "category": "I",
+      "name": "nothing executed while waiting",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 22
+    },
+    {
+      "category": "I",
+      "name": "after approval the same run continues to completion",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 31
+    },
+    {
+      "category": "I",
+      "name": "and the approved action then ran",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 31
+    },
+    {
+      "category": "I",
+      "name": "low-risk action needs no approval",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 31
+    },
+    {
+      "category": "E",
+      "name": "specialist only receives tools its roster allows",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 0
+    },
+    {
+      "category": "E",
+      "name": "viewer role never receives operator-level tools",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 0
+    },
+    {
+      "category": "E",
+      "name": "wildcard matching is prefix-exact, not substring",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 0
+    },
+    {
+      "category": "E",
+      "name": "delegation reaches the requested specialist and returns to the master",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 24
+    },
+    {
+      "category": "L",
+      "name": "classify_fault exists",
+      "tier": "harness",
+      "status": "failed",
+      "detail": "missing",
+      "ms": 0
+    },
+    {
+      "category": "L",
+      "name": "a permanently failing container is restarted at most 3 times per hour",
+      "tier": "harness",
+      "status": "failed",
+      "detail": "6 restarts in 6 cycles",
+      "ms": 5
+    },
+    {
+      "category": "L",
+      "name": "orphaned RUNNING task (no run, stale) is closed as FAILED with a cause",
+      "tier": "harness",
+      "status": "failed",
+      "detail": "{'id': 'task_f2d03d2ecc6e4db1a896', 'parent_id': None, 'title': 'EVAL-orphan', 'description': '', 'created_by': '', 'assigned_agent': '', 'status': 'RUNNING', 'priority': 'normal', 'created_at': '2026-09-24T01:24:53.444Z', 'started_at': None, 'completed_at': None, 'updated_at': '2026-09-23T23:24:53Z', 'output': '', 'error': '', 'conversation_id': None, 'run_id': None, 'attachments': [], 'meta': {}",
+      "ms": 92
+    },
+    {
+      "category": "L",
+      "name": "a task waiting for approval is never reaped",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 92
+    },
+    {
+      "category": "L",
+      "name": "a fresh RUNNING task is left alone",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 93
+    },
+    {
+      "category": "M",
+      "name": "verify runs on a real database at all",
+      "tier": "harness",
+      "status": "failed",
+      "detail": "OperationalError: table core_evolution_checks has no column named baseline_sha",
+      "ms": 3
+    },
+    {
+      "category": "M",
+      "name": "verify compares candidate against baseline (public API check exists)",
+      "tier": "harness",
+      "status": "failed",
+      "detail": "[]",
+      "ms": 3
+    },
+    {
+      "category": "M",
+      "name": "a candidate that removes a public function is rejected",
+      "tier": "harness",
+      "status": "failed",
+      "detail": "error",
+      "ms": 3
+    },
+    {
+      "category": "M",
+      "name": "a candidate that only adds passes the comparison",
+      "tier": "harness",
+      "status": "failed",
+      "detail": "None",
+      "ms": 3
+    },
+    {
+      "category": "M",
+      "name": "verification records a before/after benchmark",
+      "tier": "harness",
+      "status": "failed",
+      "detail": "[]",
+      "ms": 3
+    },
+    {
+      "category": "A",
+      "name": "earlier turns reach the model on a follow-up (context kept)",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 23
+    },
+    {
+      "category": "J",
+      "name": "prompt tells the model not to guess about known topics",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 24
+    },
+    {
+      "category": "J",
+      "name": "prompt forbids storing unverified claims as trusted knowledge",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 24
+    },
+    {
+      "category": "B",
+      "name": "reasoning quality needs a live model (harness cannot judge it)",
+      "tier": "live",
+      "status": "skipped",
+      "detail": "live only",
+      "ms": 0
+    },
+    {
+      "category": "C",
+      "name": "coding quality needs a live model (harness cannot judge it)",
+      "tier": "live",
+      "status": "skipped",
+      "detail": "live only",
+      "ms": 0
+    }
+  ]
+}

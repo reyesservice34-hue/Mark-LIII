@@ -91,6 +91,8 @@ class CoreEvolutionService:
 
         changed = _sha(baseline) != _sha(candidate)
         checks.append({"name": "changes_existing_source", "ok": changed})
+        if suffix == ".py":
+            checks.extend(self._compare_python(baseline, candidate))
         mode = self.activation_mode(rel)
         deployable = mode != "image_rebuild_required"
         checks.append({"name": "safe_activation_path", "ok": deployable, "detail": mode})
@@ -98,16 +100,54 @@ class CoreEvolutionService:
         status = "passed" if passed else "failed"
         now = now_iso()
         self.db.execute(
-            "INSERT INTO core_evolution_checks(proposal_id,file,baseline_sha,candidate_sha,status,stage,activation_mode,checks,verified_at,updated_at) "
-            "VALUES(?,?,?,?,?,'verified',?,?,?,?) ON CONFLICT(proposal_id) DO UPDATE SET "
-            "file=excluded.file,baseline_sha=excluded.baseline_sha,candidate_sha=excluded.candidate_sha,status=excluded.status," 
+            "INSERT INTO core_evolution_checks(proposal_id,file,baseline_sha,candidate_sha,status,stage,activation_mode,checks,verified_at,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,'verified',?,?,?,?,?) ON CONFLICT(proposal_id) DO UPDATE SET "
+            "file=excluded.file,baseline_sha=excluded.baseline_sha,candidate_sha=excluded.candidate_sha,status=excluded.status,"
             "stage='verified',activation_mode=excluded.activation_mode,checks=excluded.checks,verified_at=excluded.verified_at,updated_at=excluded.updated_at",
-            (proposal_id, rel, _sha(baseline), _sha(candidate), status, mode, dumps(checks), now, now))
+            (proposal_id, rel, _sha(baseline), _sha(candidate), status, mode, dumps(checks), now, now, now))
         self.state.bus.publish("core.evolution.verified", {"proposal_id": proposal_id, "status": status,
                                                           "file": rel, "activation_mode": mode})
         return {"proposal_id": proposal_id, "file": rel, "status": status,
                 "activation_mode": mode, "checks": checks,
                 "eligible_for_apply": passed}
+
+    @staticmethod
+    def _public_surface(source: str) -> tuple[set[str], dict]:
+        """Public top-level functions/classes and public methods, plus size metrics."""
+        tree = ast.parse(source)
+        names: set[str] = set()
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and not node.name.startswith("_"):
+                names.add(node.name)
+                if isinstance(node, ast.ClassDef):
+                    for sub in node.body:
+                        if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and not sub.name.startswith("_"):
+                            names.add(f"{node.name}.{sub.name}")
+        metrics = {"lines": len(source.splitlines()), "bytes": len(source.encode("utf-8")),
+                   "public_names": len(names), "ast_nodes": sum(1 for _ in ast.walk(tree))}
+        return names, metrics
+
+    def _compare_python(self, baseline: str, candidate: str) -> list[dict]:
+        """Static old-vs-new comparison. It does not execute the candidate.
+
+        `public_api_preserved` is a gate: dropping a public function or method
+        breaks callers, so it must be a deliberate, reviewed decision — not
+        something an automated self-improvement slips in. `benchmark` records
+        the before/after numbers so the reviewer sees the size of the change.
+        """
+        try:
+            base_names, base_m = self._public_surface(baseline)
+            cand_names, cand_m = self._public_surface(candidate)
+        except SyntaxError as e:
+            return [{"name": "public_api_preserved", "ok": False, "detail": f"unparseable: {e}"[:300]}]
+        removed = sorted(base_names - cand_names)
+        return [
+            {"name": "public_api_preserved", "ok": not removed,
+             "detail": ("removed: " + ", ".join(removed[:20])) if removed else "no public name removed"},
+            {"name": "benchmark", "ok": True,
+             "detail": dumps({"baseline": base_m, "candidate": cand_m,
+                              "added": sorted(cand_names - base_names)[:20]})},
+        ]
 
     def _verify_frontend(self, rel: str, candidate: str) -> list[dict]:
         frontend = self.root / "command_center" / "frontend"
