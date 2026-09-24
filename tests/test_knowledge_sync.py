@@ -293,6 +293,18 @@ def main():
     check("bearbeitete Nachricht (gleiche Anzahl) wird erneut gesendet",
           st["conversations_sent"] == 1 and "länger" in remote.sessions[cid]["messages"][-1]["content"], st)
 
+    print("Abgebrochene Antwort blockiert das Archiv nicht")
+    remote = Remote()
+    db, log, sync = make(remote)
+    cid = add_conversation(db, [("user", "Frage")])
+    db.insert("messages", {"id": new_id("msg"), "conversation_id": cid, "role": "assistant", "content": "halbe Antwort",
+                           "status": "streaming", "created_at": "2026-09-21T19:31:13.624Z"})
+    st = run(sync.run_once())
+    check("seit Tagen auf 'streaming' hängende Nachricht: Gespräch wird trotzdem archiviert",
+          st["conversations_sent"] == 1 and sorted(m["content"] for m in remote.sessions[cid]["messages"]) == ["Frage", "halbe Antwort"], st)
+    check("Schwelle ist das Alter: gerade begonnene Antwort bleibt draußen",
+          ks._streaming_cutoff() < now_iso() and ks._streaming_cutoff() > "2026-09-21T19:31:13.624Z")
+
     print("Reihenfolge bei gleichem Zeitstempel (Befund M4)")
     remote = Remote()
     db, log, sync = make(remote)

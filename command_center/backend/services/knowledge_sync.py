@@ -32,7 +32,7 @@ import hashlib
 import json
 import os
 from collections.abc import Awaitable, Callable, Iterable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -40,6 +40,7 @@ import httpx
 BATCH = 100
 CONVERSATIONS_PER_RUN = 25       # ein Lauf bleibt kurz; der Rest folgt beim nächsten
 MAX_MESSAGES = 2000              # so viel nimmt das Archiv pro Gespräch an
+STREAMING_GRACE_MINUTES = 15     # so lange gilt eine Antwort im Status "streaming" als noch laufend
 MASS_DELETE_MIN = 5              # ab dieser Zahl gilt eine Löschung als "viel" ...
 MASS_DELETE_SHARE = 0.5          # ... und ab diesem Anteil der gesicherten Erinnerungen als Massenlöschung
 SKIPPABLE = {400, 409, 413, 422}  # der Server lehnt genau diesen Eintrag ab: überspringen, nicht abbrechen
@@ -54,6 +55,13 @@ _SCHEMA = ("CREATE TABLE IF NOT EXISTS knowledge_sync ("
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _streaming_cutoff() -> str:
+    """Eine Antwort, die länger als das im Status "streaming" hängt, ist abgebrochen (Neustart, Absturz)
+    und blockiert das Archiv nicht. Format wie db.now_iso(), damit der Textvergleich stimmt."""
+    then = datetime.now(timezone.utc) - timedelta(minutes=STREAMING_GRACE_MINUTES)
+    return then.strftime("%Y-%m-%dT%H:%M:%S.") + f"{then.microsecond // 1000:03d}Z"
 
 
 def _digest(*parts: Any) -> str:
@@ -197,9 +205,9 @@ class KnowledgeSync:
         convs = self.db.fetchall(
             "SELECT c.id, c.title, c.actor, c.created_at, c.updated_at, COUNT(m.id) AS n, "
             "COALESCE(SUM(LENGTH(m.content)), 0) AS size, COALESCE(MAX(m.rowid), 0) AS last, "
-            "COALESCE(SUM(m.status = 'streaming'), 0) AS streaming "
+            "COALESCE(SUM(m.status = 'streaming' AND m.created_at > ?), 0) AS streaming "
             f"FROM conversations c LEFT JOIN messages m ON m.conversation_id = c.id AND m.role IN ({marks}) "
-            "GROUP BY c.id ORDER BY c.updated_at DESC, c.id", ARCHIVED_ROLES)
+            "GROUP BY c.id ORDER BY c.updated_at DESC, c.id", (_streaming_cutoff(), *ARCHIVED_ROLES))
         todo = []
         for c in convs:
             if c["n"] == 0 or c["streaming"]:
