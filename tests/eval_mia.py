@@ -14,7 +14,7 @@ Two tiers, kept honest and separate:
 
 Categories: A conversation, B reasoning, C coding, D tool use, E agent routing,
 F memory, G task execution, H error recovery, I permissions, J hallucination,
-K learning (the engine this phase consolidates).
+K learning, L self-healing, M core evolution, N communication layer.
 
 Run:      python tests/eval_mia.py [--label before|after]
 Compare:  python tests/eval_mia.py --compare tests/eval_results/a.json tests/eval_results/b.json
@@ -428,6 +428,153 @@ with TestClient(app) as c:
          "unverified" in fake.systems[-1].lower(), "", t0)
     case("B", "reasoning quality needs a live model (harness cannot judge it)", "live", True, "live only", skipped=True)
     case("C", "coding quality needs a live model (harness cannot judge it)", "live", True, "live only", skipped=True)
+
+    # ── N communication intelligence layer (Section 21, tests A-J) ──────────
+    comm = state.services["communication"]
+    chat_store = state.services["chat"]
+    tk = state.services["tasks"]
+    state.db.execute("UPDATE tasks SET status='CANCELLED' WHERE status IN "
+                     "('QUEUED','PLANNING','RUNNING','PAUSED','WAITING_FOR_APPROVAL')")
+
+    def refs(u: dict, kind: str | None = None) -> list[dict]:
+        return [r for r in u["references"] if kind is None or r["kind"] == kind]
+
+    t0 = time.time()
+    conv = new_conv("comm-a")
+    task = tk.create(title="EVAL Chat reparieren", status="RUNNING", conversation_id=conv)
+    u = comm.understand(conv, "mach weiter")
+    case("N", "A: 'mach weiter' resolves the one active task of this conversation", "harness",
+         u["intent"] == "continue" and refs(u, "task") and refs(u, "task")[0].get("id") == task["id"]
+         and u["policy"] == "proceed", u["references"], t0)
+    tk.create(title="EVAL zweiter Task", status="RUNNING", conversation_id=conv)
+    u2 = comm.understand(conv, "mach weiter")
+    case("N", "A: with two active tasks it does not pick one (ambiguous -> ask)", "harness",
+         refs(u2, "task") and refs(u2, "task")[0]["status"] == "ambiguous" and u2["policy"] == "ask", u2["references"], t0)
+    state.db.execute("UPDATE tasks SET status='CANCELLED' WHERE conversation_id=?", (conv,))
+
+    t0 = time.time()
+    conv = new_conv("comm-b")
+    chat_store.add_message(conv, "user", "bau mir den Chat sauber ein, oben die Kopfzeile und unten die Eingabe")
+    chat_store.add_message(conv, "assistant", "Kopfzeile und Eingabe sind eingebaut.")
+    u = comm.understand(conv, "nee, nicht so, lass den oberen Teil wie er ist")
+    case("N", "B: a correction adjusts the earlier order instead of restarting", "harness",
+         u["intent"] == "correction" and refs(u) and refs(u)[0]["status"] == "resolved"
+         and "nicht von vorn" in u["brief"], (u["intent"], u["references"]), t0)
+
+    t0 = time.time()
+    conv = new_conv("comm-c")
+    chat_store.add_message(conv, "user", "Der Chat zeigt seit heute Fehler")
+    chat_store.add_message(conv, "assistant", "Ich schaue mir den Chat an.")
+    u = comm.understand(conv, "guck warum das rot ist und reparier das")
+    case("N", "C: 'why is that red' resolves to the component from the conversation (Chat)", "harness",
+         refs(u) and refs(u)[0]["status"] == "resolved" and refs(u)[0]["label"] == "Chat", u["references"], t0)
+    # earlier categories left failures/alerts behind; age them out so "nothing is wrong anywhere" is a real state
+    state.db.execute("UPDATE tasks SET updated_at='2000-01-01T00:00:00Z' WHERE status='FAILED'")
+    state.db.execute("UPDATE notifications SET read=1")
+    u = comm.understand(new_conv("comm-c2"), "guck warum das rot ist und reparier das")
+    case("N", "C: with no failure known anywhere it says so instead of picking something", "harness",
+         refs(u) and refs(u)[0]["status"] == "unresolved" and u["policy"] == "ask", u["references"], t0)
+    tk.create(title="EVAL Export fehlgeschlagen", status="FAILED", conversation_id=None)
+    u = comm.understand(new_conv("comm-c3"), "guck warum das rot ist")
+    case("N", "C: exactly one recent failure in the system is identified as the referent", "harness",
+         refs(u) and refs(u)[0]["status"] == "resolved" and "Export" in refs(u)[0]["label"], u["references"], t0)
+    state.db.execute("UPDATE tasks SET updated_at='2000-01-01T00:00:00Z' WHERE status='FAILED'")
+
+    t0 = time.time()
+    u = comm.understand(new_conv("comm-d"), "mach erst den Chat fertig und danach die Stimme")
+    case("N", "D: two tasks in the stated order", "harness",
+         u["subtasks"] == ["den Chat fertig", "die Stimme"] and "1. den Chat fertig" in u["brief"], u["subtasks"], t0)
+    u = comm.understand(new_conv("comm-d2"), "reparier erst den Chat, dann die Stimme und prüf danach alles")
+    case("N", "D: three tasks with a trailing 'check everything' keep order and dependency", "harness",
+         u["subtasks"] == ["reparier den Chat", "die Stimme", "prüf alles"], u["subtasks"], t0)
+
+    t0 = time.time()
+    u = comm.understand(new_conv("comm-e"), "schau ma bei dashbord und dem servr nach dem Trockenbauprofil")
+    case("N", "E: typos are repaired from the project vocabulary", "harness",
+         "dashboard" in u["normalized"] and "server" in u["normalized"] and set(u["components"]) >= {"Dashboard", "Server"},
+         u["normalized"], t0)
+    case("N", "E: ordinary words are left alone (no over-correction)", "harness",
+         "trockenbauprofil" in u["normalized"].lower(), u["normalized"], t0)
+
+    t0 = time.time()
+    u = comm.understand(new_conv("comm-f"), "ähm also prüf mal das back end und den front end und die sprachsteuerng", voice=True)
+    case("N", "F: spoken command with STT errors is normalised via context vocabulary", "harness",
+         "backend" in u["normalized"] and "frontend" in u["normalized"] and "sprachsteuerung" in u["normalized"]
+         and u["intent"] == "order" and "ähm" not in u["normalized"], u["normalized"], t0)
+
+    t0 = time.time()
+    u = comm.understand(new_conv("comm-g"), "mach das")
+    case("N", "G: a genuinely ambiguous order invents no meaning and asks", "harness",
+         u["policy"] == "ask" and refs(u) and refs(u)[0]["status"] == "unresolved"
+         and "NICHT BESTIMMBAR" in u["brief"] and "raten" in u["brief"], (u["policy"], u["references"]), t0)
+
+    t0 = time.time()
+    conv = new_conv("comm-h")
+    u = comm.understand(conv, "mach das wie gestern")
+    case("N", "H: 'like yesterday' with no record does not fabricate one", "harness",
+         refs(u, "history") and refs(u, "history")[0]["status"] == "unresolved" and u["policy"] == "ask", u["references"], t0)
+    yday = (datetime.now(timezone.utc) - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+    done = tk.create(title="EVAL Angebot-Vorlage erstellt", status="COMPLETED")
+    state.db.execute("UPDATE tasks SET completed_at=? WHERE id=?", (yday.isoformat(), done["id"]))
+    u = comm.understand(conv, "mach das wie gestern")
+    case("N", "H: with real work from yesterday on record it is used and named", "harness",
+         refs(u, "history") and refs(u, "history")[0]["status"] == "resolved"
+         and "Angebot-Vorlage" in refs(u, "history")[0]["label"], u["references"], t0)
+
+    t0 = time.time()
+    from command_center.backend.services.repos import RepoService  # noqa: PLC0415
+    repos = RepoService(state.services["files"])
+    (repos.root / "eval-repo" / ".git").mkdir(parents=True, exist_ok=True)
+    u = comm.understand(new_conv("comm-i"), "und jetzt push das")
+    case("N", "I: 'now push that' resolves the only known repository", "harness",
+         refs(u, "repo") and refs(u, "repo")[0]["status"] == "resolved" and refs(u, "repo")[0]["label"] == "eval-repo",
+         u["references"], t0)
+    (repos.root / "zweites-repo" / ".git").mkdir(parents=True, exist_ok=True)
+    u = comm.understand(new_conv("comm-i2"), "und jetzt push das")
+    case("N", "I: with two repositories and no hint it asks which", "harness",
+         refs(u, "repo") and refs(u, "repo")[0]["status"] == "ambiguous" and u["policy"] == "ask", u["references"], t0)
+
+    t0 = time.time()
+    conv = new_conv("comm-j")
+    chat_store.add_message(conv, "user", "bau den Chat sauber ein")
+    chat_store.add_message(conv, "assistant", "Der Chat ist eingebaut.")
+    u = comm.understand(conv, "prüf danach alles")
+    case("N", "J: 'check everything afterwards' is scoped to the area just worked on", "harness",
+         refs(u, "scope") and "Chat" in refs(u, "scope")[0]["label"] and u["policy"] == "proceed", u["references"], t0)
+
+    # safety and invisibility
+    t0 = time.time()
+    state.services["approvals"].request(action="EVAL deploy", reason="eval", target="x", risk="high", requested_by="eval")
+    pending_before = state.services["approvals"].pending_count()
+    conv = new_conv("comm-safe")
+    fake.turns = [text_turn("Verstanden.")]
+    say(conv, "ja")
+    case("N", "a chat 'ja' does not grant a pending approval", "harness",
+         state.services["approvals"].pending_count() == pending_before and pending_before > 0,
+         (pending_before, state.services["approvals"].pending_count()), t0)
+    conv = new_conv("comm-e2e")
+    fake.turns = [text_turn("Ok.")]
+    say(conv, "mach weiter")
+    stored = c.get(f"/api/chat/conversations/{conv}").json()["messages"]
+    case("N", "the internal brief reaches the model (system prompt) ...", "harness",
+         "VERSTÄNDNIS-NOTIZ" in fake.systems[-1], "", t0)
+    case("N", "... but never appears in the visible chat and the user's text is stored unchanged", "harness",
+         all("VERSTÄNDNIS-NOTIZ" not in m["content"] for m in stored)
+         and [m["content"] for m in stored if m["role"] == "user"] == ["mach weiter"], [m["content"][:60] for m in stored], t0)
+    long_msg = ("Bitte erstelle für das Bauvorhaben Musterstraße 12 ein ausführliches Angebot mit allen Positionen der "
+                "Trockenbauarbeiten im Erdgeschoss, inklusive Materialliste und Zeitplan für drei Wochen.")
+    case("N", "a long, fully specified request gets no brief (no noise)", "harness",
+         comm.understand(new_conv("comm-long"), long_msg)["brief"] == "", "", t0)
+
+    t0 = time.time()
+    seen = comm.understand(new_conv("comm-learn"), "prüf das nochmal") | {"policy": "proceed"}
+    results = [comm.observe(seen) for _ in range(3)]
+    ledger = state.services["learning"].search("Kurzbefehl prüf das nochmal", kinds=("preference",))
+    case("N", "a phrase is stored as a habit only after 3 confirmed uses", "harness",
+         not results[0]["promoted"] and not results[1]["promoted"] and results[2]["promoted"] and bool(ledger),
+         results, t0)
+    q = comm.understand(new_conv("comm-q"), "Wie spät ist es eigentlich in Berlin?")
+    case("N", "questions/plain information are never stored as habits", "harness", comm.observe(q) is None, q["intent"], t0)
 
 # ── report ────────────────────────────────────────────────────────────────
 summary = {"total": len(CASES), "passed": sum(x["status"] == "passed" for x in CASES),

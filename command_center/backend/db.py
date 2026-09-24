@@ -170,6 +170,11 @@ CREATE TABLE IF NOT EXISTS core_evolution_checks (
   capability_gain TEXT NOT NULL DEFAULT '', verification_plan TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS comm_patterns (
+  id TEXT PRIMARY KEY, phrase TEXT NOT NULL, intent TEXT NOT NULL, target_kind TEXT NOT NULL DEFAULT '-',
+  uses INTEGER NOT NULL DEFAULT 1, first_at TEXT NOT NULL, last_at TEXT NOT NULL, promoted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_comm_patterns ON comm_patterns(phrase, intent, target_kind);
 CREATE TABLE IF NOT EXISTS auto_learning_patterns (
   fingerprint TEXT PRIMARY KEY, signature TEXT NOT NULL DEFAULT '', success_count INTEGER NOT NULL DEFAULT 0,
   tools TEXT NOT NULL DEFAULT '[]', last_goal TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '[]',

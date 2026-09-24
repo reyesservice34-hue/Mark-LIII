@@ -138,6 +138,7 @@ class RunHandle:
     voice: bool = False          # Antwort wird vorgelesen (Live-Konsole)
     deep: bool = False           # stärkeres Modell statt des schnellen
     loaded: set = field(default_factory=set)   # Sprachmodus: zusätzlich geladene Werkzeuggruppen
+    understanding: dict | None = None          # Ergebnis der Verständnisschicht (services/communication.py)
 
     def public(self) -> dict:
         return {"id": self.id, "agent_id": self.agent_id, "conversation_id": self.conversation_id,
@@ -497,6 +498,12 @@ class MasterRuntime:
             if handle.task_id:
                 tasks.set_status(handle.task_id, "COMPLETED", output=text, note="Task completed")
             st.agents.bump(handle.agent_id, "completed")
+            comm = st.services.get("communication")
+            if comm is not None and handle.understanding:
+                try:
+                    comm.observe(handle.understanding)
+                except Exception as comm_err:  # noqa: BLE001 — habit learning must never break completed work
+                    st.log.warning("communication", f"Gewohnheiten nicht gespeichert: {comm_err}", run_id=handle.id)
             auto = st.services.get("auto_learning")
             if auto is not None and handle.depth == 0:
                 try:
@@ -612,6 +619,16 @@ class MasterRuntime:
             recalled = "\n\n".join(part for part in (recalled, experience) if part)
             if recalled:
                 system += "\n\n" + recalled
+        comm = st.services.get("communication")
+        if comm is not None and agent.kind == "master" and handle.depth == 0 and handle.conversation_id and not handle.task_id:
+            try:
+                # Rohe Aussage -> normalisieren -> Bezug auflösen -> Absicht -> interne Notiz. Nur Kontext für das
+                # Modell: nichts wird ausgeführt und keine Freigabe umgangen.
+                handle.understanding = comm.understand(handle.conversation_id, goal, voice=handle.voice)
+                if handle.understanding.get("brief"):
+                    system += "\n\n" + handle.understanding["brief"]
+            except Exception as comm_err:  # noqa: BLE001 — understanding must never block a reply
+                st.log.warning("communication", f"Verständnisschicht übersprungen: {comm_err}", run_id=handle.id)
         if self.fast_provider is not None and agent.kind == "master":
             system += MODEL_HINT
         tool_defs = [t.to_def() for t in tools]

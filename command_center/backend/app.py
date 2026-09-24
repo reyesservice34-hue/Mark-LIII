@@ -54,6 +54,7 @@ from .services.skills import SkillLibrary
 from .services.knowledge import KnowledgeBase
 from .services.learning import LearningLedger
 from .services.auto_learning import AutoLearningService
+from .services.communication import CommunicationLayer
 from .services.core_evolution import CoreEvolutionService
 from .services.self_healing import SelfHealingService
 from .services.tasks import TaskService
@@ -103,6 +104,7 @@ def build_state(settings: Settings | None = None) -> AppState:
     state.services["learning"] = LearningLedger(db, bus, log)
     state.services["auto_learning"] = AutoLearningService(state)
     state.services["core_evolution"] = CoreEvolutionService(state)
+    state.services["communication"] = CommunicationLayer(state)
     state.services["self_healing"] = SelfHealingService(state)
     state.services["mcp"] = McpRegistry(state)
     state.integrations = IntegrationRegistry(db, bus)
