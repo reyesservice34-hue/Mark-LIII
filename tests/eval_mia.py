@@ -14,7 +14,7 @@ Two tiers, kept honest and separate:
 
 Categories: A conversation, B reasoning, C coding, D tool use, E agent routing,
 F memory, G task execution, H error recovery, I permissions, J hallucination,
-K learning, L self-healing, M core evolution, N communication layer, O scheduler backoff, P integrations, Q local model, R local model probe, S unclear-reference gate.
+K learning, L self-healing, M core evolution, N communication layer, O scheduler backoff, P integrations, Q local model, R local model probe, S unclear-reference gate, T mail search, U answer-only, V boot resilience.
 
 Run:      python tests/eval_mia.py [--label before|after]
 Compare:  python tests/eval_mia.py --compare tests/eval_results/a.json tests/eval_results/b.json
@@ -685,17 +685,23 @@ with TestClient(app) as c:
     def _last_user(prov) -> str:
         return json.dumps([m for m in prov.seen[-1] if m["role"] == "user"][-1], ensure_ascii=False)
 
+    def _ctx_note(prov) -> str:
+        """The per-request system note that sits directly before the user's message (local stable mode)."""
+        msgs = prov.seen[-1]
+        idx = max(i for i, m in enumerate(msgs) if m["role"] == "user" and not any(b.get("type") == "tool_result" for b in m["content"]))
+        return json.dumps(msgs[idx - 1], ensure_ascii=False) if idx and msgs[idx - 1]["role"] == "system" else ""
+
     last_user = _last_user(localp)
-    case("Q", "local: the current time travels with the user message instead", "harness",
-         "[Kontext zu dieser Anfrage" in last_user, last_user[:160], t0)
+    case("Q", "local: the current time travels in a system note right before the user message", "harness",
+         "KONTEXT ZU DIESER ANFRAGE" in _ctx_note(localp) and "KONTEXT ZU DIESER ANFRAGE" not in last_user, _ctx_note(localp)[:160], t0)
     localp.turns = [text_turn("Ok.")]
     say(conv, "mach weiter")
-    case("Q", "local: the understanding note is delivered with the user message, not in the system prompt", "harness",
-         "VERSTÄNDNIS-NOTIZ" in _last_user(localp) and "VERSTÄNDNIS-NOTIZ" not in localp.systems[-1],
+    case("Q", "local: the understanding note is delivered in the per-request note, not in the cached system prompt", "harness",
+         "VERSTÄNDNIS-NOTIZ" in _ctx_note(localp) and "VERSTÄNDNIS-NOTIZ" not in localp.systems[-1] and "VERSTÄNDNIS-NOTIZ" not in _last_user(localp),
          "", t0)
     stored = c.get(f"/api/chat/conversations/{conv}").json()["messages"]
     case("Q", "local: injected context is never stored in the visible chat", "harness",
-         all("[Kontext zu dieser Anfrage" not in m["content"] and "VERSTÄNDNIS-NOTIZ" not in m["content"] for m in stored), "", t0)
+         all("KONTEXT ZU DIESER ANFRAGE" not in m["content"] and "VERSTÄNDNIS-NOTIZ" not in m["content"] for m in stored), "", t0)
 
     warm = LocalWarmup(state)
     res = _aio4.run(warm.run_once())
@@ -710,7 +716,7 @@ with TestClient(app) as c:
     cloud.turns = [text_turn("Ok.")]
     say(new_conv("q-cloud"), "Wie spät ist es gerade?")
     case("Q", "cloud provider path is unchanged: clock still in the system prompt, no context block in the user message", "harness",
-         "now=" in cloud.systems[-1] and "[Kontext zu dieser Anfrage" not in _last_user(cloud), "", t0)
+         "now=" in cloud.systems[-1] and "KONTEXT ZU DIESER ANFRAGE" not in json.dumps(cloud.seen[-1], ensure_ascii=False), "", t0)
     state.runtime.provider = fake
 
     # ── R local model probe must not be cancelled mid-load by the 15 s health check ──
@@ -838,11 +844,11 @@ with TestClient(app) as c:
     lp3 = ScriptedProvider("local")
     state.runtime.provider, state.runtime.fast_provider = lp3, None
     lp3.turns = [tool_turn("memory.evalbig", {}), text_turn("Fertig.")]
-    say(new_conv("q-cap-local"), "Wie spät ist es?")
+    say(new_conv("q-cap-local"), "Prüf bitte den großen Bericht")
     got_local = len([m for m in lp3.seen[-1] if m["role"] == "user"][-1]["content"][0]["content"])
     state.runtime.provider = fake
     fake.turns = [tool_turn("memory.evalbig", {}), text_turn("Fertig.")]
-    say(new_conv("q-cap-cloud"), "Wie spät ist es?")
+    say(new_conv("q-cap-cloud"), "Prüf bitte den großen Bericht")
     got_cloud = len([m for m in fake.seen[-1] if m["role"] == "user"][-1]["content"][0]["content"])
     case("Q", "local: a large tool result is cut to a short one (CPU cost); cloud keeps the long limit", "harness",
          got_local <= 2600 and got_cloud > 10000, (got_local, got_cloud), t0)
@@ -853,6 +859,91 @@ with TestClient(app) as c:
     case("Q", "a blank answer after tool calls names the tools that ran instead of showing nothing", "harness",
          "memory.search" in stored["content"] and "keine Antwort formuliert" in stored["content"] and stored["status"] == "complete",
          (stored["status"], stored["content"][:120]), t0)
+
+    # ── T mail search with non-ASCII text ────────────────────────────────────
+    t0 = time.time()
+    import imaplib as _imaplib  # noqa: PLC0415
+    from command_center.backend.services.email_service import _imap_search  # noqa: PLC0415
+
+    class _Conn:
+        def __init__(self, reject_utf8=False):
+            self.calls, self.reject_utf8 = [], reject_utf8
+
+        def search(self, charset, *crit):
+            self.calls.append((charset, crit))
+            if charset == "UTF-8" and self.reject_utf8:
+                raise _imaplib.IMAP4.error("BAD unsupported charset")
+            return "OK", [b"1 2"]
+
+    cc = _Conn()
+    _imap_search(cc, '(SUBJECT "Rechnung")')
+    case("T", "ASCII search is sent unchanged (no charset)", "harness", cc.calls == [(None, ('(SUBJECT "Rechnung")',))], cc.calls, t0)
+    cc = _Conn()
+    typ, _ = _imap_search(cc, '(TEXT "wie heißt du")')
+    case("T", "a search with 'ß' asks the server for CHARSET UTF-8 (no codec error)", "harness",
+         typ == "OK" and cc.calls[0][0] == "UTF-8" and "heißt".encode("utf-8") in cc.calls[0][1][0], cc.calls, t0)
+    cc = _Conn(reject_utf8=True)
+    typ, _ = _imap_search(cc, '(TEXT "wie heißt Müller")')
+    case("T", "if the server refuses UTF-8 the ASCII-folded text is searched instead", "harness",
+         typ == "OK" and cc.calls[-1] == (None, ('(TEXT "wie heisst Muller")',)), cc.calls, t0)
+
+    # ── U answer-only: a plain question is not an order to change anything ───
+    t0 = time.time()
+    from command_center.backend.orchestrator.runtime import answer_only_block  # noqa: PLC0415
+
+    def _tool_result_after(text: str, tool: str, args: dict) -> str:
+        fake.turns = [tool_turn(tool, args), text_turn("Ok.")]
+        say(new_conv("u-answer-only"), text)
+        return json.dumps([m for m in fake.seen[-1] if m["role"] == "user"][-1], ensure_ascii=False)
+
+    r1 = _tool_result_after("Wie heißt du?", "memory.remember", {"text": "EVAL-U-1"})
+    case("U", "'Wie heißt du?': memory.remember is blocked (a question is no order to store anything)", "harness",
+         "Geblockt" in r1 and "Frage" in r1, r1[:160], t0)
+    r2 = _tool_result_after("Antworte nur mit dem Wort ok.", "task.create", {"title": "EVAL-U-2"})
+    case("U", "'Antworte nur mit ...': task.create is blocked", "harness", "Geblockt" in r2, r2[:160], t0)
+    r3 = _tool_result_after("Kannst du einen Termin eintragen?", "task.create", {"title": "EVAL-U-3"})
+    case("U", "a request phrased as a question ('Kannst du ... eintragen?') is NOT blocked", "harness", "Geblockt" not in r3, r3[:160], t0)
+    r4 = _tool_result_after("Merk dir, dass ich Kaffee mag", "memory.remember", {"text": "EVAL-U-4 Kaffee"})
+    case("U", "'Merk dir ...' still stores (an order, not a question)", "harness", "Geblockt" not in r4, r4[:160], t0)
+    r5 = _tool_result_after("Wie spät ist es?", "memory.search", {"query": "zeit"})
+    case("U", "a question may still use reading tools (memory.search)", "harness", "Geblockt" not in r5, r5[:160], t0)
+    case("U", "unit: answer_only_block passes reading tools and blocks changing ones only when answer_only is set", "harness",
+         answer_only_block({"answer_only": True}, "calendar.read") == ""
+         and answer_only_block({"answer_only": True}, "calendar.create") != ""
+         and answer_only_block({"answer_only": False}, "calendar.create") == ""
+         and answer_only_block(None, "calendar.create") == "", "", t0)
+    conv_msgs = OpenAICompatProvider._convert_messages(
+        "SYS", [{"role": "user", "content": [{"type": "text", "text": "eins"}]},
+                {"role": "assistant", "content": [{"type": "text", "text": "zwei"}]},
+                {"role": "system", "content": [{"type": "text", "text": "NOTIZ"}]},
+                {"role": "user", "content": [{"type": "text", "text": "drei"}]}])
+    case("U", "OpenAI wire format keeps a system note in place, right before the user's message", "harness",
+         [(m["role"], m["content"]) for m in conv_msgs] == [("system", "SYS"), ("user", "eins"), ("assistant", "zwei"),
+                                                            ("system", "NOTIZ"), ("user", "drei")], conv_msgs, t0)
+
+    # ── V boot resilience: a listed-but-missing module must not stop the app ──
+    t0 = time.time()
+    import importlib as _il  # noqa: PLC0415
+    from unittest import mock  # noqa: PLC0415
+    from command_center.backend.modules import ModuleRegistry  # noqa: PLC0415
+    reg = ModuleRegistry()
+    specs = reg.load(["health", "definitely_not_installed_xyz", "logs"])
+    case("V", "a module that is listed but not installed is skipped; the others still load", "harness",
+         [x.id for x in specs] == ["health", "logs"], [x.id for x in specs], t0)
+    real_import = _il.import_module
+
+    def _other_missing(name, *a, **k):
+        if name.endswith(".logs"):
+            raise ModuleNotFoundError("No module named 'some_dependency'", name="some_dependency")
+        return real_import(name, *a, **k)
+
+    raised = False
+    with mock.patch("command_center.backend.modules.importlib.import_module", _other_missing):
+        try:
+            ModuleRegistry().load(["health", "logs"])
+        except ModuleNotFoundError:
+            raised = True
+    case("V", "a missing DEPENDENCY inside a module still stops loudly (only the module itself may be absent)", "harness", raised, "", t0)
 
     # safety and invisibility
     t0 = time.time()

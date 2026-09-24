@@ -41,7 +41,11 @@ class OpenAICompatProvider:
         if system:
             out.append({"role": "system", "content": system})
         for m in messages:
-            if m["role"] == "assistant":
+            if m["role"] == "system":
+                # A system-role note inside the conversation (e.g. per-request context that must not sit in the
+                # cached prefix). It is instruction, not something the user said.
+                out.append({"role": "system", "content": "".join(b.get("text", "") for b in m["content"] if b.get("type") == "text")})
+            elif m["role"] == "assistant":
                 text = "".join(b.get("text", "") for b in m["content"] if b.get("type") == "text")
                 calls = [{"id": b["id"], "type": "function",
                           "function": {"name": wire(b["name"]),

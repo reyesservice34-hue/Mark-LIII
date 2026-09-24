@@ -11,6 +11,7 @@ nothing in the shell changes.
 from __future__ import annotations
 
 import importlib
+import logging
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -58,7 +59,15 @@ class ModuleRegistry:
     def load(self, names: list[str]) -> list[ModuleSpec]:
         loaded = []
         for name in names:
-            mod = importlib.import_module(f"{__name__}.{name}")
+            try:
+                mod = importlib.import_module(f"{__name__}.{name}")
+            except ModuleNotFoundError as e:
+                # A module that is listed but not installed (half-deployed checkout, a module still being written)
+                # must not take the whole app down at boot. Any other import error still stops loudly.
+                if e.name != f"{__name__}.{name}":
+                    raise
+                logging.getLogger("jarvis.cc").warning("module '%s' is listed but not installed; skipped", name)
+                continue
             spec: ModuleSpec = getattr(mod, "MODULE")
             self.register(spec)
             loaded.append(spec)
