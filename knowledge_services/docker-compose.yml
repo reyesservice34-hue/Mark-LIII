@@ -1,5 +1,5 @@
 # MIA-KNOWLEDGE-01: Memory & Worker Server
-# Passwörter/Keys stehen in /opt/mia/.env (REDIS_PASSWORD, QDRANT_API_KEY), nicht in dieser Datei.
+# Passwörter/Keys stehen in /opt/mia/.env (REDIS_PASSWORD, QDRANT_API_KEY, MIA_SERVICE_TOKEN), nicht in dieser Datei.
 
 x-py-health: &py-health
   test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=5)"]
@@ -37,9 +37,10 @@ services:
       - /srv/mia/memory:/data
       - /opt/mia/services:/app
     ports:
-      - "8001:5000"
+      - "127.0.0.1:8001:5000"
     environment:
       - FLASK_ENV=production
+      - MIA_SERVICE_TOKEN=${MIA_SERVICE_TOKEN:?MIA_SERVICE_TOKEN fehlt in /opt/mia/.env}
       - MEMORY_DB_PATH=/data
       - VECTOR_DB_URL=http://mia-vector-db:6333
       - REDIS_URL=redis://:${REDIS_PASSWORD}@mia-redis:6379
@@ -63,9 +64,10 @@ services:
       - /srv/mia/knowledge:/data
       - /opt/mia/services:/app
     ports:
-      - "8002:5000"
+      - "127.0.0.1:8002:5000"
     environment:
       - FLASK_ENV=production
+      - MIA_SERVICE_TOKEN=${MIA_SERVICE_TOKEN:?MIA_SERVICE_TOKEN fehlt in /opt/mia/.env}
       - KNOWLEDGE_DB_PATH=/data
       - VECTOR_DB_URL=http://mia-vector-db:6333
       - REDIS_URL=redis://:${REDIS_PASSWORD}@mia-redis:6379
@@ -88,9 +90,10 @@ services:
     volumes:
       - /opt/mia/services:/app
     ports:
-      - "8003:5000"
+      - "127.0.0.1:8003:5000"
     environment:
       - FLASK_ENV=production
+      - MIA_SERVICE_TOKEN=${MIA_SERVICE_TOKEN:?MIA_SERVICE_TOKEN fehlt in /opt/mia/.env}
       - VECTOR_DB_URL=http://mia-vector-db:6333
       - MODEL_NAME=all-MiniLM-L6-v2
     depends_on:
@@ -155,9 +158,10 @@ services:
       - /srv/mia/backups:/data
       - /opt/mia/services:/app
     ports:
-      - "8004:5000"
+      - "127.0.0.1:8004:5000"
     environment:
       - FLASK_ENV=production
+      - MIA_SERVICE_TOKEN=${MIA_SERVICE_TOKEN:?MIA_SERVICE_TOKEN fehlt in /opt/mia/.env}
       - ARCHIVE_PATH=/data/sessions
     healthcheck: *py-health
     networks:
@@ -176,9 +180,10 @@ services:
       - /srv/mia/knowledge/procedures:/data
       - /opt/mia/services:/app
     ports:
-      - "8005:5000"
+      - "127.0.0.1:8005:5000"
     environment:
       - FLASK_ENV=production
+      - MIA_SERVICE_TOKEN=${MIA_SERVICE_TOKEN:?MIA_SERVICE_TOKEN fehlt in /opt/mia/.env}
       - PROCEDURE_DB_PATH=/data
       - REDIS_URL=redis://:${REDIS_PASSWORD}@mia-redis:6379
     depends_on:
