@@ -542,6 +542,14 @@ with TestClient(app) as c:
     case("N", "J: 'check everything afterwards' is scoped to the area just worked on", "harness",
          refs(u, "scope") and "Chat" in refs(u, "scope")[0]["label"] and u["policy"] == "proceed", u["references"], t0)
 
+    t0 = time.time()
+    u = comm.understand(new_conv("comm-j2"), "prüf danach alles")
+    case("N", "J: 'check everything' in a fresh chat adds no bogus unresolved task reference", "harness",
+         [r["kind"] for r in u["references"]] == ["scope"] and u["policy"] == "proceed", u["references"], t0)
+    u = comm.understand(new_conv("comm-art"), "prüf das backend")
+    case("N", "'check the backend': 'das' is an article, not an unresolved reference", "harness",
+         u["references"] == [] and u["confidence"] == "high", (u["references"], u["confidence"]), t0)
+
     # safety and invisibility
     t0 = time.time()
     state.services["approvals"].request(action="EVAL deploy", reason="eval", target="x", risk="high", requested_by="eval")

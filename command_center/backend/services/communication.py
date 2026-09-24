@@ -29,6 +29,8 @@ LEXICON = (
     "plancraft", "lexware", "gmail", "telefon", "whatsapp", "komponente", "reparier", "repariere",
     "prüfe", "prüf", "fertig", "weiter", "einbauen", "sauber",
 )
+# words in LEXICON that are verbs/adjectives, not things a sentence can point at
+_NOT_NOUNS = {"reparier", "repariere", "prüfe", "prüf", "fertig", "weiter", "einbauen", "sauber", "push", "deploy"}
 _COMPOUNDS = {"back end": "backend", "front end": "frontend", "dash board": "dashboard",
               "data bank": "datenbank", "daten bank": "datenbank", "doc ker": "docker"}
 _FILLER = re.compile(r"\b(äh+m?|ähm|hm+|also|halt|eben|mal eben|sozusagen|quasi|okay so|ja also)\b[,]?\s*", re.I)
@@ -276,7 +278,9 @@ class CommunicationLayer:
         words = _words(normalized)
         parts = self.split_tasks(normalized)
         explicit = self._components_in(normalized)
-        referential = bool(_DEICTIC.search(normalized)) and len(words) <= self.SHORT_COMMAND_WORDS + 4 and not explicit
+        # "prüf das Backend": "das" is only an article when the sentence names the thing itself
+        names_thing = bool(explicit) or any(w.lower() in LEXICON and w.lower() not in _NOT_NOUNS for w in words)
+        referential = bool(_DEICTIC.search(normalized)) and len(words) <= self.SHORT_COMMAND_WORDS + 4 and not names_thing
         refs: list[dict] = []
         pending = int(self.state.services["approvals"].pending_count()) if self.state.services.get("approvals") else 0
 
@@ -288,7 +292,7 @@ class CommunicationLayer:
             refs.append(self._resolve_repo(history))
         elif re.search(r"\bwarum\b.*\b(rot|fehler|kaputt|geht nicht|fehlschl\w*)\b|\b(rot|kaputt)\b", normalized, re.I) and not explicit:
             refs.append(self._resolve_failing(normalized, history))
-        elif intent in ("continue", "correction") or (intent == "order" and referential and not explicit):
+        elif not verify_all and (intent in ("continue", "correction") or (intent == "order" and referential)):
             refs.append(self._resolve_active(conversation_id, history))
         if verify_all:
             comps = self._recent_components(history) or explicit
