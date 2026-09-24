@@ -627,7 +627,7 @@ class MasterRuntime:
         volatile: list[str] = []          # what changes per request; in stable mode it travels with the user message
         if stable:
             system, tool_defs = self.stable_prefix(agent, tools_all, voice=handle.voice, loaded=handle.loaded)
-            tools = [t for t in voice_tools(tools_all, "", handle.loaded)]
+            tools = self._stable_tools(tools_all, handle.loaded)
             volatile.append(_now_de())
         else:
             tools = voice_tools(tools_all, goal, handle.loaded) if lazy else tools_all
@@ -707,7 +707,7 @@ class MasterRuntime:
             segment: list[str] = []
             provider = self.provider_for(handle)
             if lazy and steps > 1:
-                tool_defs = [t.to_def() for t in voice_tools(tools_all, "" if stable else goal, handle.loaded)] if tool_defs else tool_defs
+                tool_defs = [t.to_def() for t in (self._stable_tools(tools_all, handle.loaded) if stable else voice_tools(tools_all, goal, handle.loaded))] if tool_defs else tool_defs
             async for ev in provider.stream(system=system, messages=messages, tools=tool_defs):
                 if handle.cancel.is_set():
                     raise asyncio.CancelledError()
@@ -783,6 +783,9 @@ class MasterRuntime:
 
         handle._turns = turns  # type: ignore[attr-defined]
         final = "\n\n".join(text_out).strip()
+        if not final and steps <= 1 and handle.depth == 0 and handle.conversation_id:
+            # A chat answer that is empty is a failure to report, not a "completed" run with a blank message.
+            raise RuntimeError("Das Modell hat keine Antwort geliefert (leere Antwort). Bitte noch einmal versuchen.")
         handle.text = final
         return final
 
@@ -1024,6 +1027,12 @@ class MasterRuntime:
     def _is_local(provider) -> bool:
         return getattr(getattr(provider, "info", None), "id", "") == "local"
 
+    @staticmethod
+    def _stable_tools(tools_all: list[ToolSpec], loaded: set | None = None) -> list[ToolSpec]:
+        """Question-independent tool set for a local model. think.deeper is left out: there is no faster or
+        stronger local model to switch to, and a small model likes to call it and then talk about models."""
+        return [t for t in voice_tools(tools_all, "", loaded or set()) if t.name != "think.deeper"]
+
     def stable_prefix(self, agent, tools_all: list[ToolSpec], *, voice: bool = False,
                       loaded: set | None = None) -> tuple[str, list]:
         """System prompt and tool list that do not depend on the question, the clock or memory.
@@ -1032,7 +1041,7 @@ class MasterRuntime:
         start. So everything that changes per request (time, recalled memory, the understanding note) is kept
         out of this prefix and sent with the user message instead.
         """
-        tools = voice_tools(tools_all, "", loaded or set())
+        tools = self._stable_tools(tools_all, loaded)
         # No MODEL_HINT here: it tells the model to escalate to the larger model, which on a local CPU means a
         # cold multi-minute prompt and evicting the resident model.
         system = self._system_prompt(agent, tools, with_time=False) + (VOICE_HINT if voice else LAZY_HINT)

@@ -807,6 +807,25 @@ with TestClient(app) as c:
     case("Q", "local: think.deeper answers that the model stays the same", "harness", "bleibst auf dem aktuellen Modell" in results, results[:200], t0)
     state.runtime.provider, state.runtime.fast_provider = fake, None
 
+    # local: think.deeper is not offered; empty answers are errors
+    t0 = time.time()
+    lp2 = ScriptedProvider("local")
+    state.runtime.provider, state.runtime.fast_provider = lp2, None
+    lp2.turns = [text_turn("Ok.")]
+    say(new_conv("q-tools"), "Wie spät ist es?")
+    fake.turns = [text_turn("Ok.")]
+    state.runtime.provider = fake
+    say(new_conv("q-tools2"), "Wie spät ist es?")
+    case("Q", "local: think.deeper is not in the tool list (cloud providers still get it)", "harness",
+         "think.deeper" not in lp2.tools_seen[-1] and "think.deeper" in fake.tools_seen[-1], (len(lp2.tools_seen[-1]), len(fake.tools_seen[-1])), t0)
+    conv = new_conv("q-empty")
+    fake.turns = [text_turn("")]
+    _, fin = say(conv, "Wie spät ist es?")
+    stored = [m for m in c.get(f"/api/chat/conversations/{conv}").json()["messages"] if m["role"] == "assistant"][-1]
+    case("Q", "an empty model answer is reported as an error, not stored as a completed blank message", "harness",
+         fin.get("status") in ("failed", "error") and stored["status"] == "error", (fin.get("status"), stored["status"]), t0)
+    state.runtime.provider = fake
+
     # safety and invisibility
     t0 = time.time()
     state.services["approvals"].request(action="EVAL deploy", reason="eval", target="x", risk="high", requested_by="eval")
