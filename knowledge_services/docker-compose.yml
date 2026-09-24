@@ -1,0 +1,195 @@
+# MIA-KNOWLEDGE-01: Memory & Worker Server
+# Passwörter/Keys stehen in /opt/mia/.env (REDIS_PASSWORD, QDRANT_API_KEY), nicht in dieser Datei.
+
+x-py-health: &py-health
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=5)"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 60s
+
+services:
+  # 1. Vector Database für Embeddings (Image ohne curl, daher kein Healthcheck)
+  mia-vector-db:
+    image: qdrant/qdrant:latest
+    container_name: mia-vector-db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"  # HTTP API
+      - "127.0.0.1:6334:6334"  # gRPC
+    volumes:
+      - /srv/mia/data/qdrant:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+    networks:
+      - mianet
+
+  # 2. Memory Service (Long-Term Memory)
+  mia-memory-service:
+    image: python:3.12-slim
+    container_name: mia-memory-service
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      bash -c "pip install -q flask &&
+               python memory_service.py"
+    volumes:
+      - /srv/mia/memory:/data
+      - /opt/mia/services:/app
+    ports:
+      - "8001:5000"
+    environment:
+      - FLASK_ENV=production
+      - MEMORY_DB_PATH=/data
+      - VECTOR_DB_URL=http://mia-vector-db:6333
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@mia-redis:6379
+    depends_on:
+      - mia-vector-db
+      - mia-redis
+    healthcheck: *py-health
+    networks:
+      - mianet
+
+  # 3. Knowledge Base Service
+  mia-knowledge-service:
+    image: python:3.12-slim
+    container_name: mia-knowledge-service
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      bash -c "pip install -q flask &&
+               python knowledge_service.py"
+    volumes:
+      - /srv/mia/knowledge:/data
+      - /opt/mia/services:/app
+    ports:
+      - "8002:5000"
+    environment:
+      - FLASK_ENV=production
+      - KNOWLEDGE_DB_PATH=/data
+      - VECTOR_DB_URL=http://mia-vector-db:6333
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@mia-redis:6379
+    depends_on:
+      - mia-vector-db
+      - mia-redis
+    healthcheck: *py-health
+    networks:
+      - mianet
+
+  # 4. Embedding Service (pip install von torch dauert beim ersten Start mehrere Minuten)
+  mia-embedding-service:
+    image: python:3.12-slim
+    container_name: mia-embedding-service
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      bash -c "pip install -q flask sentence-transformers &&
+               python embedding_service.py"
+    volumes:
+      - /opt/mia/services:/app
+    ports:
+      - "8003:5000"
+    environment:
+      - FLASK_ENV=production
+      - VECTOR_DB_URL=http://mia-vector-db:6333
+      - MODEL_NAME=all-MiniLM-L6-v2
+    depends_on:
+      - mia-vector-db
+    healthcheck:
+      <<: *py-health
+      start_period: 600s
+    networks:
+      - mianet
+
+  # 5. Redis Cache
+  mia-redis:
+    image: redis:7-alpine
+    container_name: mia-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - /srv/mia/data/redis:/data
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep -q PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mianet
+
+  # 6. Background Worker Queue (Celery, kein HTTP-Port)
+  mia-worker-queue:
+    image: python:3.12-slim
+    container_name: mia-worker-queue
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      bash -c "pip install -q celery redis &&
+               celery -A worker_app worker --loglevel=info"
+    volumes:
+      - /srv/mia/worker:/data
+      - /opt/mia/services:/app
+    environment:
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@mia-redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@mia-redis:6379/1
+      - WORKER_ID=mia-knowledge-01-worker
+    depends_on:
+      - mia-redis
+    networks:
+      - mianet
+
+  # 7. Session Archive Service
+  mia-session-archive:
+    image: python:3.12-slim
+    container_name: mia-session-archive
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      bash -c "pip install -q flask &&
+               python session_archive.py"
+    volumes:
+      - /srv/mia/backups:/data
+      - /opt/mia/services:/app
+    ports:
+      - "8004:5000"
+    environment:
+      - FLASK_ENV=production
+      - ARCHIVE_PATH=/data/sessions
+    healthcheck: *py-health
+    networks:
+      - mianet
+
+  # 8. Procedural Brain Service (lernt Lösungen)
+  mia-procedural-brain:
+    image: python:3.12-slim
+    container_name: mia-procedural-brain
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      bash -c "pip install -q flask &&
+               python procedural_brain.py"
+    volumes:
+      - /srv/mia/knowledge/procedures:/data
+      - /opt/mia/services:/app
+    ports:
+      - "8005:5000"
+    environment:
+      - FLASK_ENV=production
+      - PROCEDURE_DB_PATH=/data
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@mia-redis:6379
+    depends_on:
+      - mia-redis
+    healthcheck: *py-health
+    networks:
+      - mianet
+
+networks:
+  mianet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
