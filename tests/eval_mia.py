@@ -826,6 +826,34 @@ with TestClient(app) as c:
          fin.get("status") in ("failed", "error") and stored["status"] == "error", (fin.get("status"), stored["status"]), t0)
     state.runtime.provider = fake
 
+    # local: short tool results; blank answer after tool calls is named
+    t0 = time.time()
+    from command_center.backend.orchestrator.tool_registry import ToolSpec  # noqa: PLC0415
+
+    async def _big(ctx, args):
+        return "x" * 20000
+
+    state.tools.register(ToolSpec("memory.evalbig", "EVAL: returns a very large result",
+                                  {"type": "object", "properties": {}}, category="eval", risk="low", min_role="viewer", handler=_big))
+    lp3 = ScriptedProvider("local")
+    state.runtime.provider, state.runtime.fast_provider = lp3, None
+    lp3.turns = [tool_turn("memory.evalbig", {}), text_turn("Fertig.")]
+    say(new_conv("q-cap-local"), "Wie spät ist es?")
+    got_local = len([m for m in lp3.seen[-1] if m["role"] == "user"][-1]["content"][0]["content"])
+    state.runtime.provider = fake
+    fake.turns = [tool_turn("memory.evalbig", {}), text_turn("Fertig.")]
+    say(new_conv("q-cap-cloud"), "Wie spät ist es?")
+    got_cloud = len([m for m in fake.seen[-1] if m["role"] == "user"][-1]["content"][0]["content"])
+    case("Q", "local: a large tool result is cut to a short one (CPU cost); cloud keeps the long limit", "harness",
+         got_local <= 2600 and got_cloud > 10000, (got_local, got_cloud), t0)
+    conv = new_conv("q-blank-after-tool")
+    fake.turns = [tool_turn("memory.search", {"query": "x"}), text_turn("")]
+    _, fin = say(conv, "Wie spät ist es?")
+    stored = [m for m in c.get(f"/api/chat/conversations/{conv}").json()["messages"] if m["role"] == "assistant"][-1]
+    case("Q", "a blank answer after tool calls names the tools that ran instead of showing nothing", "harness",
+         "memory.search" in stored["content"] and "keine Antwort formuliert" in stored["content"] and stored["status"] == "complete",
+         (stored["status"], stored["content"][:120]), t0)
+
     # safety and invisibility
     t0 = time.time()
     state.services["approvals"].request(action="EVAL deploy", reason="eval", target="x", risk="high", requested_by="eval")

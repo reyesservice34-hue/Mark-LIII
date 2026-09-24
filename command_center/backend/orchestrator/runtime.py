@@ -686,6 +686,9 @@ class MasterRuntime:
                           attach=pending_images.append)
         turns: list[dict] = []
         text_out: list[str] = []
+        used_tools: list[str] = []
+        # A local CPU model digests ~15 tokens/s: a 12k-character tool result costs minutes, so it gets a short one.
+        result_cap = 2500 if stable else 12000
         last_flush = 0.0
         steps = 0
         max_steps = self.settings.max_agent_steps
@@ -753,6 +756,7 @@ class MasterRuntime:
                     st.bus.publish("chat.tool_call", {"run_id": handle.id, "message_id": handle.message_id,
                                                       "conversation_id": handle.conversation_id,
                                                       "tool": name, "input": _safe_args(args)})
+                used_tools.append(name)
                 blocked = unclear_reference_block(handle.understanding, name)
                 if blocked:
                     st.log.info("communication", f"Werkzeug {name} gesperrt: Bezug unklar", run_id=handle.id)
@@ -764,7 +768,7 @@ class MasterRuntime:
                     st.bus.publish("chat.tool_result", {"run_id": handle.id, "message_id": handle.message_id,
                                                         "conversation_id": handle.conversation_id,
                                                         "tool": name, "ok": ok, "output": trim(result, 1500)})
-                results.append({"type": "tool_result", "tool_use_id": call["id"], "content": trim(result, 12000),
+                results.append({"type": "tool_result", "tool_use_id": call["id"], "content": trim(result, result_cap),
                                 "is_error": not ok})
             messages.append({"role": "user", "content": results})
             turns.append({"role": "user", "content": [
@@ -783,9 +787,13 @@ class MasterRuntime:
 
         handle._turns = turns  # type: ignore[attr-defined]
         final = "\n\n".join(text_out).strip()
-        if not final and steps <= 1 and handle.depth == 0 and handle.conversation_id:
-            # A chat answer that is empty is a failure to report, not a "completed" run with a blank message.
-            raise RuntimeError("Das Modell hat keine Antwort geliefert (leere Antwort). Bitte noch einmal versuchen.")
+        if not final and handle.depth == 0 and handle.conversation_id:
+            # A blank chat message is never a good result. Without any tool call it is a failure to report; after
+            # tool calls the work may have happened, so say what ran instead of showing nothing.
+            if not used_tools:
+                raise RuntimeError("Das Modell hat keine Antwort geliefert (leere Antwort). Bitte noch einmal versuchen.")
+            final = ("Ich habe " + ", ".join(dict.fromkeys(used_tools)) + " ausgeführt, aber keine Antwort formuliert. "
+                     "Bitte frag noch einmal, gern genauer.")
         handle.text = final
         return final
 
