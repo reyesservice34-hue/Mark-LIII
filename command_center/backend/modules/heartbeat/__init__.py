@@ -30,8 +30,8 @@ DISK_WARN, DISK_ERR = 85.0, 93.0
 _ORDER = {"ok": 0, "warn": 1, "err": 2}
 
 # Was zusätzlich angepingt wird: "Anzeigename=URL", kommagetrennt.
-_DEFAULT_PINGS = ("Live-Stimme=http://jarvis-live-voice:8000/api/health,"
-                  "Sprachprogramm=http://jarvis-speaches:8000/health")
+_DEFAULT_PINGS = ("Live-Stimme=http://mia-live-voice:8000/api/health,"
+                  "Sprachprogramm=http://mia-speaches-kerstin:8000/health")
 
 _beat: dict[str, Any] = {
     "beats": 0, "last_at": None, "last_duration_ms": 0, "status": "unknown", "checks": [],

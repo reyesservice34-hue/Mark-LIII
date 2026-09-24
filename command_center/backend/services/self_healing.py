@@ -1,13 +1,23 @@
 """Deterministic, allowlisted self-healing for MIA infrastructure."""
 from __future__ import annotations
 
+import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
 
 from ..db import now_iso
 
-SAFE_CONTAINERS = {"jarvis-edge-tts", "jarvis-live-voice", "jarvis-speaches"}
+# Containers Self-Healing may start/restart on its own. Default: the local voice stack. Override with
+# MIA_SELF_HEAL_CONTAINERS (comma separated) so that a rename cannot silently switch recovery off again.
+SAFE_CONTAINERS = frozenset({"mia-live-voice", "mia-speaches-kerstin"})
+
+
+def safe_containers() -> set[str]:
+    raw = os.environ.get("MIA_SELF_HEAL_CONTAINERS")
+    names = set(SAFE_CONTAINERS) if raw is None else {n.strip() for n in raw.split(",") if n.strip()}
+    # A container someone switched off on purpose (e.g. the cloud TTS) is never brought back automatically.
+    return {n for n in names if "disabled" not in n.lower()}
 
 # Retries are bounded: a container that keeps dying is a fault to report, not
 # something to restart forever.
@@ -106,6 +116,7 @@ class SelfHealingService:
         except Exception as e:  # noqa: BLE001
             issues.append({"component": "provider", "status": "error", "detail": str(e)[:300]})
 
+        safe = safe_containers()
         docker = await metrics.docker_containers(with_stats=False)
         if docker.get("status") != "healthy":
             issues.append({"component": "docker", "status": docker.get("status"),
@@ -113,7 +124,7 @@ class SelfHealingService:
         else:
             for c in docker.get("containers", []):
                 name = c.get("name", "")
-                if name not in SAFE_CONTAINERS:
+                if name not in safe:
                     continue
                 state = str(c.get("state", "")).lower()
                 status = str(c.get("status", "")).lower()
@@ -188,4 +199,4 @@ class SelfHealingService:
             self.state.log.info("self-healing", f"{len(actions)} Reparaturaktion(en)", data={"actions": actions})
             self.state.bus.publish("self.healing", {"ts": now_iso(), "actions": actions, "issues": issues})
         return {"ok": not issues, "issues": issues, "actions": actions,
-                "safe_targets": sorted(SAFE_CONTAINERS)}
+                "safe_targets": sorted(safe)}

@@ -336,7 +336,7 @@ with TestClient(app) as c:
 
         async def docker_containers(self, with_stats=False):
             return {"status": "healthy", "containers": [
-                {"id": "abc", "name": "jarvis-edge-tts", "state": "exited", "status": "Exited (1)"}]}
+                {"id": "abc", "name": "mia-speaches-kerstin", "state": "exited", "status": "Exited (1)"}]}
 
         async def docker_action(self, cid, action):
             self.actions.append((cid, action))
@@ -352,6 +352,32 @@ with TestClient(app) as c:
     case("L", "a permanently failing container is restarted at most 3 times per hour", "harness",
          len(stub.actions) <= 3, f"{len(stub.actions)} restarts in 6 cycles", t0)
     state.services["metrics"] = real_metrics
+
+    from command_center.backend.services.self_healing import safe_containers  # noqa: PLC0415
+    _prev_env = os.environ.pop("MIA_SELF_HEAL_CONTAINERS", None)
+    case("L", "default recovery list names the real voice containers (mia-*), not the old jarvis-* names", "harness",
+         safe_containers() == {"mia-live-voice", "mia-speaches-kerstin"}, safe_containers(), t0)
+    os.environ["MIA_SELF_HEAL_CONTAINERS"] = "mia-live-voice, my-other-service, mia-edge-tts-DISABLED-cloud"
+    case("L", "MIA_SELF_HEAL_CONTAINERS overrides the list", "harness",
+         "my-other-service" in safe_containers() and "mia-speaches-kerstin" not in safe_containers(), safe_containers(), t0)
+    case("L", "a deliberately disabled container is never auto-started, even if listed", "harness",
+         "mia-edge-tts-DISABLED-cloud" not in safe_containers(), safe_containers(), t0)
+    os.environ.pop("MIA_SELF_HEAL_CONTAINERS")
+    if _prev_env is not None:
+        os.environ["MIA_SELF_HEAL_CONTAINERS"] = _prev_env
+
+    class _DisabledStub(_StubMetrics):
+        async def docker_containers(self, with_stats=False):
+            return {"status": "healthy", "containers": [
+                {"id": "x1", "name": "mia-edge-tts-DISABLED-cloud", "state": "exited", "status": "Exited (137)"}]}
+
+    real_metrics2 = state.services["metrics"]
+    dstub = _DisabledStub()
+    state.services["metrics"] = dstub
+    _aio.run(heal.run_once())
+    state.services["metrics"] = real_metrics2
+    case("L", "run_once leaves the exited, deliberately disabled cloud-TTS container alone", "harness",
+         dstub.actions == [], dstub.actions, t0)
 
     from datetime import timedelta  # noqa: PLC0415
     old = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -428,6 +454,11 @@ with TestClient(app) as c:
          "unverified" in fake.systems[-1].lower(), "", t0)
     case("B", "reasoning quality needs a live model (harness cannot judge it)", "live", True, "live only", skipped=True)
     case("C", "coding quality needs a live model (harness cannot judge it)", "live", True, "live only", skipped=True)
+
+    from command_center.backend.modules.heartbeat import _DEFAULT_PINGS  # noqa: PLC0415
+    case("L", "heartbeat pings the real voice containers (mia-*), not the old names", "harness",
+         "mia-live-voice" in _DEFAULT_PINGS and "mia-speaches-kerstin" in _DEFAULT_PINGS and "jarvis-" not in _DEFAULT_PINGS,
+         _DEFAULT_PINGS, t0)
 
     # ── N communication intelligence layer (Section 21, tests A-J) ──────────
     comm = state.services["communication"]
