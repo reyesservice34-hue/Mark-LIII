@@ -8,6 +8,7 @@ Covers OpenAI itself and every server that mirrors its API: LM Studio, Ollama
 from __future__ import annotations
 
 import json
+import os
 from typing import AsyncIterator
 
 import httpx
@@ -21,6 +22,9 @@ class OpenAICompatProvider:
         if not self.base_url.endswith("/v1"):
             self.base_url += "/v1"
         self.api_key = api_key
+        # The read timeout is the wait between two chunks. A local CPU model sends nothing while it digests a
+        # long cold prompt (minutes), so a local provider gets a much longer wait than a cloud API.
+        self.read_timeout = (float(os.environ.get("LOCAL_LLM_TIMEOUT") or 1500) if provider_id == "local" else 300.0)
         self.info = ProviderInfo(id=provider_id, model=model,
                                  label=f"{'OpenAI' if provider_id == 'openai' else 'Local model'} · {model}")
 
@@ -86,7 +90,7 @@ class OpenAICompatProvider:
         finish = "stop"
         usage: dict = {}
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=15.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(self.read_timeout, connect=15.0)) as client:
                 async with client.stream("POST", f"{self.base_url}/chat/completions",
                                          headers=self._headers(), json=body) as resp:
                     if resp.status_code >= 400:
@@ -125,7 +129,7 @@ class OpenAICompatProvider:
                             if choice.get("finish_reason"):
                                 finish = choice["finish_reason"]
         except httpx.HTTPError as e:
-            yield {"type": "error", "message": f"Cannot reach {self.info.label}: {e}", "retryable": True}
+            yield {"type": "error", "message": f"Cannot reach {self.info.label}: {e or e.__class__.__name__}", "retryable": True}
             return
 
         content: list[dict] = []

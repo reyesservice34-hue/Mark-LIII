@@ -14,7 +14,7 @@ Two tiers, kept honest and separate:
 
 Categories: A conversation, B reasoning, C coding, D tool use, E agent routing,
 F memory, G task execution, H error recovery, I permissions, J hallucination,
-K learning, L self-healing, M core evolution, N communication layer, O scheduler backoff, P integrations.
+K learning, L self-healing, M core evolution, N communication layer, O scheduler backoff, P integrations, Q local model.
 
 Run:      python tests/eval_mia.py [--label before|after]
 Compare:  python tests/eval_mia.py --compare tests/eval_results/a.json tests/eval_results/b.json
@@ -93,14 +93,16 @@ def case(category: str, name: str, tier: str, ok, detail="", started: float | No
 
 
 class ScriptedProvider:
-    def __init__(self):
-        self.info = ProviderInfo(id="fake", model="scripted-1", label="Scripted · eval")
+    def __init__(self, pid: str = "fake"):
+        self.info = ProviderInfo(id=pid, model="scripted-1", label="Scripted · eval")
         self.turns: list[list[dict]] = []
         self.seen: list[list[dict]] = []
         self.systems: list[str] = []
+        self.tools_seen: list[list[str]] = []
 
     async def stream(self, *, system, messages, tools, max_tokens=16000):
         self.seen.append(messages)
+        self.tools_seen.append([t.name for t in tools])
         self.systems.append(system if isinstance(system, str) else json.dumps(system))
         for ev in (self.turns.pop(0) if self.turns else text_turn("Done.")):
             yield ev
@@ -647,6 +649,69 @@ with TestClient(app) as c:
     case("P", "no token stays 'not_configured' (unchanged)", "harness", _aio3.run(gh.check())["status"] == "not_configured", "", t0)
     if _old_tok is not None:
         os.environ["GITHUB_TOKEN"] = _old_tok
+
+    # ── Q local model: stable prefix, warm-up, timeout ───────────────────────
+    import asyncio as _aio4  # noqa: PLC0415
+    from command_center.backend.ai.openai_compat import OpenAICompatProvider  # noqa: PLC0415
+    from command_center.backend.services.local_warmup import LocalWarmup  # noqa: PLC0415
+    t0 = time.time()
+    _old_to = os.environ.pop("LOCAL_LLM_TIMEOUT", None)
+    case("Q", "local provider waits up to 25 min between chunks by default (cold CPU prompt)", "harness",
+         OpenAICompatProvider("local", "http://x", "", "m").read_timeout == 1500.0, "", t0)
+    case("Q", "cloud providers keep the 300 s wait", "harness",
+         OpenAICompatProvider("openai", "http://x", "", "m").read_timeout == 300.0, "", t0)
+    os.environ["LOCAL_LLM_TIMEOUT"] = "42"
+    case("Q", "LOCAL_LLM_TIMEOUT overrides the local wait", "harness",
+         OpenAICompatProvider("local", "http://x", "", "m").read_timeout == 42.0, "", t0)
+    os.environ.pop("LOCAL_LLM_TIMEOUT")
+    if _old_to is not None:
+        os.environ["LOCAL_LLM_TIMEOUT"] = _old_to
+
+    cloud = fake
+    localp = ScriptedProvider("local")
+    state.runtime.provider = localp
+    conv = new_conv("q-local")
+    localp.turns = [text_turn("Ok.")]
+    say(conv, "Wie spät ist es gerade?")
+    localp.turns = [text_turn("Ok.")]
+    say(conv, "Such mir bitte die Wettervorhersage für Freitag im Web und schick eine Mail an den Kunden.")
+    s1, s2 = localp.systems[-2], localp.systems[-1]
+    case("Q", "local: system prompt is byte-identical for two different questions (cacheable prefix)", "harness",
+         s1 == s2, f"{len(s1)} vs {len(s2)} chars", t0)
+    case("Q", "local: tool list does not depend on the question wording", "harness",
+         localp.tools_seen[-2] == localp.tools_seen[-1] and len(localp.tools_seen[-1]) > 5, [len(x) for x in localp.tools_seen[-2:]], t0)
+    case("Q", "local: no clock in the system prompt (it would break the cache every minute)", "harness",
+         "now=" not in s2 and "ENVIRONMENT:" in s2, "", t0)
+    def _last_user(prov) -> str:
+        return json.dumps([m for m in prov.seen[-1] if m["role"] == "user"][-1], ensure_ascii=False)
+
+    last_user = _last_user(localp)
+    case("Q", "local: the current time travels with the user message instead", "harness",
+         "[Kontext zu dieser Anfrage" in last_user, last_user[:160], t0)
+    localp.turns = [text_turn("Ok.")]
+    say(conv, "mach weiter")
+    case("Q", "local: the understanding note is delivered with the user message, not in the system prompt", "harness",
+         "VERSTÄNDNIS-NOTIZ" in _last_user(localp) and "VERSTÄNDNIS-NOTIZ" not in localp.systems[-1],
+         "", t0)
+    stored = c.get(f"/api/chat/conversations/{conv}").json()["messages"]
+    case("Q", "local: injected context is never stored in the visible chat", "harness",
+         all("[Kontext zu dieser Anfrage" not in m["content"] and "VERSTÄNDNIS-NOTIZ" not in m["content"] for m in stored), "", t0)
+
+    warm = LocalWarmup(state)
+    res = _aio4.run(warm.run_once())
+    warm_system, warm_tools = localp.systems[-1], localp.tools_seen[-1]
+    localp.turns = [text_turn("Ok.")]
+    say(conv, "und was ist mit dem Kalender morgen?")
+    case("Q", "warm-up sends exactly the prefix (system + tools) a real chat sends", "harness",
+         res.get("ok") is True and localp.systems[-1] == warm_system and localp.tools_seen[-1] == warm_tools, res, t0)
+    state.runtime.provider = cloud
+    case("Q", "warm-up does nothing for a cloud provider", "harness",
+         "skipped" in _aio4.run(warm.run_once()), "", t0)
+    cloud.turns = [text_turn("Ok.")]
+    say(new_conv("q-cloud"), "Wie spät ist es gerade?")
+    case("Q", "cloud provider path is unchanged: clock still in the system prompt, no context block in the user message", "harness",
+         "now=" in cloud.systems[-1] and "[Kontext zu dieser Anfrage" not in _last_user(cloud), "", t0)
+    state.runtime.provider = fake
 
     # safety and invisibility
     t0 = time.time()

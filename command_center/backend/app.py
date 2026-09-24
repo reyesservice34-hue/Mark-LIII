@@ -56,6 +56,7 @@ from .services.learning import LearningLedger
 from .services.auto_learning import AutoLearningService
 from .services.communication import CommunicationLayer
 from .services.core_evolution import CoreEvolutionService
+from .services.local_warmup import LocalWarmup
 from .services.self_healing import SelfHealingService
 from .services.tasks import TaskService
 from .services.teaching import TeachingService
@@ -105,6 +106,7 @@ def build_state(settings: Settings | None = None) -> AppState:
     state.services["auto_learning"] = AutoLearningService(state)
     state.services["core_evolution"] = CoreEvolutionService(state)
     state.services["communication"] = CommunicationLayer(state)
+    state.services["local_warmup"] = LocalWarmup(state)
     state.services["self_healing"] = SelfHealingService(state)
     state.services["mcp"] = McpRegistry(state)
     state.integrations = IntegrationRegistry(db, bus)
@@ -130,6 +132,12 @@ def build_state(settings: Settings | None = None) -> AppState:
                         state.services["self_healing"].run_once,
                         description="Prüft MIA-Dienste und repariert nur allowlistete sichere Fehler.",
                         silent=True, run_immediately=False)
+    state.scheduler.add("mia:warmup", "MIA Lokales Modell vorwärmen", 240,
+                        state.services["local_warmup"].run_once,
+                        description="Hält das lokale Modell geladen und den langen Prompt-Anfang im Cache, damit die erste "
+                                    "Antwort nicht Minuten dauert. Läuft nur mit lokalem Anbieter und nie neben einem aktiven Lauf.",
+                        silent=True, run_immediately=True, backoff_max=1800,
+                        enabled=bool(os.environ.get("LOCAL_LLM_URL")))
     _seed_memory(db)
     return state
 

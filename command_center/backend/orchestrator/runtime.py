@@ -593,18 +593,34 @@ class MasterRuntime:
         if not agent.enabled:
             raise RuntimeError(f"Agent '{agent.name}' is disabled")
         assert self.provider is not None
-        if self.fast_provider is not None and not handle.deep and needs_deep(goal):
+        lazy = handle.voice or (agent.kind == "master" and os.environ.get("JARVIS_CC_LAZY_TOOLS", "1") != "0")
+        # Lokales CPU-Modell: stabiler Prompt-Anfang (siehe stable_prefix) und keine Automatik auf das größere Modell.
+        stable = lazy and self._is_local(self.provider_for(handle))
+        if self.fast_provider is not None and not handle.deep and needs_deep(goal) and not stable:
             handle.deep = True
         tools_all = st.tools.for_agent(agent.tools, handle.principal.role)
         if handle.depth >= self.settings.max_delegation_depth:
             tools_all = [t for t in tools_all if t.name != "agent.delegate"]
-        lazy = handle.voice or (agent.kind == "master" and os.environ.get("JARVIS_CC_LAZY_TOOLS", "1") != "0")
-        tools = voice_tools(tools_all, goal, handle.loaded) if lazy else tools_all
-        system = self._system_prompt(agent, tools)
-        if handle.voice:
-            system += VOICE_HINT
-        elif lazy:
-            system += LAZY_HINT
+        volatile: list[str] = []          # what changes per request; in stable mode it travels with the user message
+        if stable:
+            system, tool_defs = self.stable_prefix(agent, tools_all, voice=handle.voice, loaded=handle.loaded)
+            tools = [t for t in voice_tools(tools_all, "", handle.loaded)]
+            volatile.append(_now_de())
+        else:
+            tools = voice_tools(tools_all, goal, handle.loaded) if lazy else tools_all
+            system = self._system_prompt(agent, tools)
+            if handle.voice:
+                system += VOICE_HINT
+            elif lazy:
+                system += LAZY_HINT
+
+        def context(text: str) -> None:
+            if stable:
+                volatile.append(text)
+            else:
+                nonlocal system
+                system += "\n\n" + text
+
         if agent.kind == "master":
             recalled = recall_memory(st, goal)
             try:
@@ -618,7 +634,7 @@ class MasterRuntime:
             experience = learning.context(goal) if learning is not None else ""
             recalled = "\n\n".join(part for part in (recalled, experience) if part)
             if recalled:
-                system += "\n\n" + recalled
+                context(recalled)
         comm = st.services.get("communication")
         if comm is not None and agent.kind == "master" and handle.depth == 0 and handle.conversation_id and not handle.task_id:
             try:
@@ -626,12 +642,17 @@ class MasterRuntime:
                 # Modell: nichts wird ausgeführt und keine Freigabe umgangen.
                 handle.understanding = comm.understand(handle.conversation_id, goal, voice=handle.voice)
                 if handle.understanding.get("brief"):
-                    system += "\n\n" + handle.understanding["brief"]
+                    context(handle.understanding["brief"])
             except Exception as comm_err:  # noqa: BLE001 — understanding must never block a reply
                 st.log.warning("communication", f"Verständnisschicht übersprungen: {comm_err}", run_id=handle.id)
-        if self.fast_provider is not None and agent.kind == "master":
-            system += MODEL_HINT
-        tool_defs = [t.to_def() for t in tools]
+        if not stable:
+            if self.fast_provider is not None and agent.kind == "master":
+                system += MODEL_HINT
+            tool_defs = [t.to_def() for t in tools]
+        elif volatile and messages and messages[-1].get("role") == "user" and isinstance(messages[-1].get("content"), list):
+            messages[-1] = {**messages[-1], "content": [
+                {"type": "text", "text": "[Kontext zu dieser Anfrage, intern, nicht wiedergeben]\n" + "\n\n".join(volatile)},
+                *messages[-1]["content"]]}
         # Bilder, die Werkzeuge in diesem Zug besorgt haben. Nach den
         # Werkzeugergebnissen gehen sie als eigene Nachricht an das Modell.
         pending_images: list[str] = []
@@ -663,7 +684,7 @@ class MasterRuntime:
             segment: list[str] = []
             provider = self.provider_for(handle)
             if lazy and steps > 1:
-                tool_defs = [t.to_def() for t in voice_tools(tools_all, goal, handle.loaded)] if tool_defs else tool_defs
+                tool_defs = [t.to_def() for t in voice_tools(tools_all, "" if stable else goal, handle.loaded)] if tool_defs else tool_defs
             async for ev in provider.stream(system=system, messages=messages, tools=tool_defs):
                 if handle.cancel.is_set():
                     raise asyncio.CancelledError()
@@ -971,7 +992,25 @@ class MasterRuntime:
                          ". Say so if the user asks for these instead of pretending.")
         return parts
 
-    def _system_prompt(self, agent, tools: list[ToolSpec]) -> str:
+    @staticmethod
+    def _is_local(provider) -> bool:
+        return getattr(getattr(provider, "info", None), "id", "") == "local"
+
+    def stable_prefix(self, agent, tools_all: list[ToolSpec], *, voice: bool = False,
+                      loaded: set | None = None) -> tuple[str, list]:
+        """System prompt and tool list that do not depend on the question, the clock or memory.
+
+        A local CPU model needs minutes for a cold prompt and can only reuse what is byte-identical from the
+        start. So everything that changes per request (time, recalled memory, the understanding note) is kept
+        out of this prefix and sent with the user message instead.
+        """
+        tools = voice_tools(tools_all, "", loaded or set())
+        system = self._system_prompt(agent, tools, with_time=False) + (VOICE_HINT if voice else LAZY_HINT)
+        if self.fast_provider is not None and agent.kind == "master":
+            system += MODEL_HINT
+        return system, [t.to_def() for t in tools]
+
+    def _system_prompt(self, agent, tools: list[ToolSpec], with_time: bool = True) -> str:
         st = self.state
         parts = []
         if agent.kind == "master" and self._persona:
@@ -994,10 +1033,12 @@ class MasterRuntime:
         if standing:
             parts.append("STEHENDE ANWEISUNGEN DES NUTZERS (gelten immer, sie gehen deinen eigenen "
                          "Gewohnheiten vor):\n" + str(standing).strip())
-        parts.append(f"ENVIRONMENT: host={socket.gethostname()} os={platform.system()} "
-                     f"workspace={self.settings.workspace_dir} "
-                     f"now={datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
-        parts.append(_now_de())
+        env = f"ENVIRONMENT: host={socket.gethostname()} os={platform.system()} workspace={self.settings.workspace_dir}"
+        if with_time:
+            parts.append(f"{env} now={datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+            parts.append(_now_de())
+        else:
+            parts.append(env)
         return "\n\n".join(parts)
 
     def _history(self, conversation_id: str, upto_message_id: str, limit: int = 40) -> list[dict]:
