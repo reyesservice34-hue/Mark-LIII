@@ -150,7 +150,7 @@ class OpenAICompatProvider:
         stop = "tool_use" if calls else ("max_tokens" if finish == "length" else "end_turn")
         yield {"type": "message_end", "stop_reason": stop, "content": content, "usage": usage}
 
-    async def tool_check(self) -> tuple[bool, str]:
+    async def tool_check(self, timeout: float = 45.0) -> tuple[bool, str]:
         """Beherrscht dieses Modell Werkzeugaufrufe? Einmal wirklich ausprobiert.
 
         Der Unterschied entscheidet alles: Ein Modell, das antwortet, aber keine
@@ -177,7 +177,7 @@ class OpenAICompatProvider:
             "tool_choice": "auto", "max_tokens": 128, "stream": False,
         }
         try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 r = await client.post(f"{self.base_url}/chat/completions",
                                       headers=self._headers(), json=body)
         except httpx.HTTPError as e:

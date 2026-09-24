@@ -14,7 +14,7 @@ Two tiers, kept honest and separate:
 
 Categories: A conversation, B reasoning, C coding, D tool use, E agent routing,
 F memory, G task execution, H error recovery, I permissions, J hallucination,
-K learning, L self-healing, M core evolution, N communication layer, O scheduler backoff, P integrations, Q local model.
+K learning, L self-healing, M core evolution, N communication layer, O scheduler backoff, P integrations, Q local model, R local model probe.
 
 Run:      python tests/eval_mia.py [--label before|after]
 Compare:  python tests/eval_mia.py --compare tests/eval_results/a.json tests/eval_results/b.json
@@ -712,6 +712,51 @@ with TestClient(app) as c:
     case("Q", "cloud provider path is unchanged: clock still in the system prompt, no context block in the user message", "harness",
          "now=" in cloud.systems[-1] and "[Kontext zu dieser Anfrage" not in _last_user(cloud), "", t0)
     state.runtime.provider = fake
+
+    # ── R local model probe must not be cancelled mid-load by the 15 s health check ──
+    import asyncio as _aio5  # noqa: PLC0415
+    from command_center.backend.adapters.integrations import LocalLLMIntegration  # noqa: PLC0415
+    t0 = time.time()
+    calls = {"probe": 0, "models": []}
+
+    async def _slow_probe(self, timeout=45.0):
+        calls["probe"] += 1
+        calls["models"].append(self.info.model)
+        await _aio5.sleep(0.6)                       # stands for a cold model load
+        return True, "ruft Werkzeuge auf"
+
+    async def _healthy(self):
+        return {"status": "healthy", "detail": "1 models listed"}
+
+    _orig = (OpenAICompatProvider.tool_check, OpenAICompatProvider.health)
+    OpenAICompatProvider.tool_check, OpenAICompatProvider.health = _slow_probe, _healthy
+    os.environ["LOCAL_LLM_URL"] = "http://127.0.0.1:9"
+    os.environ["LOCAL_LLM_MODEL"], os.environ["JARVIS_FAST_MODEL"] = "big-model:7b", "small-model:3b"
+    LocalLLMIntegration._tools_ok, LocalLLMIntegration._probe = None, None
+    llm = LocalLLMIntegration("local_llm", "Local", "ai", [], required_env=["LOCAL_LLM_URL"])
+
+    async def _scenario():
+        started = time.time()
+        first = await llm.check()
+        quick = time.time() - started
+        again = await llm.check()                   # while the probe is still running: no second probe
+        await _aio5.sleep(0.9)
+        final = await llm.check()
+        return first, quick, again, final
+
+    first, quick, again, final = _aio5.run(_scenario())
+    case("R", "first check returns at once (does not wait for the probe) and says it is pending", "harness",
+         quick < 0.3 and first["status"] == "degraded" and "Hintergrund" in first["detail"], (quick, first), t0)
+    case("R", "a second check while the probe runs does not start another probe", "harness",
+         calls["probe"] == 1 and "Hintergrund" in again["detail"], calls, t0)
+    case("R", "after the probe finished the result is remembered and reported healthy", "harness",
+         final["status"] == "healthy" and calls["probe"] == 1, final, t0)
+    case("R", "the probe targets the default chat model, not the large one (no eviction of the resident model)", "harness",
+         calls["models"] == ["small-model:3b"], calls, t0)
+    OpenAICompatProvider.tool_check, OpenAICompatProvider.health = _orig
+    for _k in ("LOCAL_LLM_URL", "LOCAL_LLM_MODEL", "JARVIS_FAST_MODEL"):
+        os.environ.pop(_k, None)
+    LocalLLMIntegration._tools_ok, LocalLLMIntegration._probe = None, None
 
     # safety and invisibility
     t0 = time.time()

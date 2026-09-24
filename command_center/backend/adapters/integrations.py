@@ -132,6 +132,17 @@ class LocalLLMIntegration(IntegrationAdapter):
     """
 
     _tools_ok: tuple[str, bool, str] | None = None     # (Modell, kann es, Grund)
+    _probe: "asyncio.Task | None" = None
+    _probe_at: float = 0.0
+    _TRANSIENT = "Werkzeugprobe nicht möglich"
+
+    @classmethod
+    async def _run_probe(cls, p) -> None:
+        # Own long wait: a cold local model needs minutes on a CPU. The 15 s of the health check would cancel
+        # it mid-load and start the load again at every refresh.
+        kann, grund = await p.tool_check(timeout=900.0)
+        if not grund.startswith(cls._TRANSIENT):        # only a real answer is remembered, not a hiccup
+            cls._tools_ok = (p.info.model, kann, grund)
 
     async def check(self) -> dict:
         if not self.configured():
@@ -140,16 +151,26 @@ class LocalLLMIntegration(IntegrationAdapter):
         p = build_provider("local")
         if p is None:
             return {"status": "offline", "detail": "provider init failed"}
+        # Check the model that answers chats by default. A local server holds only a couple of models in memory:
+        # probing the large one would evict the resident chat model (and its warmed prompt cache) at every check.
+        fast = os.environ.get("JARVIS_FAST_MODEL", "").strip()
+        if fast and hasattr(p, "base_url") and p.info.model != fast:
+            from ..ai.openai_compat import OpenAICompatProvider
+            p = OpenAICompatProvider("local", p.base_url, p.api_key, fast)
         zustand = await p.health()
         if zustand.get("status") != "healthy" or not hasattr(p, "tool_check"):
             return zustand
 
         gemerkt = type(self)._tools_ok
         if gemerkt is None or gemerkt[0] != p.info.model:
-            kann, grund = await p.tool_check()
-            type(self)._tools_ok = (p.info.model, kann, grund)
-        else:
-            _, kann, grund = gemerkt
+            cls = type(self)
+            if cls._probe is None or (cls._probe.done() and time.monotonic() - cls._probe_at > 600):
+                cls._probe_at = time.monotonic()
+                cls._probe = asyncio.create_task(cls._run_probe(p))
+            return {"status": "degraded",
+                    "detail": f"Werkzeugprobe für {p.info.model} läuft im Hintergrund (auf der CPU dauert das Minuten); "
+                              "bis dahin nicht bestätigt."}
+        _, kann, grund = gemerkt
 
         if not kann:
             # Erreichbar, aber für diesen Zweck untauglich — das ist „degraded",
