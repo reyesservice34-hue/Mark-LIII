@@ -131,6 +131,14 @@ services:
     restart: unless-stopped
     user: root
     command: ["python", "/watchdog.py"]
+    # Das Image bringt einen Healthcheck gegen 127.0.0.1:8080 mit. Der Watchdog hat keinen Webserver, der Check
+    # schlug also immer fehl. Geprüft wird hier der Weg, den der Watchdog selbst braucht: das Backend im Netz.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://jarvis-command-center:8080/api/health',timeout=4)"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 15s
     group_add:
       - "${JARVIS_CC_DOCKER_GID:-65534}"
     networks:
