@@ -230,10 +230,16 @@ class GitHubIntegration(IntegrationAdapter):
     async def check(self) -> dict:
         if not self.configured():
             return {"status": "not_configured", "detail": "GITHUB_TOKEN not set"}
+        token = os.environ["GITHUB_TOKEN"]
+        if not token.isascii() or any(ch.isspace() for ch in token):
+            # A token copied from a UI that masks it ("ghp_ab••••••") is not a token. Say so instead of
+            # letting the HTTP layer fail with an unreadable 'ascii' codec error.
+            return {"status": "offline", "detail": "GITHUB_TOKEN enthält Sonderzeichen oder Leerzeichen (z. B. •): "
+                                                   "vermutlich maskiert kopiert. Den vollständigen Token neu eintragen."}
         try:
             async with httpx.AsyncClient(timeout=8.0) as c:
                 r = await c.get("https://api.github.com/user", headers={
-                    "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+                    "Authorization": f"Bearer {token}",
                     "Accept": "application/vnd.github+json"})
             if r.status_code == 401:
                 return {"status": "offline", "detail": "GitHub rejected the token"}

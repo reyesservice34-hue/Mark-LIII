@@ -14,7 +14,7 @@ Two tiers, kept honest and separate:
 
 Categories: A conversation, B reasoning, C coding, D tool use, E agent routing,
 F memory, G task execution, H error recovery, I permissions, J hallucination,
-K learning, L self-healing, M core evolution, N communication layer, O scheduler backoff.
+K learning, L self-healing, M core evolution, N communication layer, O scheduler backoff, P integrations.
 
 Run:      python tests/eval_mia.py [--label before|after]
 Compare:  python tests/eval_mia.py --compare tests/eval_results/a.json tests/eval_results/b.json
@@ -629,6 +629,24 @@ with TestClient(app) as c:
     n_plain = sum(1 for lv, m in reclog.rows if lv == "error" and "EVAL plain" in m)
     case("O", "without backoff every failure is still logged as ERROR (unchanged behaviour)", "harness",
          n_plain == 2, n_plain, t0)
+
+    # ── P integrations: a masked-copy token is named, not reported as a codec error ──
+    import asyncio as _aio3  # noqa: PLC0415
+    from command_center.backend.adapters.integrations import GitHubIntegration  # noqa: PLC0415
+    t0 = time.time()
+    gh = GitHubIntegration("github", "GitHub", "code", [], required_env=["GITHUB_TOKEN"])
+    _old_tok = os.environ.get("GITHUB_TOKEN")
+    os.environ["GITHUB_TOKEN"] = "ghp_ab\u2022\u2022\u2022\u2022\u2022\u2022"
+    res = _aio3.run(gh.check())
+    case("P", "GitHub token with masking bullets is reported as such (offline, names the cause)", "harness",
+         res["status"] == "offline" and "maskiert" in res["detail"] and "codec" not in res["detail"], res, t0)
+    os.environ["GITHUB_TOKEN"] = "ghp_with space"
+    case("P", "GitHub token containing whitespace is rejected before any request", "harness",
+         _aio3.run(gh.check())["status"] == "offline", "", t0)
+    os.environ.pop("GITHUB_TOKEN")
+    case("P", "no token stays 'not_configured' (unchanged)", "harness", _aio3.run(gh.check())["status"] == "not_configured", "", t0)
+    if _old_tok is not None:
+        os.environ["GITHUB_TOKEN"] = _old_tok
 
     # safety and invisibility
     t0 = time.time()
