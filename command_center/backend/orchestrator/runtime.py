@@ -109,6 +109,29 @@ def needs_deep(goal: str) -> bool:
     return len(g) > 400 or bool(_DEEP_RE.search(g))
 
 
+# Tools that only look, never change anything. While it is unclear what the user refers to, only these may run.
+_READ_ONLY_TOOL = re.compile(
+    r"\.(list|get|read|search|find|show|status|check|recall|describe|inventory|today|upcoming|events|briefing|context|"
+    r"open|stats|summary|view|preview|health|catalog|catalogue|lookup|query|load|deeper|history)$|^(think|tools)\.")
+
+
+def unclear_reference_block(understanding: dict | None, tool: str) -> str:
+    """Non-empty when this tool call must not run yet because the user's reference is unclear.
+
+    The understanding note asks the model to clarify first; a small model can ignore that. This enforces it at
+    execution time (not in the tool list, which would invalidate a cached prompt prefix).
+    """
+    if not understanding or understanding.get("policy") != "ask" or _READ_ONLY_TOOL.search(tool):
+        return ""
+    unclear = []
+    for r in understanding.get("references", []):
+        if r.get("status") != "resolved":
+            unclear.append(r.get("reason") or " | ".join(r.get("candidates", [])) or str(r.get("kind", "")))
+    return ("Geblockt: Es ist nicht klar, worauf sich der Nutzer bezieht (" + "; ".join(unclear)[:300] + "). "
+            "Verändere nichts. Stelle dem Nutzer jetzt genau eine kurze Rückfrage und nenne, was unklar ist. "
+            "Behaupte nicht, etwas erledigt zu haben.")
+
+
 MODEL_HINT = (
     "\n\nMODELLWAHL: Du läufst gerade auf dem schnellen Modell, damit du zügig antwortest. Wird eine Aufgabe "
     "knifflig (Kalkulation oder Angebot, Verträge, Rechtliches oder Normen, heikle Kundenmails, längere Planung, "
@@ -730,7 +753,12 @@ class MasterRuntime:
                     st.bus.publish("chat.tool_call", {"run_id": handle.id, "message_id": handle.message_id,
                                                       "conversation_id": handle.conversation_id,
                                                       "tool": name, "input": _safe_args(args)})
-                result, ok = await self.executor.execute(ctx, name, args)
+                blocked = unclear_reference_block(handle.understanding, name)
+                if blocked:
+                    st.log.info("communication", f"Werkzeug {name} gesperrt: Bezug unklar", run_id=handle.id)
+                    result, ok = blocked, False
+                else:
+                    result, ok = await self.executor.execute(ctx, name, args)
                 self._step(handle, "tool_result", f"{name}: {trim(result, 200)}", tool=name, ok=ok)
                 if handle.message_id:
                     st.bus.publish("chat.tool_result", {"run_id": handle.id, "message_id": handle.message_id,
