@@ -1033,9 +1033,9 @@ class MasterRuntime:
         out of this prefix and sent with the user message instead.
         """
         tools = voice_tools(tools_all, "", loaded or set())
+        # No MODEL_HINT here: it tells the model to escalate to the larger model, which on a local CPU means a
+        # cold multi-minute prompt and evicting the resident model.
         system = self._system_prompt(agent, tools, with_time=False) + (VOICE_HINT if voice else LAZY_HINT)
-        if self.fast_provider is not None and agent.kind == "master":
-            system += MODEL_HINT
         return system, [t.to_def() for t in tools]
 
     def _system_prompt(self, agent, tools: list[ToolSpec], with_time: bool = True) -> str:

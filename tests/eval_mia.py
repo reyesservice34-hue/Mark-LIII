@@ -793,6 +793,20 @@ with TestClient(app) as c:
          and unclear_reference_block({"policy": "ask", "references": []}, "memory.remember") != ""
          and unclear_reference_block({"policy": "ask", "references": []}, "task.create") != "", "", t0)
 
+    # local models: never escalate to the larger local model (cold prompt + eviction on one CPU)
+    t0 = time.time()
+    fast_l, deep_l = ScriptedProvider("local"), ScriptedProvider("local")
+    state.runtime.provider, state.runtime.fast_provider = deep_l, fast_l
+    fast_l.turns = [tool_turn("think.deeper", {"reason": "knifflig"}), text_turn("Ok.")]
+    say(new_conv("q-deeper"), "Erstelle ein ausführliches Angebot mit Kalkulation und Vergleich für das Bauvorhaben")
+    case("Q", "local: neither the auto-escalation nor think.deeper switches to the larger local model", "harness",
+         len(deep_l.systems) == 0 and len(fast_l.systems) == 2, (len(deep_l.systems), len(fast_l.systems)), t0)
+    case("Q", "local: the prompt carries no 'switch to the stronger model' hint", "harness",
+         "MODELLWAHL" not in fast_l.systems[-1], "", t0)
+    results = json.dumps([m for m in fast_l.seen[-1] if m["role"] == "user"][-1], ensure_ascii=False)
+    case("Q", "local: think.deeper answers that the model stays the same", "harness", "bleibst auf dem aktuellen Modell" in results, results[:200], t0)
+    state.runtime.provider, state.runtime.fast_provider = fake, None
+
     # safety and invisibility
     t0 = time.time()
     state.services["approvals"].request(action="EVAL deploy", reason="eval", target="x", risk="high", requested_by="eval")

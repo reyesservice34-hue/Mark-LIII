@@ -245,6 +245,11 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         run = st.runtime.get_run(ctx.run_id or "") if st.runtime else None
         if run is None or st.runtime.fast_provider is None:
             return {"ok": True, "note": "Du läufst bereits auf dem stärksten Modell."}
+        if st.runtime._is_local(st.runtime.provider_for(run)):
+            # Two local models share one CPU and one memory budget: switching means loading the larger one cold
+            # and dropping the resident one. Stay on the current model.
+            return {"ok": True, "note": "Auf diesem Server gibt es kein stärkeres Modell, das schnell genug wäre. "
+                                        "Du bleibst auf dem aktuellen Modell. Mach mit der Aufgabe weiter."}
         run.deep = True
         ctx.emit("model", {"text": "Wechsle auf das stärkere Modell: " + str(args.get("reason", ""))[:120]})
         return {"ok": True, "note": "Ab jetzt antwortet das stärkere Modell. Mach mit der Aufgabe weiter."}
