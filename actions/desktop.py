@@ -5,9 +5,12 @@ import json
 import shutil
 import subprocess
 import tempfile
+import threading
 import platform
 from pathlib import Path
 from datetime import datetime
+
+from core.knowledge_client import procedure_add, procedure_find
 
 try:
     import pyautogui
@@ -116,6 +119,15 @@ def _ask_gemini_for_desktop_action(task: str) -> str:
     else:
         os_specific = "- subprocess is NOT available; use pyautogui or Path only"
 
+    past = procedure_find(task)[:2]
+    past_hint = ""
+    if past:
+        examples = "\n\n".join(
+            f"Task: {p['problem'][:200]}\nWorking code:\n{p['solution'][:1200]}"
+            for p in past
+        )
+        past_hint = f"\n\nSimilar tasks solved before (for reference, adapt as needed):\n{examples}"
+
     prompt = f"""You are a desktop automation assistant.
 Current OS: {_OS}
 Desktop path: {desktop}
@@ -138,6 +150,7 @@ Hard rules:
 - If task cannot be done safely with these tools, output exactly: UNSAFE
 
 Output ONLY the Python code. No explanation, no markdown, no backticks.
+{past_hint}
 
 Task: {task}"""
 
@@ -410,6 +423,31 @@ def get_desktop_stats() -> str:
         f"  Path    : {desktop}"
     )
 
+def _run_ai_task(task: str, player=None) -> str:
+    """Generates code for a natural-language desktop task, runs it, and — only
+    once it actually worked — remembers it in the procedural brain so the same
+    or a similar task next time gets a working example instead of starting
+    from scratch. This is the one desktop tool that generates code via an LLM
+    with no retry loop, so it's the one that structurally matches dev_agent/
+    code_helper's learn-from-confirmed-fixes pattern."""
+    print(f"[Desktop] Asking Gemini: {task}")
+    if player:
+        player.write_log("[Desktop] Generating action...")
+
+    code   = _ask_gemini_for_desktop_action(task)
+    result = _execute_generated_code(code, player=player)
+
+    worked = (
+        not code.startswith("ERROR:")
+        and code.strip() != "UNSAFE"
+        and not result.startswith("Execution error:")
+    )
+    if worked:
+        threading.Thread(target=procedure_add, args=(task, code), daemon=True).start()
+
+    return result
+
+
 def desktop_control(
     parameters: dict = None,
     response=None,
@@ -461,18 +499,11 @@ def desktop_control(
             actual_task = task or params.get("description", "")
             if not actual_task:
                 return "Please describe what you want to do on the desktop."
-
-            print(f"[Desktop] Asking Gemini: {actual_task}")
-            if player:
-                player.write_log("[Desktop] Generating action...")
-
-            code = _ask_gemini_for_desktop_action(actual_task)
-            return _execute_generated_code(code, player=player)
+            return _run_ai_task(actual_task, player)
 
         else:
             if action:
-                code = _ask_gemini_for_desktop_action(action)
-                return _execute_generated_code(code, player=player)
+                return _run_ai_task(action, player)
             return "No action or task specified."
 
     except Exception as e:
