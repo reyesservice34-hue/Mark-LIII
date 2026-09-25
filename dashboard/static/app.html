@@ -288,13 +288,13 @@
   </section>
   <main id="feed"></main>
   <footer>
-    <input id="inp" placeholder="Send a command to MIA…" autocomplete="off">
-    <label class="btn-attach" for="file-inp" title="Send file">📎</label>
+    <input id="inp" placeholder="Befehl an MIA senden…" autocomplete="off">
+    <label class="btn-attach" for="file-inp" title="Datei senden">📎</label>
     <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
-    <button id="mic-btn" onclick="doMic()" title="Talk to Mia">🎤 <span class="mic-label">Talk to Mia</span></button>
+    <button id="mic-btn" onclick="doMic()" title="Mit MIA sprechen">🎤 <span class="mic-label">Mit MIA sprechen</span></button>
     <button id="end-session-btn" class="btn end-session-btn" onclick="endVoiceSession()" title="Sitzung beenden">Sitzung beenden</button>
-    <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
-    <button class="btn btn-send" onclick="doSend()">SEND</button>
+    <button class="btn btn-wake" id="wake" onclick="doWake()">AUFWECKEN</button>
+    <button class="btn btn-send" onclick="doSend()">SENDEN</button>
   </footer>
 
   <script>
@@ -659,7 +659,11 @@
     let _callTimer = null;
 
     function _showIncomingCall() {
-      if (_voiceWs) return;   // already on the line — nothing to announce
+      // readyState: 0=CONNECTING, 1=OPEN — genuinely on the line already.
+      // 2=CLOSING/3=CLOSED means the object is stale (its onclose handler just
+      // hasn't nulled it yet) — that must NOT suppress the banner, or MIA can
+      // never call again until the page is reloaded.
+      if (_voiceWs && _voiceWs.readyState <= 1) return;
       callBanner.classList.add('show');
       toast('📞 MIA ruft an');
       clearTimeout(_callTimer);
@@ -689,8 +693,8 @@
     const endSessionBtn = document.getElementById('end-session-btn');
 
     function _micIdle() {
-      micBtn.innerHTML = '🎤 <span class="mic-label">Talk to Mia</span>';
-      micBtn.title     = _voiceSessionActive ? 'Mia-Sitzung läuft' : 'Talk to Mia';
+      micBtn.innerHTML = '🎤 <span class="mic-label">Mit MIA sprechen</span>';
+      micBtn.title     = _voiceSessionActive ? 'Mia-Sitzung läuft' : 'Mit MIA sprechen';
       micBtn.classList.remove('recording');
       micBtn.classList.toggle('session-active', _voiceSessionActive);
       endSessionBtn.classList.toggle('show', _voiceSessionActive);
