@@ -1,10 +1,10 @@
 {
-  "label": "boot-resilience",
-  "ts": "20260924T205402Z",
+  "label": "agent-ids",
+  "ts": "20260925T013355Z",
   "live": false,
   "summary": {
-    "total": 134,
-    "passed": 129,
+    "total": 140,
+    "passed": 135,
     "failed": 0,
     "skipped": 5
   },
@@ -39,7 +39,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 186
+      "ms": 211
     },
     {
       "category": "F",
@@ -47,7 +47,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 186
+      "ms": 211
     },
     {
       "category": "F",
@@ -55,7 +55,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 186
+      "ms": 211
     },
     {
       "category": "F",
@@ -63,7 +63,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 187
+      "ms": 211
     },
     {
       "category": "F",
@@ -71,7 +71,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 187
+      "ms": 211
     },
     {
       "category": "F",
@@ -79,7 +79,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 187
+      "ms": 211
     },
     {
       "category": "K",
@@ -119,7 +119,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 27
+      "ms": 28
     },
     {
       "category": "K",
@@ -127,7 +127,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 325
+      "ms": 411
     },
     {
       "category": "K",
@@ -135,7 +135,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 325
+      "ms": 411
     },
     {
       "category": "K",
@@ -143,7 +143,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 325
+      "ms": 411
     },
     {
       "category": "D",
@@ -151,7 +151,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 34
+      "ms": 37
     },
     {
       "category": "G",
@@ -159,7 +159,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 34
+      "ms": 37
     },
     {
       "category": "G",
@@ -167,7 +167,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 37
+      "ms": 41
     },
     {
       "category": "H",
@@ -191,7 +191,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 32
+      "ms": 31
     },
     {
       "category": "I",
@@ -199,7 +199,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 33
+      "ms": 29
     },
     {
       "category": "I",
@@ -207,7 +207,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 33
+      "ms": 29
     },
     {
       "category": "I",
@@ -215,7 +215,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 43
+      "ms": 40
     },
     {
       "category": "I",
@@ -223,7 +223,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 43
+      "ms": 40
     },
     {
       "category": "I",
@@ -231,7 +231,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 43
+      "ms": 40
     },
     {
       "category": "E",
@@ -263,7 +263,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 23
+      "ms": 26
     },
     {
       "category": "L",
@@ -327,7 +327,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 5
+      "ms": 6
     },
     {
       "category": "L",
@@ -335,7 +335,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 5
+      "ms": 6
     },
     {
       "category": "L",
@@ -343,7 +343,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 5
+      "ms": 6
     },
     {
       "category": "L",
@@ -351,7 +351,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 5
+      "ms": 6
     },
     {
       "category": "L",
@@ -359,7 +359,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 5
+      "ms": 7
     },
     {
       "category": "L",
@@ -367,7 +367,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 91
+      "ms": 116
     },
     {
       "category": "L",
@@ -375,7 +375,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 91
+      "ms": 116
     },
     {
       "category": "L",
@@ -383,7 +383,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 91
+      "ms": 116
     },
     {
       "category": "M",
@@ -391,7 +391,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 4
+      "ms": 2
     },
     {
       "category": "M",
@@ -399,7 +399,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 4
+      "ms": 2
     },
     {
       "category": "M",
@@ -407,7 +407,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 4
+      "ms": 2
     },
     {
       "category": "M",
@@ -415,7 +415,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 4
+      "ms": 2
     },
     {
       "category": "M",
@@ -423,7 +423,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 4
+      "ms": 2
     },
     {
       "category": "A",
@@ -431,7 +431,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 35
+      "ms": 26
     },
     {
       "category": "J",
@@ -439,7 +439,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 36
+      "ms": 27
     },
     {
       "category": "J",
@@ -447,7 +447,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 37
+      "ms": 27
     },
     {
       "category": "B",
@@ -471,7 +471,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 37
+      "ms": 27
     },
     {
       "category": "N",
@@ -479,7 +479,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 6
+      "ms": 5
     },
     {
       "category": "N",
@@ -495,7 +495,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 7
+      "ms": 6
     },
     {
       "category": "N",
@@ -503,7 +503,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 7
+      "ms": 5
     },
     {
       "category": "N",
@@ -511,7 +511,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 13
+      "ms": 10
     },
     {
       "category": "N",
@@ -519,7 +519,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 19
+      "ms": 16
     },
     {
       "category": "N",
@@ -527,7 +527,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 6
+      "ms": 4
     },
     {
       "category": "N",
@@ -535,7 +535,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 12
+      "ms": 9
     },
     {
       "category": "N",
@@ -543,7 +543,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 7
+      "ms": 4
     },
     {
       "category": "N",
@@ -551,7 +551,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 7
+      "ms": 4
     },
     {
       "category": "N",
@@ -559,7 +559,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 7
+      "ms": 5
     },
     {
       "category": "N",
@@ -567,7 +567,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 6
+      "ms": 4
     },
     {
       "category": "N",
@@ -575,7 +575,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 7
+      "ms": 4
     },
     {
       "category": "N",
@@ -583,7 +583,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 8
+      "ms": 5
     },
     {
       "category": "N",
@@ -591,7 +591,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 19
+      "ms": 17
     },
     {
       "category": "N",
@@ -599,7 +599,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 42
+      "ms": 36
     },
     {
       "category": "N",
@@ -607,7 +607,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 6
+      "ms": 7
     },
     {
       "category": "N",
@@ -647,7 +647,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 3
+      "ms": 2
     },
     {
       "category": "O",
@@ -703,7 +703,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 0
+      "ms": 1
     },
     {
       "category": "Q",
@@ -735,7 +735,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 33
+      "ms": 26
     },
     {
       "category": "Q",
@@ -743,7 +743,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 33
+      "ms": 26
     },
     {
       "category": "Q",
@@ -751,7 +751,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 33
+      "ms": 26
     },
     {
       "category": "Q",
@@ -759,7 +759,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 33
+      "ms": 26
     },
     {
       "category": "Q",
@@ -767,7 +767,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 47
+      "ms": 38
     },
     {
       "category": "Q",
@@ -775,7 +775,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 54
+      "ms": 43
     },
     {
       "category": "Q",
@@ -783,7 +783,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 69
+      "ms": 57
     },
     {
       "category": "Q",
@@ -791,7 +791,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 69
+      "ms": 58
     },
     {
       "category": "Q",
@@ -799,7 +799,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 87
+      "ms": 70
     },
     {
       "category": "R",
@@ -839,7 +839,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 15
+      "ms": 17
     },
     {
       "category": "S",
@@ -847,7 +847,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 15
+      "ms": 17
     },
     {
       "category": "S",
@@ -855,7 +855,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 31
+      "ms": 34
     },
     {
       "category": "S",
@@ -863,7 +863,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 49
+      "ms": 52
     },
     {
       "category": "S",
@@ -871,7 +871,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 50
+      "ms": 52
     },
     {
       "category": "S",
@@ -879,7 +879,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 50
+      "ms": 52
     },
     {
       "category": "Q",
@@ -887,7 +887,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 18
+      "ms": 16
     },
     {
       "category": "Q",
@@ -895,7 +895,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 18
+      "ms": 16
     },
     {
       "category": "Q",
@@ -903,7 +903,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 18
+      "ms": 16
     },
     {
       "category": "Q",
@@ -911,7 +911,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 30
+      "ms": 27
     },
     {
       "category": "Q",
@@ -927,7 +927,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 35
+      "ms": 37
     },
     {
       "category": "Q",
@@ -967,7 +967,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 17
+      "ms": 15
     },
     {
       "category": "U",
@@ -983,7 +983,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 57
+      "ms": 59
     },
     {
       "category": "U",
@@ -991,7 +991,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 75
+      "ms": 76
     },
     {
       "category": "U",
@@ -999,7 +999,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 91
+      "ms": 94
     },
     {
       "category": "U",
@@ -1007,7 +1007,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 91
+      "ms": 94
     },
     {
       "category": "U",
@@ -1015,7 +1015,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 91
+      "ms": 94
     },
     {
       "category": "V",
@@ -1023,7 +1023,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 14
+      "ms": 12
     },
     {
       "category": "V",
@@ -1031,7 +1031,55 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 15
+      "ms": 12
+    },
+    {
+      "category": "W",
+      "name": "resolve: the former master name 'jarvis' (and 'mia') means the master",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 0
+    },
+    {
+      "category": "W",
+      "name": "resolve: real ids and empty ids are left alone",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 0
+    },
+    {
+      "category": "W",
+      "name": "a task assigned to 'jarvis' runs as the master and completes (was: Agent 'jarvis' is not registered)",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 10
+    },
+    {
+      "category": "W",
+      "name": "local model: a task for a specialist runs as the master (no cold specialist prompt)",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 19
+    },
+    {
+      "category": "W",
+      "name": "local model: agent.delegate starts no specialist and tells the master to do it itself",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 35
+    },
+    {
+      "category": "W",
+      "name": "cloud model: delegation still works as before",
+      "tier": "harness",
+      "status": "passed",
+      "detail": "",
+      "ms": 55
     },
     {
       "category": "N",
@@ -1039,7 +1087,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 17
+      "ms": 12
     },
     {
       "category": "N",
@@ -1047,7 +1095,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 33
+      "ms": 31
     },
     {
       "category": "N",
@@ -1055,7 +1103,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 33
+      "ms": 31
     },
     {
       "category": "N",
@@ -1071,7 +1119,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 6
+      "ms": 5
     },
     {
       "category": "N",
@@ -1079,7 +1127,7 @@
       "tier": "harness",
       "status": "passed",
       "detail": "",
-      "ms": 10
+      "ms": 11
     }
   ]
 }

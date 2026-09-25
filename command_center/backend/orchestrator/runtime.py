@@ -470,8 +470,19 @@ class MasterRuntime:
                                                       user_message=user_message))
         return {"run": handle.public(), "message": assistant}
 
+    def _runnable_agent(self, agent_id: str) -> str:
+        """Former master names ("jarvis") run as the master. On a local CPU model a specialist would need its own
+        multi-minute cold prompt and push the master's warm one out of the model's cache, so it runs as the master."""
+        st = self.state
+        agent_id = st.agents.resolve(agent_id)
+        spec = st.agents.get(agent_id)
+        if spec is not None and spec.kind != "master" and self._is_local(self.provider):
+            return st.agents.master_id()
+        return agent_id
+
     async def start_task_run(self, task: dict, principal: Principal, agent_id: str) -> dict:
         st = self.state
+        agent_id = self._runnable_agent(agent_id)
         run_id = new_id("run")
         handle = RunHandle(id=run_id, agent_id=agent_id, principal=principal,
                            conversation_id=task.get("conversation_id"), message_id=None, task_id=task["id"])
@@ -839,7 +850,12 @@ class MasterRuntime:
     # ── delegation (called by the agent.delegate tool) ───────────────────
     async def delegate(self, ctx: ToolContext, agent_id: str, instruction: str, title: str = "") -> str:
         st = self.state
+        agent_id = st.agents.resolve(agent_id)
         spec = st.agents.get(agent_id)
+        if spec is not None and spec.kind != "master" and self._is_local(self.provider):
+            # Measured: a specialist's own prompt costs minutes on the CPU and evicts the master's cached one.
+            return ("Auf diesem Server arbeitet nur der Master-Agent mit dem lokalen Modell; Spezialisten würden jede "
+                    "Antwort um Minuten verlängern. Erledige die Aufgabe selbst mit deinen Werkzeugen.")
         if spec is None:
             return f"No agent '{agent_id}'. Available: {', '.join(a.id for a in self._specialists())}"
         if not spec.enabled:

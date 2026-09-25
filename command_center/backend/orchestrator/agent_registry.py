@@ -307,6 +307,17 @@ class AgentRegistry:
                 return spec.id
         return next(iter(self._specs), "master")
 
+    # Names the master agent used to go by. Memory, old tasks and the model itself still say "jarvis"; an id that
+    # no longer exists must not turn into a failed run ("Agent 'jarvis' is not registered").
+    LEGACY_MASTER_NAMES = ("jarvis", "mia", "master-agent")
+
+    def resolve(self, agent_id: str) -> str:
+        """The id to run: unchanged if it exists (or is empty), the master for a former master name."""
+        aid = (agent_id or "").strip()
+        if aid and aid not in self._specs and aid.lower() in self.LEGACY_MASTER_NAMES:
+            return self.master_id()
+        return aid
+
     def state(self, agent_id: str) -> AgentState:
         return self._state.setdefault(agent_id, AgentState())
 
