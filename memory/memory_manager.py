@@ -1,5 +1,6 @@
 import json
 import re
+import threading
 from datetime import datetime
 from threading import Lock
 from pathlib import Path
@@ -156,6 +157,40 @@ def _recursive_update(target: dict, updates: dict) -> bool:
     return changed
 
 
+def _mirror_updates_async(memory_update: dict) -> None:
+    """Best-effort background mirror of just-changed facts to the optional remote
+    memory service (core/knowledge_client.py). Off unless "knowledge_host" is
+    configured; runs in a background thread so a slow/unreachable server can
+    never delay save_memory()."""
+    try:
+        from core.knowledge_client import is_enabled, is_semantic_enabled, memory_upsert, semantic_memory_upsert
+    except Exception:
+        return
+    if not is_enabled():
+        return
+    semantic_on = is_semantic_enabled()
+
+    def _do():
+        for cat, items in memory_update.items():
+            if not isinstance(items, dict):
+                continue
+            for key, entry in items.items():
+                if isinstance(entry, dict) and "value" not in entry:
+                    continue  # nested sub-category — not used by any current caller
+                value = entry.get("value") if isinstance(entry, dict) else entry
+                if not value or (isinstance(value, str) and not value.strip()):
+                    continue
+                item_id = f"{cat}:{key}"
+                memory_upsert(
+                    item_id, str(value), actor="user",
+                    created_at=datetime.now().strftime("%Y-%m-%d"),
+                )
+                if semantic_on:
+                    semantic_memory_upsert(item_id, str(value), {"category": cat, "key": key})
+
+    threading.Thread(target=_do, daemon=True).start()
+
+
 def update_memory(memory_update: dict) -> dict:
     if not isinstance(memory_update, dict) or not memory_update:
         return load_memory()
@@ -163,6 +198,7 @@ def update_memory(memory_update: dict) -> dict:
     if _recursive_update(memory, memory_update):
         save_memory(memory)
         print(f"[Memory] 💾 Saved: {list(memory_update.keys())}")
+        _mirror_updates_async(memory_update)
     return memory
 
 def _entry_value(entry) -> str:
@@ -365,6 +401,27 @@ def _score(query_words: list[str], cat: str, key: str, value: str) -> int:
     return score
 
 
+def _search_memory_semantic_fallback(query: str, limit: int) -> str:
+    """Tried only when the instant keyword search above finds nothing at all —
+    this is the associative-memory path (embeddings + Qdrant, see
+    core/knowledge_client.py). It costs a local embedding call, never an LLM
+    call, and is a no-op when the vector service isn't configured."""
+    try:
+        from core.knowledge_client import is_semantic_enabled, semantic_memory_search
+    except Exception:
+        return ""
+    if not is_semantic_enabled():
+        return ""
+    hits = semantic_memory_search(query, limit=limit)
+    if not hits:
+        return ""
+    lines = [
+        f"{h.get('category', '?')}/{_pretty(h.get('key', h.get('source_id', '')))}: {h.get('text', '')}"
+        for h in hits
+    ]
+    return f"Nothing matched '{query}' by keyword, but this seems related:\n" + "\n".join(lines)
+
+
 def search_memory(query: str, limit: int = 8) -> str:
     """Find stored facts matching `query`. Backs the recall_memory tool.
 
@@ -386,8 +443,12 @@ def search_memory(query: str, limit: int = 8) -> str:
                 rows.append((s, cat, key, val))
 
     if not rows:
-        return (f"Nothing stored about '{query}'." if query
-                else "I have not stored anything about this person yet.")
+        if query:
+            semantic = _search_memory_semantic_fallback(query, limit)
+            if semantic:
+                return semantic
+            return f"Nothing stored about '{query}'."
+        return "I have not stored anything about this person yet."
 
     rows.sort(key=lambda r: (-r[0], r[2]))
     lines = [f"{cat}/{_pretty(key)}: {val}" for _s, cat, key, val in rows[:max(1, limit)]]
@@ -427,6 +488,23 @@ def remember(key: str, value: str, category: str = "notes") -> str:
     return f"Remembered: {category}/{key} = {value}"
 
 
+def _mirror_delete_async(item_id: str) -> None:
+    try:
+        from core.knowledge_client import is_enabled, is_semantic_enabled, memory_delete, semantic_memory_delete
+    except Exception:
+        return
+    if not is_enabled():
+        return
+    semantic_on = is_semantic_enabled()
+
+    def _do():
+        memory_delete([item_id])
+        if semantic_on:
+            semantic_memory_delete(item_id)
+
+    threading.Thread(target=_do, daemon=True).start()
+
+
 def forget(key: str, category: str = "notes") -> str:
     memory = load_memory()
     cat    = memory.get(category, {})
@@ -434,6 +512,7 @@ def forget(key: str, category: str = "notes") -> str:
         del cat[key]
         memory[category] = cat
         save_memory(memory)
+        _mirror_delete_async(f"{category}:{key}")
         return f"Forgotten: {category}/{key}"
     return f"Not found: {category}/{key}"
 
