@@ -3,32 +3,67 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JARVIS Dashboard</title>
+  <title>MIA Dashboard</title>
   <script src="/static/crypto.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:      #07090f;
-      --surface: rgba(255,255,255,0.04);
-      --border:  rgba(255,255,255,0.07);
-      --accent:  #6366f1;
-      --adim:    rgba(99,102,241,0.14);
-      --text:    #dde3ed;
-      --muted:   #5e6a7e;
+      --bg:      #000000;
+      --surface: rgba(255,255,255,0.045);
+      --surface2:rgba(255,255,255,0.08);
+      --border:  rgba(255,255,255,0.10);
+      --accent:  #ff8a1f;
+      --adim:    rgba(255,138,31,0.14);
+      --text:    #f3f2f7;
+      --muted:   #93939e;
       --green:   #22c55e;
       --gdim:    rgba(34,197,94,0.14);
+      --glass:   linear-gradient(160deg, rgba(255,255,255,0.055), rgba(0,0,0,0.55) 55%, rgba(0,0,0,0.8) 100%);
+      --brain-a: #7a2f00;
+      --brain-b: #ff7a00;
+      --brain-c: #ffd7a3;
     }
     html, body {
-      height: 100%; background: var(--bg); color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      height: 100%; color: var(--text);
+      background:
+        radial-gradient(ellipse 60% 40% at 30% 0%, rgba(124,58,237,0.10), transparent 60%),
+        radial-gradient(ellipse at 50% 100%, #0a0a0c 0%, var(--bg) 60%);
+      background-attachment: fixed;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       display: flex; flex-direction: column; overflow: hidden;
     }
+
+    /* ── BRAIN AVATAR ── */
+    .brain { position: relative; width: 30px; height: 28px; flex-shrink: 0; filter: drop-shadow(0 0 5px rgba(0,0,0,0.5)); }
+    .brain svg { width: 100%; height: 100%; overflow: visible; display: block; }
+    .brain-outline path, .brain-outline use { fill: rgba(255,255,255,0.035); stroke: rgba(255,255,255,0.18); stroke-width: 1.4; }
+    .brain-groove { fill: none; stroke: rgba(255,255,255,0.14); stroke-width: 1.1; }
+    .brain-neural { fill:none; stroke:rgba(255,158,61,.68); stroke-width:.9; stroke-linecap:round; filter:drop-shadow(0 0 2px rgba(255,122,0,.75)); }
+    .brain-glass { fill:rgba(255,157,63,.045); stroke:rgba(255,203,148,.28); stroke-width:1.1; }
+
+    .brain-halo { opacity: 0.55; transform-origin: 50px 46px; animation: brainBreathe 4.6s ease-in-out infinite; }
+    .brain-node { fill: url(#brainGlow); transform-box: fill-box; transform-origin: center; animation: brainPulse 3.8s ease-in-out infinite; }
+    .brain-node.n2 { animation-delay: .5s }
+    .brain-node.n3 { animation-delay: 1.1s }
+    .brain-node.n4 { animation-delay: .3s }
+    .brain-node.n5 { animation-delay: .9s }
+    .brain-node.n6 { animation-delay: 1.4s }
+    @keyframes brainPulse   { 0%,100% { opacity:.35; transform:scale(.8);  } 50% { opacity:1;   transform:scale(1.2);  } }
+    @keyframes brainBreathe { 0%,100% { opacity:.4;  transform:scale(.9); } 50% { opacity:.8;  transform:scale(1.08); } }
+    .brain[data-state="idle"]      { --brain-a:#7a2f00; --brain-b:#ff7a00; --brain-c:#ffd7a3; }
+    .brain[data-state="awake"]     { --brain-a:#9a3e00; --brain-b:#ff8a1f; --brain-c:#ffe4bd; }
+    .brain[data-state="listening"] { --brain-a:#b34700; --brain-b:#ff9d3d; --brain-c:#fff0d6; }
+    .brain[data-state="speaking"]  { --brain-a:#c2410c; --brain-b:#ff6a00; --brain-c:#fff3df; }
+    .brain[data-state="idle"]      .brain-node, .brain[data-state="idle"]      .brain-halo { animation-duration: 4.6s; }
+    .brain[data-state="awake"]     .brain-node, .brain[data-state="awake"]     .brain-halo { animation-duration: 2.3s; }
+    .brain[data-state="listening"] .brain-node, .brain[data-state="listening"] .brain-halo { animation-duration: 1s;   }
+    .brain[data-state="speaking"]  .brain-node, .brain[data-state="speaking"]  .brain-halo { animation-duration: .5s;  }
 
     /* ── HEADER ── */
     header {
       flex-shrink: 0; display: flex; align-items: center; gap: 10px;
-      padding: 12px 16px; border-bottom: 1px solid var(--border);
-      background: rgba(7,9,15,0.95);
+      padding: 13px 16px; border-bottom: 1px solid var(--border);
+      background: var(--glass); backdrop-filter: blur(24px) saturate(140%);
     }
     .logo { font-size: 15px; font-weight: 700; letter-spacing: 6px; }
     .logo em { color: var(--accent); font-style: normal; }
@@ -45,21 +80,45 @@
     .spacer { flex: 1; }
     .enc-badge {
       font-size: 9px; font-weight: 700; letter-spacing: 1.5px; padding: 3px 8px;
-      border-radius: 4px; display: none;
+      border-radius: 4px; display: none; white-space: nowrap;
     }
     .enc-badge.on  { display: block; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25); color: var(--green); }
     .enc-badge.off { display: block; background: rgba(255,100,100,0.08); border: 1px solid rgba(255,100,100,0.2); color: #f87171; }
     .url { font-size: 10px; font-family: monospace; color: var(--muted); padding: 4px 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+    @media (max-width: 380px) { .url { display: none; } }
+
+    /* ── LIVE SYSTEM DECK ── */
+    .system-deck {
+      flex-shrink: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border);
+      background: rgba(0,0,0,.42); backdrop-filter: blur(22px) saturate(135%);
+    }
+    .system-card {
+      min-width: 0; padding: 9px 11px; border: 1px solid var(--border); border-radius: 12px;
+      background: linear-gradient(150deg, rgba(255,255,255,.055), rgba(255,138,31,.025) 52%, rgba(0,0,0,.3));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+    }
+    .system-card .k { font-size: 8px; font-weight: 800; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; }
+    .system-card .v { margin-top: 3px; font-size: 14px; font-weight: 750; color: #f6f3ef; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .system-card.online .v { color: var(--green); }
+    .system-card.active .v { color: #ffd7a3; }
+    .system-card.dim .v { color: var(--muted); }
+    @media (max-width: 760px) {
+      .system-deck { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 8px 10px; gap: 6px; }
+      .system-card:nth-child(n+4) { display: none; }
+      .system-card { padding: 8px 9px; }
+      .system-card .v { font-size: 12px; }
+    }
 
     /* ── FEED ── */
-    main { flex: 1; overflow-y: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
-    main::-webkit-scrollbar { width: 3px; }
-    main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-    .msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.55; animation: pop 0.18s ease; }
+    main { flex: 1; overflow-y: auto; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
+    main::-webkit-scrollbar { width: 4px; }
+    main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .msg { max-width: 82%; padding: 11px 15px; border-radius: 18px; font-size: 14px; line-height: 1.55; animation: pop 0.18s ease; box-shadow: 0 4px 18px rgba(0,0,0,0.25); }
     @keyframes pop { from { opacity:0; transform:translateY(4px); } }
-    .msg-j   { align-self:flex-start; background:var(--adim);   border:1px solid rgba(99,102,241,0.18); border-bottom-left-radius:4px; }
-    .msg-u   { align-self:flex-end;   background:var(--surface); border:1px solid var(--border);        border-bottom-right-radius:4px; }
-    .msg-sys { align-self:center; font-size:11px; color:var(--muted); padding:2px 0; background:transparent; border:none; letter-spacing:0.3px; }
+    .msg-j   { align-self:flex-start; background:var(--adim);   border:1px solid rgba(171,139,245,0.22); border-bottom-left-radius:5px; backdrop-filter: blur(16px); }
+    .msg-u   { align-self:flex-end;   background:var(--surface); border:1px solid var(--border);        border-bottom-right-radius:5px; backdrop-filter: blur(16px); }
+    .msg-sys { align-self:center; font-size:11px; color:var(--muted); padding:2px 0; background:transparent; border:none; box-shadow:none; letter-spacing:0.3px; }
     .lbl { font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; opacity:0.45; margin-bottom:4px; }
     .msg-j .lbl { color:var(--accent); }
     .msg-u .lbl { color:var(--muted); text-align:right; }
@@ -68,9 +127,10 @@
     .msg-file {
       align-self: flex-end;
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 14px; border-bottom-right-radius: 4px;
-      padding: 11px 14px; display: flex; align-items: center; gap: 12px;
-      max-width: 82%; animation: pop 0.18s ease;
+      border-radius: 18px; border-bottom-right-radius: 5px;
+      padding: 12px 15px; display: flex; align-items: center; gap: 12px;
+      max-width: 82%; animation: pop 0.18s ease; backdrop-filter: blur(16px);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.25);
     }
     .fc-icon { font-size: 26px; flex-shrink: 0; }
     .fc-meta { flex: 1; min-width: 0; }
@@ -86,39 +146,45 @@
     .fc-dl:hover { opacity: 0.8; }
 
     /* ── FOOTER ── */
-    footer { flex-shrink:0; padding:10px 14px; border-top:1px solid var(--border); background:rgba(7,9,15,0.95); display:flex; gap:8px; align-items:center; }
-    #inp { flex:1; padding:11px 14px; background:var(--surface); border:1.5px solid var(--border); border-radius:12px; color:var(--text); font-size:14px; outline:none; transition:border-color 0.15s; }
-    #inp:focus { border-color: var(--accent); }
+    footer { flex-shrink:0; padding:11px 14px; border-top:1px solid var(--border); background:var(--glass); backdrop-filter: blur(24px) saturate(140%); display:flex; gap:8px; align-items:center; }
+    #inp { flex:1; padding:12px 15px; background:var(--surface); border:1.5px solid var(--border); border-radius:14px; color:var(--text); font-size:14px; outline:none; transition:border-color 0.15s, box-shadow 0.15s; }
+    #inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(171,139,245,0.16); }
     #inp::placeholder { color: var(--muted); }
-    .btn { padding:11px 15px; border:none; border-radius:12px; font-size:11px; font-weight:700; letter-spacing:1.5px; cursor:pointer; transition:opacity 0.15s,transform 0.1s; }
+    .btn { padding:12px 16px; border:none; border-radius:14px; font-size:11px; font-weight:700; letter-spacing:1.5px; cursor:pointer; transition:opacity 0.15s,transform 0.1s,box-shadow 0.2s; }
     .btn:active { transform: scale(0.96); }
-    .btn:hover  { opacity: 0.82; }
-    .btn-send { background: var(--accent); color: #fff; }
+    .btn:hover  { opacity: 0.85; }
+    .btn-send { background: rgba(171,139,245,0.16); border: 1px solid rgba(171,139,245,0.45); color: #f3ecff; }
+    .btn-send:hover { box-shadow: 0 0 16px rgba(171,139,245,0.3); }
     .btn-wake { background:var(--surface); border:1px solid var(--border); color:var(--muted); display:none; }
     .btn-wake.show { display:block; color:var(--green); border-color:rgba(34,197,94,0.35); }
     .btn-attach {
       background: var(--surface); border: 1px solid var(--border); color: var(--muted);
-      padding: 11px 13px; font-size: 16px; line-height: 1; border-radius: 12px;
-      cursor: pointer; transition: opacity 0.15s, transform 0.1s; display: flex;
+      padding: 12px 14px; font-size: 16px; line-height: 1; border-radius: 14px;
+      cursor: pointer; transition: opacity 0.15s, transform 0.1s, border-color .2s, color .2s; display: flex;
       align-items: center; justify-content: center; flex-shrink: 0;
     }
-    .btn-attach:hover  { opacity: 0.82; border-color: var(--accent); color: var(--accent); }
+    .btn-attach:hover  { opacity: 0.9; border-color: var(--accent); color: var(--accent); }
     .btn-attach:active { transform: scale(0.96); }
 
     /* ── MIC BUTTON ── */
     #mic-btn {
       background: var(--surface); border: 1px solid var(--border); color: var(--muted);
-      padding: 11px 13px; font-size: 16px; line-height: 1; border-radius: 12px;
-      cursor: pointer; transition: opacity 0.15s, transform 0.1s, background 0.2s, border-color 0.2s;
+      padding: 12px 14px; font-size: 16px; line-height: 1; border-radius: 14px;
+      cursor: pointer; transition: opacity 0.15s, transform 0.1s, background 0.2s, border-color 0.2s, color .2s;
       display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
-    #mic-btn:hover  { opacity: 0.82; border-color: var(--accent); color: var(--accent); }
+    #mic-btn:hover  { opacity: 0.9; border-color: var(--accent); color: var(--accent); }
     #mic-btn:active { transform: scale(0.96); }
     #mic-btn.recording {
       background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.45); color: #ef4444;
       animation: mic-pulse 1s ease-in-out infinite;
     }
     #mic-btn.unsupported { opacity: 0.3; cursor: not-allowed; }
+    #mic-btn .mic-label { margin-left:7px; font-size:12px; font-weight:700; letter-spacing:.2px; }
+    #mic-btn.session-active { border-color:rgba(255,138,31,.55); color:#ffd7a3; background:rgba(255,138,31,.10); }
+    .end-session-btn { display:none; background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.42); color:#fca5a5; }
+    .end-session-btn.show { display:block; }
+
     @keyframes mic-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.65;transform:scale(0.97)} }
 
     /* ── TOAST ── */
@@ -131,31 +197,110 @@
       pointer-events:none; white-space:nowrap;
     }
     #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+    /* ── INCOMING CALL ── */
+    #callBanner {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+      display: none; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 12px 16px; background: rgba(171,139,245,0.16);
+      border-bottom: 1px solid rgba(171,139,245,0.4);
+      backdrop-filter: blur(24px) saturate(140%);
+      animation: pop 0.18s ease;
+    }
+    #callBanner.show { display: flex; }
+    #callBanner .cb-txt { font-size: 13px; font-weight: 700; letter-spacing: .3px; color: #f3ecff; }
+    #callBanner .cb-txt small { display: block; font-size: 10px; font-weight: 500; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; margin-top: 2px; }
+    #callBanner .cb-btns { display: flex; gap: 8px; flex-shrink: 0; }
+    #callBanner button { border: none; border-radius: 99px; padding: 8px 16px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    #callBanner .cb-answer { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); color: var(--green); animation: mic-pulse 1s ease-in-out infinite; }
+    #callBanner .cb-decline { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .brain-node, .brain-halo, .dot, #mic-btn.recording { animation: none !important; }
+    }
   </style>
 </head>
 <body>
   <div id="toast"></div>
+  <div id="callBanner">
+    <div class="cb-txt">📞 MIA ruft an<small>Eingehender Anruf</small></div>
+    <div class="cb-btns">
+      <button class="cb-answer" id="cb-answer">Annehmen</button>
+      <button class="cb-decline" id="cb-decline">Ablehnen</button>
+    </div>
+  </div>
   <header>
+    <div class="brain" id="brain" data-state="idle" aria-hidden="true">
+      <svg viewBox="0 0 100 92">
+        <defs>
+          <radialGradient id="brainGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%"   style="stop-color:var(--brain-c)" stop-opacity="0.95"/>
+            <stop offset="45%"  style="stop-color:var(--brain-b)" stop-opacity="0.55"/>
+            <stop offset="100%" style="stop-color:var(--brain-a)" stop-opacity="0"/>
+          </radialGradient>
+          <filter id="brainSoft" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="2.4"/>
+          </filter>
+          <filter id="brainHalo" x="-120%" y="-120%" width="340%" height="340%">
+            <feGaussianBlur stdDeviation="7"/>
+          </filter>
+        </defs>
+        <circle class="brain-halo" cx="50" cy="46" r="34" fill="url(#brainGlow)" filter="url(#brainHalo)"/>
+        <g class="brain-outline">
+          <path id="lobe" d="M50,8 C41,3 29,4 21,10 C13,16 8,25 10,35 C5,40 5,50 10,57 C9,65 14,73 23,77 C31,81 42,80 48,74 C51,71 51,66 49,62 C44,63 37,61 33,55 C29,50 30,43 35,39 C30,36 29,29 33,24 C30,21 31,15 37,12 C41,9 46,9 50,8 Z"/>
+          <use href="#lobe" transform="translate(100,0) scale(-1,1)"/>
+          <path class="brain-stem" d="M45,73 C45,80 47,86 50,88 C53,86 55,80 55,73 C53,75 47,75 45,73 Z"/>
+        </g>
+        <path class="brain-groove" d="M50,9 C48,20 51,31 50,42 C49,53 51,64 50,71"/>
+        <g class="brain-glass">
+          <ellipse cx="50" cy="45" rx="36" ry="31"/>
+        </g>
+        <g class="brain-neural">
+          <path d="M18 28 C29 20,36 24,44 33 S61 45,76 26"/>
+          <path d="M14 45 C27 37,34 42,43 49 S61 60,85 43"/>
+          <path d="M20 62 C32 54,39 58,49 67 S67 70,79 58"/>
+          <path d="M29 17 C35 29,45 28,50 40 C56 52,67 45,73 31"/>
+          <path d="M27 67 C34 57,42 54,50 45 C58 36,67 37,77 20"/>
+          <path d="M18 40 L31 32 L42 39 L54 31 L68 39 L82 31"/>
+        </g>
+        <g class="brain-nodes" filter="url(#brainSoft)">
+          <circle class="brain-node n1" cx="26" cy="23" r="6"/>
+          <circle class="brain-node n2" cx="17" cy="43" r="5.5"/>
+          <circle class="brain-node n3" cx="27" cy="62" r="6"/>
+          <circle class="brain-node n4" cx="74" cy="23" r="6"/>
+          <circle class="brain-node n5" cx="83" cy="43" r="5.5"/>
+          <circle class="brain-node n6" cx="73" cy="62" r="6"/>
+        </g>
+      </svg>
+    </div>
     <div class="logo"><em>J</em>ARVIS</div>
     <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
     <div class="enc-badge" id="enc">AES-256</div>
     <div class="spacer"></div>
     <div class="url">__IP__:__PORT__</div>
   </header>
+  <section class="system-deck" id="system-deck" aria-label="Live system status">
+    <div class="system-card online" id="sys-server"><div class="k">Core</div><div class="v">ONLINE</div></div>
+    <div class="system-card" id="sys-clients"><div class="k">Live Clients</div><div class="v">–</div></div>
+    <div class="system-card" id="sys-devices"><div class="k">Paired Devices</div><div class="v">–</div></div>
+    <div class="system-card" id="sys-queue"><div class="k">Command Queue</div><div class="v">–</div></div>
+    <div class="system-card" id="sys-history"><div class="k">Session Events</div><div class="v">–</div></div>
+  </section>
   <main id="feed"></main>
   <footer>
-    <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
-    <label class="btn-attach" for="file-inp" title="Send file">📎</label>
+    <input id="inp" placeholder="Befehl an MIA senden…" autocomplete="off">
+    <label class="btn-attach" for="file-inp" title="Datei senden">📎</label>
     <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
-    <button id="mic-btn" onclick="doMic()" title="Voice command">🎤</button>
-    <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
-    <button class="btn btn-send" onclick="doSend()">SEND</button>
+    <button id="mic-btn" onclick="doMic()" title="Mit MIA sprechen">🎤 <span class="mic-label">Mit MIA sprechen</span></button>
+    <button id="end-session-btn" class="btn end-session-btn" onclick="endVoiceSession()" title="Sitzung beenden">Sitzung beenden</button>
+    <button class="btn btn-wake" id="wake" onclick="doWake()">AUFWECKEN</button>
+    <button class="btn btn-send" onclick="doSend()">SENDEN</button>
   </footer>
 
   <script>
     // ── Auth — bearer token ───────────────────────────────────────────────────
-    const _authToken  = sessionStorage.getItem('jarvis_token');
-    const _sessionKey = sessionStorage.getItem('jarvis_key');
+    const _authToken  = sessionStorage.getItem('mia_token');
+    const _sessionKey = sessionStorage.getItem('mia_key');
 
     if (!_authToken) {
       location.replace('/login');
@@ -167,7 +312,47 @@
       return fetch(url, opts);
     }
 
+    // ── Live system deck ──────────────────────────────────────────────────────
+    const _sys = {
+      server:  document.querySelector('#sys-server .v'),
+      clients: document.querySelector('#sys-clients .v'),
+      devices: document.querySelector('#sys-devices .v'),
+      queue:   document.querySelector('#sys-queue .v'),
+      history: document.querySelector('#sys-history .v'),
+    };
+    function _setSystemCard(id, value, active = false) {
+      const card = document.getElementById(id);
+      const val = card?.querySelector('.v');
+      if (!card || !val) return;
+      val.textContent = String(value);
+      card.classList.remove('online', 'active', 'dim');
+      card.classList.add(active ? 'active' : 'online');
+    }
+    async function refreshSystemDeck() {
+      try {
+        const res = await _authFetch('/api/system-status', { cache: 'no-store' });
+        if (!res.ok) throw new Error('status unavailable');
+        const s = await res.json();
+        _setSystemCard('sys-server', 'ONLINE');
+        _setSystemCard('sys-clients', s.live_clients, s.live_clients > 0);
+        _setSystemCard('sys-devices', s.paired_devices, s.paired_devices > 0);
+        _setSystemCard('sys-queue', s.command_queue, s.command_queue > 0);
+        _setSystemCard('sys-history', s.session_events, s.session_events > 0);
+      } catch {
+        const card = document.getElementById('sys-server');
+        const val = card?.querySelector('.v');
+        if (card && val) {
+          val.textContent = 'UNAVAILABLE';
+          card.classList.remove('online', 'active');
+          card.classList.add('dim');
+        }
+      }
+    }
+    refreshSystemDeck();
+    setInterval(refreshSystemDeck, 5000);
+
     // ── AES-256-CBC encryption (CryptoJS) ────────────────────────────────────
+    // Legacy KDF salt — must match dashboard/server.py; never displayed.
     const _AES_SALT = 'JARVIS-DASHBOARD-v1';
     let _aesKey = null;
 
@@ -200,6 +385,17 @@
     if (_encReady) { encBadge.className = 'enc-badge on'; }
     else           { encBadge.className = 'enc-badge off'; encBadge.textContent = 'NO ENC'; }
 
+    // ── Brain avatar state ────────────────────────────────────────────────────
+    const brain = document.getElementById('brain');
+    let _baseBrainState = 'idle';
+    let _brainTimer;
+    function _setBrainState(s) { brain.dataset.state = s; }
+    function _pulseBrain(state, ms = 1400) {
+      _setBrainState(state);
+      clearTimeout(_brainTimer);
+      _brainTimer = setTimeout(() => _setBrainState(_baseBrainState), ms);
+    }
+
     // ── WebSocket ─────────────────────────────────────────────────────────────
     const feed  = document.getElementById('feed');
     const pill  = document.getElementById('pill');
@@ -210,7 +406,7 @@
     const _wsUrl   = `${_wsProto}://${location.host}/ws?token=${encodeURIComponent(_authToken)}`;
     const ws       = new WebSocket(_wsUrl);
 
-    ws.onopen    = () => { sys('Remote session active.'); toast('Connected to JARVIS'); };
+    ws.onopen    = () => { sys('Remote session active.'); toast('Connected to MIA'); };
     ws.onclose   = () => sys('Connection lost — refresh to reconnect.');
     ws.onerror   = () => sys('Connection error.');
     ws.onmessage = (e) => {
@@ -220,24 +416,32 @@
       if (m.type === 'wake')          sys('Wake word detected — connecting…');
       if (m.type === 'sys')           sys(m.text);
       if (m.type === 'file_received') _onFileReceived(m);
+      if (m.type === 'audio')         _playPcm16(m.data, m.rate);
+      if (m.type === 'audio_stop')    _stopPlayback();
+      if (m.type === 'incoming_call') _showIncomingCall();
     };
 
     function setStatus(s) {
       if (s === 'active') {
         pill.className = 'pill on'; stTxt.textContent = 'Active'; wake.classList.remove('show');
+        _baseBrainState = 'awake';
       } else {
         pill.className = 'pill'; stTxt.textContent = 'Sleeping'; wake.classList.add('show');
+        _baseBrainState = 'idle';
       }
+      _setBrainState(_baseBrainState);
     }
 
     function append(speaker, text) {
       const d = document.createElement('div');
-      if (speaker === 'jarvis') {
+      if (speaker === 'assistant') {
         d.className = 'msg msg-j';
-        d.innerHTML = `<div class="lbl">Jarvis</div>${esc(text)}`;
+        d.innerHTML = `<div class="lbl">MIA</div>${esc(text)}`;
+        _pulseBrain('speaking');
       } else {
         d.className = 'msg msg-u';
         d.innerHTML = `<div class="lbl">You</div>${esc(text)}`;
+        _pulseBrain('listening', 900);
       }
       feed.appendChild(d);
       feed.scrollTop = feed.scrollHeight;
@@ -405,17 +609,96 @@
       _toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
     }
 
+    // ── Playback — MIA's spoken replies, streamed as PCM16 @ 24 kHz ───────
+    let _playCtx    = null;
+    let _playCursor = 0;      // ctx.currentTime cursor for gapless scheduling
+    let _playNodes  = [];     // scheduled sources, so audio_stop can cut them off
+
+    function _ensurePlayCtx() {
+      if (!_playCtx) {
+        try { _playCtx = new AudioContext({ sampleRate: 24000 }); }
+        catch (_) { _playCtx = new AudioContext(); }
+      }
+      if (_playCtx.state === 'suspended') _playCtx.resume().catch(() => {});
+      return _playCtx;
+    }
+
+    function _playPcm16(b64, rate) {
+      const ctx  = _ensurePlayCtx();
+      const raw  = atob(b64);
+      const buf  = new ArrayBuffer(raw.length);
+      const view = new Uint8Array(buf);
+      for (let i = 0; i < raw.length; i++) view[i] = raw.charCodeAt(i);
+      const pcm = new Int16Array(buf);
+      if (!pcm.length) return;
+
+      const audioBuf = ctx.createBuffer(1, pcm.length, rate || 24000);
+      const ch = audioBuf.getChannelData(0);
+      for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+
+      const src = ctx.createBufferSource();
+      src.buffer = audioBuf;
+      src.connect(ctx.destination);
+
+      const startAt = Math.max(ctx.currentTime, _playCursor);
+      src.start(startAt);
+      _playCursor = startAt + audioBuf.duration;
+      _playNodes.push(src);
+      src.onended = () => { _playNodes = _playNodes.filter(n => n !== src); };
+    }
+
+    function _stopPlayback() {
+      for (const n of _playNodes) { try { n.stop(); } catch (_) {} }
+      _playNodes = [];
+      if (_playCtx) _playCursor = _playCtx.currentTime;
+    }
+
+    // ── Incoming call — MIA wants to talk on its own initiative and
+    // nobody's mic is open to hear it ─────────────────────────────────────────
+    const callBanner = document.getElementById('callBanner');
+    let _callTimer = null;
+
+    function _showIncomingCall() {
+      // readyState: 0=CONNECTING, 1=OPEN — genuinely on the line already.
+      // 2=CLOSING/3=CLOSED means the object is stale (its onclose handler just
+      // hasn't nulled it yet) — that must NOT suppress the banner, or MIA can
+      // never call again until the page is reloaded.
+      if (_voiceWs && _voiceWs.readyState <= 1) return;
+      callBanner.classList.add('show');
+      toast('📞 MIA ruft an');
+      clearTimeout(_callTimer);
+      _callTimer = setTimeout(_dismissCall, 30000);   // missed call after 30s
+    }
+
+    function _dismissCall() {
+      callBanner.classList.remove('show');
+      clearTimeout(_callTimer);
+    }
+
+    document.getElementById('cb-answer').addEventListener('click', () => {
+      _ensurePlayCtx();   // unlock playback on this user gesture
+      _dismissCall();
+      doMic();
+    });
+    document.getElementById('cb-decline').addEventListener('click', _dismissCall);
+
     // ── Real-time Voice — PCM16 WebSocket → Gemini Live ──────────────────────
     const micBtn  = document.getElementById('mic-btn');
     let _voiceWs  = null;
     let _audioCtx = null;
     let _micStm   = null;
     let _audioNd  = null;
+    let _voiceSessionActive = false;
+    let _voiceReconnectTimer = null;
+    const endSessionBtn = document.getElementById('end-session-btn');
 
     function _micIdle() {
-      micBtn.innerHTML = '🎤';
-      micBtn.title     = 'Voice — tap to speak';
+      micBtn.innerHTML = '🎤 <span class="mic-label">Mit MIA sprechen</span>';
+      micBtn.title     = _voiceSessionActive ? 'Mia-Sitzung läuft' : 'Mit MIA sprechen';
       micBtn.classList.remove('recording');
+      micBtn.classList.toggle('session-active', _voiceSessionActive);
+      endSessionBtn.classList.toggle('show', _voiceSessionActive);
+      _setBrainState(_voiceSessionActive ? 'awake' : _baseBrainState);
     }
 
     // Float32 PCM → resample to 16 kHz + convert to Int16
@@ -440,18 +723,18 @@
       const card = document.createElement('div');
       card.id = 'voice-setup';
       card.style.cssText = [
-        'align-self:stretch', 'background:rgba(99,102,241,0.07)',
-        'border:1px solid rgba(99,102,241,0.22)', 'border-radius:14px',
+        'align-self:stretch', 'background:rgba(171,139,245,0.07)',
+        'border:1px solid rgba(171,139,245,0.22)', 'border-radius:16px',
         'padding:16px 18px', 'font-size:13px', 'line-height:1.8',
         'animation:pop 0.18s ease'
       ].join(';');
       card.innerHTML =
-        '<div style="font-weight:700;color:#818cf8;letter-spacing:.5px;margin-bottom:10px">🎤 One-time voice setup</div>' +
-        '<ol style="padding-left:18px;color:#8899aa;margin:0;display:flex;flex-direction:column;gap:4px">' +
+        '<div style="font-weight:700;color:#c4b0fb;letter-spacing:.5px;margin-bottom:10px">🎤 One-time voice setup</div>' +
+        '<ol style="padding-left:18px;color:#a9a9b3;margin:0;display:flex;flex-direction:column;gap:4px">' +
         '<li>Open a new tab → go to <span style="background:rgba(255,255,255,0.07);padding:1px 6px;border-radius:4px;font-family:monospace;font-size:12px">chrome://flags</span></li>' +
-        '<li>Search: <strong style="color:#dde3ed">Insecure origins treated as secure</strong></li>' +
+        '<li>Search: <strong style="color:#f3f2f7">Insecure origins treated as secure</strong></li>' +
         '<li>Paste this URL into the box:<br><span id="flags-url" style="background:rgba(255,255,255,0.07);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:11px;user-select:all;cursor:pointer">' + esc(origin) + '</span></li>' +
-        '<li>Set to <strong style="color:#22c55e">Enabled</strong> → tap <strong style="color:#dde3ed">Relaunch</strong></li>' +
+        '<li>Set to <strong style="color:#22c55e">Enabled</strong> → tap <strong style="color:#f3f2f7">Relaunch</strong></li>' +
         '<li>Return here and tap 🎤</li>' +
         '</ol>';
       feed.appendChild(card);
@@ -462,8 +745,16 @@
       });
     }
 
-    async function doMic() {
-      if (_voiceWs) { _stopVoice(); return; }
+    async function doMic(_reconnect = false) {
+      if (_voiceSessionActive && !_reconnect) {
+        toast('Mia-Sitzung läuft bereits');
+        return;
+      }
+      if (!_reconnect) {
+        _voiceSessionActive = true;
+        clearTimeout(_voiceReconnectTimer);
+        _micIdle();
+      }
 
       if (!navigator.mediaDevices?.getUserMedia) {
         _showVoiceSetup();
@@ -478,6 +769,7 @@
         sys(e.name === 'NotAllowedError'
           ? 'Microphone denied — tap the address bar lock and allow microphone.'
           : 'Mic error: ' + e.message);
+        if (!_reconnect) { _voiceSessionActive = false; _micIdle(); }
         return;
       }
 
@@ -529,22 +821,33 @@
           _audioNd = sp;
         }
 
-        micBtn.innerHTML = '⏹';
-        micBtn.title     = 'Tap to stop';
-        micBtn.classList.add('recording');
+        micBtn.innerHTML = '🎤 <span class="mic-label">Mia hört zu</span>';
+        micBtn.title     = 'Mia-Sitzung aktiv';
+        micBtn.classList.add('recording', 'session-active');
+        endSessionBtn.classList.add('show');
+        _setBrainState('listening');
         sys('Voice live — speak now');
         toast('🎤 Live');
       };
 
-      ws.onclose = () => { _stopVoice(); };
-      ws.onerror = () => { sys('Voice connection failed.'); _stopVoice(); };
+      ws.onclose = () => {
+        _cleanupVoiceTransport();
+        if (_voiceSessionActive) {
+          sys('Voice-Verbindung unterbrochen — Sitzung bleibt aktiv, verbinde neu…');
+          clearTimeout(_voiceReconnectTimer);
+          _voiceReconnectTimer = setTimeout(() => {
+            if (_voiceSessionActive && !_voiceWs) doMic(true);
+          }, 1200);
+        }
+      };
+      ws.onerror = () => { sys('Voice connection interrupted.'); };
 
       _voiceWs  = ws;
       _audioCtx = ctx;
       _micStm   = stream;
     }
 
-    function _stopVoice() {
+    function _cleanupVoiceTransport() {
       if (_audioNd)  { try { _audioNd.disconnect(); }  catch (_) {}; _audioNd  = null; }
       if (_audioCtx) { try { _audioCtx.close(); }      catch (_) {}; _audioCtx = null; }
       if (_micStm)   { _micStm.getTracks().forEach(t => t.stop()); _micStm = null; }
@@ -553,6 +856,17 @@
         if (w.readyState < 2) w.close();
       }
       _micIdle();
+    }
+
+    function endVoiceSession() {
+      if (!_voiceSessionActive) return;
+      _voiceSessionActive = false;
+      clearTimeout(_voiceReconnectTimer);
+      _voiceReconnectTimer = null;
+      _cleanupVoiceTransport();
+      _stopPlayback();
+      sys('Mia-Sitzung beendet.');
+      toast('Sitzung beendet');
     }
   </script>
 </body>

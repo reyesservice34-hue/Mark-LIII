@@ -1,7 +1,7 @@
 """
 Local LLM client for MARK XL.
 
-Supports two backends — selected via  "llm_provider"  in config/api_keys.json:
+Supports three backends — selected via  "llm_provider"  in config/api_keys.json:
 
   "llm_provider": "ollama"   (default)
         Uses Ollama's native /api/chat endpoint.
@@ -15,6 +15,12 @@ Supports two backends — selected via  "llm_provider"  in config/api_keys.json:
         Set  "llm_url": "http://localhost:1234"  in config.
         Note: tool-calling support depends on the model; use a model that
         supports function/tool calls (e.g. Qwen2.5, Llama-3.1, Mistral).
+
+  "llm_provider": "anthropic"
+        Uses Anthropic's Messages API directly (api.anthropic.com) — no
+        local server involved. Set  "anthropic_api_key": "sk-ant-..."  and
+        optionally  "llm_model": "claude-sonnet-5"  in config/api_keys.json
+        (defaults to claude-sonnet-5 if omitted).
 """
 import json
 import re
@@ -42,14 +48,25 @@ CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 _DEFAULTS = {
     "llm_url":      "http://localhost:11434",
     "llm_model":    "llama3.2",
-    "llm_provider": "ollama",   # "ollama" | "openai"
+    "llm_provider": "ollama",   # "ollama" | "openai" | "anthropic"
 }
+
+_ANTHROPIC_API_URL      = "https://api.anthropic.com"
+_ANTHROPIC_VERSION      = "2023-06-01"
+_ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-5"
 
 
 def get_llm_provider() -> str:
-    """Returns 'ollama' or 'openai' (covers LM Studio, LocalAI, Jan, etc.)."""
+    """Returns 'ollama', 'openai' (covers LM Studio, LocalAI, Jan, etc.) or 'anthropic'."""
     raw = _load_config().get("llm_provider", "ollama").strip().lower()
+    if raw == "anthropic":
+        return "anthropic"
     return "openai" if raw in ("openai", "lmstudio", "localai", "jan", "llamacpp") else "ollama"
+
+
+def get_anthropic_key() -> str:
+    """Returns the configured Anthropic API key, or '' if unset."""
+    return (_load_config().get("anthropic_api_key") or "").strip()
 
 
 def _load_config() -> dict:
@@ -67,6 +84,23 @@ def ensure_ollama_running(timeout: int = 15) -> bool:
     """
     url, _   = get_llm_settings()
     provider = get_llm_provider()
+
+    if provider == "anthropic":
+        key = get_anthropic_key()
+        if not key:
+            print("[LLM] Kein Anthropic-API-Key gesetzt — 'anthropic_api_key' in config/api_keys.json eintragen.")
+            return False
+        try:
+            ok = requests.get(
+                f"{_ANTHROPIC_API_URL}/v1/models",
+                headers={"x-api-key": key, "anthropic-version": _ANTHROPIC_VERSION},
+                timeout=5,
+            ).status_code == 200
+            print(f"[LLM] Anthropic API {'erreichbar' if ok else 'antwortete nicht mit 200 — Key prüfen'}.")
+            return ok
+        except Exception:
+            print("[LLM] Anthropic API nicht erreichbar (Netzwerk?).")
+            return False
 
     if provider == "openai":
         # OpenAI-compatible servers (LM Studio, LocalAI, etc.) must be started
@@ -134,12 +168,17 @@ def warmup_model(system_prompt: str | None = None) -> bool:
     to evaluate the small delta (user message ± time context) instead of the full
     300-500 token system prompt → drops first-token latency from ~17 s to <1 s.
 
-    Pass the *static* part of the system prompt (the JARVIS protocol text, without
+    Pass the *static* part of the system prompt (the MIA protocol text, without
     timestamps or per-minute context) so the prefix stays valid across calls.
     """
     url, model = get_llm_settings()
     provider   = get_llm_provider()
     print(f"[LLM] Warming up '{model}' ({provider})…")
+
+    if provider == "anthropic":
+        # Cloud API — no local model to load or KV-cache to prime.
+        print("[LLM] Anthropic is a cloud API; nothing to warm up.")
+        return True
 
     messages: list[dict] = []
     if system_prompt:
@@ -219,11 +258,97 @@ def check_model_available(log: Callable | None = None) -> bool:
 
 
 def get_llm_settings() -> tuple[str, str]:
-    """Returns (base_url, model_name)."""
+    """Returns (base_url, model_name). For provider 'anthropic', model falls
+    back to _ANTHROPIC_DEFAULT_MODEL when 'llm_model' isn't set explicitly."""
     cfg   = _load_config()
     url   = cfg.get("llm_url",   _DEFAULTS["llm_url"]).rstrip("/")
     model = cfg.get("llm_model", _DEFAULTS["llm_model"])
+    if "llm_model" not in cfg and get_llm_provider() == "anthropic":
+        model = _ANTHROPIC_DEFAULT_MODEL
     return url, model
+
+
+def _anthropic_headers() -> dict:
+    return {
+        "x-api-key":         get_anthropic_key(),
+        "anthropic-version": _ANTHROPIC_VERSION,
+        "content-type":      "application/json",
+    }
+
+
+def _split_system(messages: list) -> tuple[str | None, list]:
+    """Anthropic takes the system prompt as a top-level field, not a message."""
+    system_parts = [m["content"] for m in messages if m.get("role") == "system"]
+    convo        = [m for m in messages if m.get("role") != "system"]
+    return ("\n\n".join(system_parts) if system_parts else None), convo
+
+
+def _tools_to_anthropic(tools: list | None) -> list | None:
+    """Converts OpenAI-style function-tool defs to Anthropic's tool format."""
+    if not tools:
+        return None
+    converted = []
+    for t in tools:
+        fn = t.get("function", t)
+        converted.append({
+            "name":         fn.get("name", ""),
+            "description":  fn.get("description", ""),
+            "input_schema": fn.get("parameters") or {"type": "object", "properties": {}},
+        })
+    return converted
+
+
+def _call_anthropic(
+    messages: list,
+    tools:    list | None,
+    timeout:  int,
+    max_tokens: int = 150,
+    model:    str | None = None,
+) -> dict:
+    """Non-streaming call to Anthropic's Messages API. Returns the same
+    {"content": str, "tool_calls": list} shape as the Ollama/OpenAI paths."""
+    key = get_anthropic_key()
+    if not key:
+        raise RuntimeError(
+            "Kein Anthropic-API-Key konfiguriert. "
+            "Trage 'anthropic_api_key' in config/api_keys.json ein."
+        )
+    _, default_model = get_llm_settings()
+    system, convo = _split_system(messages)
+    payload: dict = {
+        "model":      model or default_model,
+        "max_tokens": max_tokens,
+        "messages":   convo,
+    }
+    if system:
+        payload["system"] = system
+    anth_tools = _tools_to_anthropic(tools)
+    if anth_tools:
+        payload["tools"] = anth_tools
+
+    try:
+        resp = requests.post(
+            f"{_ANTHROPIC_API_URL}/v1/messages",
+            json=payload, headers=_anthropic_headers(), timeout=timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.HTTPError as e:
+        raise RuntimeError(f"Anthropic HTTP error: {e.response.status_code} — {e.response.text[:200]}")
+    except Exception as e:
+        raise RuntimeError(f"Anthropic call failed: {e}")
+
+    content_text = ""
+    tool_calls: list = []
+    for block in data.get("content", []):
+        if block.get("type") == "text":
+            content_text += block.get("text", "")
+        elif block.get("type") == "tool_use":
+            tool_calls.append({
+                "id":       block.get("id", ""),
+                "function": {"name": block.get("name", ""), "arguments": block.get("input", {})},
+            })
+    return {"content": content_text.strip(), "tool_calls": tool_calls}
 
 
 def call_llm(
@@ -239,6 +364,9 @@ def call_llm(
     """
     url, model = get_llm_settings()
     provider   = get_llm_provider()
+
+    if provider == "anthropic":
+        return _call_anthropic(messages, tools, timeout, max_tokens=150)
 
     if provider == "openai":
         endpoint = f"{url}/v1/chat/completions"
@@ -338,14 +466,17 @@ def call_llm_text(
     Simple text-only generation (no tools).
     Used by planner, executor, error_handler, code_helper, dev_agent.
     """
-    url, default_model = get_llm_settings()
-    endpoint = f"{url}/api/chat"
-    m        = model or default_model
-
     messages: list[dict] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
+
+    if get_llm_provider() == "anthropic":
+        return _call_anthropic(messages, None, timeout, max_tokens=600, model=model).get("content", "")
+
+    url, default_model = get_llm_settings()
+    endpoint = f"{url}/api/chat"
+    m        = model or default_model
 
     payload = {"model": m, "messages": messages, "stream": False, "keep_alive": -1, "options": {"num_predict": 600}}
 
@@ -485,6 +616,105 @@ def _stream_openai(
         raise RuntimeError(f"OpenAI-compatible stream failed: {e}")
 
 
+def _stream_anthropic(
+    messages: list,
+    tools:    list | None,
+    timeout:  int,
+) -> Generator[dict, None, None]:
+    """Streaming backend for Anthropic's Messages API. Parses SSE events and
+    accumulates streamed tool-call JSON so the output format matches the
+    Ollama/OpenAI backends."""
+    key = get_anthropic_key()
+    if not key:
+        raise RuntimeError(
+            "Kein Anthropic-API-Key konfiguriert. "
+            "Trage 'anthropic_api_key' in config/api_keys.json ein."
+        )
+    _, model = get_llm_settings()
+    system, convo = _split_system(messages)
+    payload: dict = {"model": model, "max_tokens": 150, "messages": convo, "stream": True}
+    if system:
+        payload["system"] = system
+    anth_tools = _tools_to_anthropic(tools)
+    if anth_tools:
+        payload["tools"] = anth_tools
+
+    full_content = ""
+    buf          = ""
+    # content-block index → accumulated tool_use fragment
+    tool_blocks: dict[int, dict] = {}
+
+    try:
+        with requests.post(
+            f"{_ANTHROPIC_API_URL}/v1/messages",
+            json=payload, headers=_anthropic_headers(), timeout=timeout, stream=True,
+        ) as resp:
+            resp.raise_for_status()
+
+            for raw in resp.iter_lines():
+                if not raw:
+                    continue
+                line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+                if not line.startswith("data:"):
+                    continue
+                data_str = line[5:].strip()
+                if not data_str:
+                    continue
+                try:
+                    event = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+
+                etype = event.get("type")
+                if etype == "content_block_start":
+                    block = event.get("content_block", {})
+                    if block.get("type") == "tool_use":
+                        tool_blocks[event.get("index", 0)] = {
+                            "id": block.get("id", ""), "name": block.get("name", ""), "json_buf": "",
+                        }
+                elif etype == "content_block_delta":
+                    delta = event.get("delta", {})
+                    if delta.get("type") == "text_delta":
+                        text = delta.get("text", "")
+                        full_content += text
+                        buf          += text
+                        while True:
+                            m = _SENT_END.search(buf)
+                            if not m:
+                                break
+                            sentence = buf[: m.start() + 1].strip()
+                            buf      = buf[m.end():]
+                            if sentence:
+                                yield {"type": "sentence", "text": sentence}
+                    elif delta.get("type") == "input_json_delta":
+                        idx = event.get("index", 0)
+                        if idx in tool_blocks:
+                            tool_blocks[idx]["json_buf"] += delta.get("partial_json", "")
+                elif etype == "message_stop":
+                    break
+
+            if buf.strip():
+                yield {"type": "sentence", "text": buf.strip()}
+
+            tool_calls: list = []
+            for idx in sorted(tool_blocks):
+                tb = tool_blocks[idx]
+                try:
+                    args = json.loads(tb["json_buf"]) if tb["json_buf"] else {}
+                except Exception:
+                    args = tb["json_buf"]
+                tool_calls.append({"id": tb["id"], "function": {"name": tb["name"], "arguments": args}})
+
+            yield {"type": "done", "content": full_content.strip(), "tool_calls": tool_calls}
+
+    except requests.exceptions.HTTPError as e:
+        raise RuntimeError(f"Anthropic HTTP error: {e.response.status_code}")
+    except requests.exceptions.Timeout:
+        raise RuntimeError("Anthropic stream timed out.")
+    except Exception as e:
+        raise RuntimeError(f"Anthropic stream failed: {e}")
+
+
 def call_llm_stream(
     messages: list,
     tools:    list | None = None,
@@ -501,6 +731,9 @@ def call_llm_stream(
     Tool calls always appear in the final "done" event.
     """
     provider = get_llm_provider()
+    if provider == "anthropic":
+        yield from _stream_anthropic(messages, tools, timeout)
+        return
     if provider == "openai":
         yield from _stream_openai(messages, tools, timeout)
         return

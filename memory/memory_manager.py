@@ -1,5 +1,6 @@
 import json
 import re
+import threading
 from datetime import datetime
 from threading import Lock
 from pathlib import Path
@@ -156,6 +157,40 @@ def _recursive_update(target: dict, updates: dict) -> bool:
     return changed
 
 
+def _mirror_updates_async(memory_update: dict) -> None:
+    """Best-effort background mirror of just-changed facts to the optional remote
+    memory service (core/knowledge_client.py). Off unless "knowledge_host" is
+    configured; runs in a background thread so a slow/unreachable server can
+    never delay save_memory()."""
+    try:
+        from core.knowledge_client import is_enabled, is_semantic_enabled, memory_upsert, semantic_memory_upsert
+    except Exception:
+        return
+    if not is_enabled():
+        return
+    semantic_on = is_semantic_enabled()
+
+    def _do():
+        for cat, items in memory_update.items():
+            if not isinstance(items, dict):
+                continue
+            for key, entry in items.items():
+                if isinstance(entry, dict) and "value" not in entry:
+                    continue  # nested sub-category — not used by any current caller
+                value = entry.get("value") if isinstance(entry, dict) else entry
+                if not value or (isinstance(value, str) and not value.strip()):
+                    continue
+                item_id = f"{cat}:{key}"
+                memory_upsert(
+                    item_id, str(value), actor="user",
+                    created_at=datetime.now().strftime("%Y-%m-%d"),
+                )
+                if semantic_on:
+                    semantic_memory_upsert(item_id, str(value), {"category": cat, "key": key})
+
+    threading.Thread(target=_do, daemon=True).start()
+
+
 def update_memory(memory_update: dict) -> dict:
     if not isinstance(memory_update, dict) or not memory_update:
         return load_memory()
@@ -163,6 +198,7 @@ def update_memory(memory_update: dict) -> dict:
     if _recursive_update(memory, memory_update):
         save_memory(memory)
         print(f"[Memory] 💾 Saved: {list(memory_update.keys())}")
+        _mirror_updates_async(memory_update)
     return memory
 
 def _entry_value(entry) -> str:
@@ -175,6 +211,24 @@ def _entry_value(entry) -> str:
 
 def _pretty(key: str) -> str:
     return key.replace("_", " ").strip()
+
+
+# ── Legacy identity guard ────────────────────────────────────────────────────
+# The assistant used to be called JARVIS. Facts and session summaries written
+# back then can still sit in long_term.json ("assistant name: Jarvis", "Jarvis
+# helped with …"). Nothing is deleted from disk — the memory panel still lists
+# every entry so the user decides — but such entries are never fed back to the
+# model, so stored history cannot re-assert the old identity over MIA.
+_LEGACY_IDENTITY_RE = re.compile(r"\bj\.?\s?a\.?\s?r\.?\s?v\.?\s?i\.?\s?s\b\.?", re.IGNORECASE)
+
+
+def mentions_legacy_identity(*texts) -> bool:
+    return any(_LEGACY_IDENTITY_RE.search(str(t or "")) for t in texts)
+
+
+def scrub_legacy_identity(text: str) -> str:
+    """Replace the legacy assistant name with MIA in free text (display/prompt only)."""
+    return _LEGACY_IDENTITY_RE.sub("MIA", text or "")
 
 
 # Identity is always in the prompt; these categories compete for the remaining
@@ -222,7 +276,7 @@ def format_memory_for_prompt(memory: dict | None) -> str:
     identity = memory.get("identity", {}) or {}
     for field in _IDENTITY_FIELDS:
         val = _entry_value(identity.get(field))
-        if not val:
+        if not val or mentions_legacy_identity(val):
             continue
         if field == "language":
             # Labelled as an observation, not a setting. A bare "Language:
@@ -237,7 +291,7 @@ def format_memory_for_prompt(memory: dict | None) -> str:
         if key in _IDENTITY_FIELDS:
             continue
         val = _entry_value(entry)
-        if val:
+        if val and not mentions_legacy_identity(key, val):
             core_lines.append(f"{_pretty(key).title()}: {val}")
 
     # 2. Everything else, most recently updated first
@@ -245,7 +299,7 @@ def format_memory_for_prompt(memory: dict | None) -> str:
     for cat in _CATEGORY_LABELS:
         for key, entry in (memory.get(cat, {}) or {}).items():
             val = _entry_value(entry)
-            if not val:
+            if not val or mentions_legacy_identity(key, val):
                 continue
             updated = (entry.get("updated", "") if isinstance(entry, dict) else "") or "0000-00-00"
             rest.append((updated, cat, key, val))
@@ -347,6 +401,27 @@ def _score(query_words: list[str], cat: str, key: str, value: str) -> int:
     return score
 
 
+def _search_memory_semantic_fallback(query: str, limit: int) -> str:
+    """Tried only when the instant keyword search above finds nothing at all —
+    this is the associative-memory path (embeddings + Qdrant, see
+    core/knowledge_client.py). It costs a local embedding call, never an LLM
+    call, and is a no-op when the vector service isn't configured."""
+    try:
+        from core.knowledge_client import is_semantic_enabled, semantic_memory_search
+    except Exception:
+        return ""
+    if not is_semantic_enabled():
+        return ""
+    hits = semantic_memory_search(query, limit=limit)
+    if not hits:
+        return ""
+    lines = [
+        f"{h.get('category', '?')}/{_pretty(h.get('key', h.get('source_id', '')))}: {h.get('text', '')}"
+        for h in hits
+    ]
+    return f"Nothing matched '{query}' by keyword, but this seems related:\n" + "\n".join(lines)
+
+
 def search_memory(query: str, limit: int = 8) -> str:
     """Find stored facts matching `query`. Backs the recall_memory tool.
 
@@ -361,15 +436,19 @@ def search_memory(query: str, limit: int = 8) -> str:
             continue                     # skip 'sessions', which is a list
         for key, entry in items.items():
             val = _entry_value(entry)
-            if not val:
+            if not val or mentions_legacy_identity(key, val):
                 continue
             s = _score(words, cat, key, val) if words else 1
             if s > 0:
                 rows.append((s, cat, key, val))
 
     if not rows:
-        return (f"Nothing stored about '{query}'." if query
-                else "I have not stored anything about this person yet.")
+        if query:
+            semantic = _search_memory_semantic_fallback(query, limit)
+            if semantic:
+                return semantic
+            return f"Nothing stored about '{query}'."
+        return "I have not stored anything about this person yet."
 
     rows.sort(key=lambda r: (-r[0], r[2]))
     lines = [f"{cat}/{_pretty(key)}: {val}" for _s, cat, key, val in rows[:max(1, limit)]]
@@ -381,7 +460,7 @@ def search_memory(query: str, limit: int = 8) -> str:
 
 
 def all_entries_for_ui() -> list[dict]:
-    """Flat list for the memory panel: what JARVIS knows, and when it learned it.
+    """Flat list for the memory panel: what MIA knows, and when it learned it.
     Sorted newest first so the panel opens on what changed most recently."""
     memory = load_memory()
     rows = []
@@ -409,6 +488,23 @@ def remember(key: str, value: str, category: str = "notes") -> str:
     return f"Remembered: {category}/{key} = {value}"
 
 
+def _mirror_delete_async(item_id: str) -> None:
+    try:
+        from core.knowledge_client import is_enabled, is_semantic_enabled, memory_delete, semantic_memory_delete
+    except Exception:
+        return
+    if not is_enabled():
+        return
+    semantic_on = is_semantic_enabled()
+
+    def _do():
+        memory_delete([item_id])
+        if semantic_on:
+            semantic_memory_delete(item_id)
+
+    threading.Thread(target=_do, daemon=True).start()
+
+
 def forget(key: str, category: str = "notes") -> str:
     memory = load_memory()
     cat    = memory.get(category, {})
@@ -416,6 +512,7 @@ def forget(key: str, category: str = "notes") -> str:
         del cat[key]
         memory[category] = cat
         save_memory(memory)
+        _mirror_delete_async(f"{category}:{key}")
         return f"Forgotten: {category}/{key}"
     return f"Not found: {category}/{key}"
 
@@ -454,6 +551,23 @@ def save_session_summary(summary: str, language: str = "") -> None:
     print(f"[Memory] 📝 Session saved ({entry['date']}): {summary[:60]}…")
 
 
+def recent_sessions_for_ui() -> list[dict]:
+    """Read-only view of stored session summaries, newest first.
+
+    Unlike pop_last_session(), this does not consume entries — it backs the
+    memory panel, which must be able to show what's there without erasing the
+    greeting flow's own copy."""
+    memory   = load_memory()
+    sessions = memory.get("sessions", [])
+    if not isinstance(sessions, list):
+        return []
+    return [
+        {**s, "summary": scrub_legacy_identity(s.get("summary", ""))}
+        if isinstance(s, dict) else s
+        for s in reversed(sessions)
+    ]
+
+
 def pop_last_session() -> dict | None:
     """
     Return AND remove the most recent session entry.
@@ -473,6 +587,8 @@ def pop_last_session() -> dict | None:
                 json.dumps(memory, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
+            if isinstance(entry, dict) and "summary" in entry:
+                entry = {**entry, "summary": scrub_legacy_identity(entry["summary"])}
             return entry
         except Exception as e:
             print(f"[Memory] ⚠️ pop_last_session error: {e}")
