@@ -194,6 +194,8 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
 
     # ── tasks ────────────────────────────────────────────────────────────
     async def task_create(ctx: ToolContext, args: dict):
+        wanted = st.runtime._runnable_agent(str(args.get("agent") or "")) if args.get("agent") else ""
+        args = {**args, "agent": wanted}
         t = tasks.create(title=str(args["title"]), description=str(args.get("description", "")),
                          created_by=f"agent:{ctx.agent_id}", assigned_agent=str(args.get("agent") or ctx.agent_id),
                          priority=str(args.get("priority", "normal")), parent_id=ctx.task_id,

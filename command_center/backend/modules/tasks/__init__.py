@@ -47,7 +47,7 @@ async def timeline(limit: int = 30, state: AppState = Depends(get_state), _: Pri
 async def create_task(body: TaskCreate, state: AppState = Depends(get_state),
                       principal: Principal = Depends(require_role("operator"))):
     svc = state.services["tasks"]
-    agent_id = body.assigned_agent or (state.agents.master_id() if body.start else "")
+    agent_id = state.agents.resolve(body.assigned_agent) or (state.agents.master_id() if body.start else "")
     task = svc.create(title=body.title, description=body.description, priority=body.priority,
                       assigned_agent=agent_id, created_by=principal.actor, parent_id=body.parent_id)
     state.log.audit(actor_type=principal.kind, actor_id=principal.actor, action="task.create", target=task["id"],
@@ -119,7 +119,7 @@ async def retry_task(task_id: str, state: AppState = Depends(get_state),
         raise HTTPException(status_code=404, detail="Task not found")
     if task["status"] not in ("FAILED", "CANCELLED", "COMPLETED", "QUEUED"):
         raise HTTPException(status_code=400, detail="Task is still active")
-    agent_id = task["assigned_agent"] or state.agents.master_id()
+    agent_id = state.agents.resolve(task["assigned_agent"]) or state.agents.master_id()
     svc.set_status(task_id, "QUEUED", error="", note=f"Retry requested by {principal.actor}")
     result = await state.runtime.start_task_run(svc.get(task_id), principal, agent_id)
     return {"task": svc.get(task_id), **result}

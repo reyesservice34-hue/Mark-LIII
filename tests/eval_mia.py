@@ -14,7 +14,7 @@ Two tiers, kept honest and separate:
 
 Categories: A conversation, B reasoning, C coding, D tool use, E agent routing,
 F memory, G task execution, H error recovery, I permissions, J hallucination,
-K learning, L self-healing, M core evolution, N communication layer, O scheduler backoff, P integrations, Q local model, R local model probe, S unclear-reference gate, T mail search, U answer-only, V boot resilience.
+K learning, L self-healing, M core evolution, N communication layer, O scheduler backoff, P integrations, Q local model, R local model probe, S unclear-reference gate, T mail search, U answer-only, V boot resilience, W agent ids.
 
 Run:      python tests/eval_mia.py [--label before|after]
 Compare:  python tests/eval_mia.py --compare tests/eval_results/a.json tests/eval_results/b.json
@@ -944,6 +944,47 @@ with TestClient(app) as c:
         except ModuleNotFoundError:
             raised = True
     case("V", "a missing DEPENDENCY inside a module still stops loudly (only the module itself may be absent)", "harness", raised, "", t0)
+
+    # ── W agent ids: a removed name must not fail; specialists stay off the local CPU model ──
+    t0 = time.time()
+    master = state.agents.master_id()
+    spec_id = next((a.id for a in state.agents._specs.values() if a.kind != "master"), None)
+    case("W", "resolve: the former master name 'jarvis' (and 'mia') means the master", "harness",
+         state.agents.resolve("jarvis") == master and state.agents.resolve("Mia") == master, (master, state.agents.resolve("jarvis")), t0)
+    case("W", "resolve: real ids and empty ids are left alone", "harness",
+         state.agents.resolve(master) == master and state.agents.resolve("") == "" and (spec_id is None or state.agents.resolve(spec_id) == spec_id),
+         "", t0)
+
+    def _task_run_agent(assigned: str) -> tuple[str, str]:
+        r = c.post("/api/tasks", json={"title": "EVAL-W " + assigned, "assigned_agent": assigned, "start": True}, headers=H)
+        tid = r.json().get("task", r.json()).get("id")
+        row = wait_for(lambda: state.db.fetchone("SELECT agent_id,status FROM agent_runs WHERE task_id=? AND status NOT IN ('planning','executing')", (tid,)))
+        return (row["agent_id"], row["status"]) if row else ("", "no run finished")
+
+    fake.turns = [text_turn("Ok.")]
+    got = _task_run_agent("jarvis")
+    case("W", "a task assigned to 'jarvis' runs as the master and completes (was: Agent 'jarvis' is not registered)", "harness",
+         got == (master, "completed"), got, t0)
+    if spec_id:
+        lw = ScriptedProvider("local")
+        state.runtime.provider = lw
+        lw.turns = [text_turn("Ok.")]
+        got = _task_run_agent(spec_id)
+        case("W", "local model: a task for a specialist runs as the master (no cold specialist prompt)", "harness",
+             got[0] == master, got, t0)
+        conv = new_conv("w-delegate")
+        n_before = state.db.scalar("SELECT COUNT(*) FROM agent_runs WHERE agent_id=?", (spec_id,))
+        lw.turns = [tool_turn("agent.delegate", {"agent_id": spec_id, "instruction": "Erledige X"}), text_turn("Ok, mache ich selbst.")]
+        say(conv, "Prüf bitte, ob der Spezialist das kann")
+        res = json.dumps([m for m in lw.seen[-1] if m["role"] == "user"][-1], ensure_ascii=False)
+        n_after = state.db.scalar("SELECT COUNT(*) FROM agent_runs WHERE agent_id=?", (spec_id,))
+        case("W", "local model: agent.delegate starts no specialist and tells the master to do it itself", "harness",
+             "nur der Master-Agent" in res and n_after == n_before, (n_before, n_after, res[:120]), t0)
+        state.runtime.provider = fake
+        fake.turns = [tool_turn("agent.delegate", {"agent_id": spec_id, "instruction": "Erledige X"}), text_turn("Ok.")]
+        say(new_conv("w-delegate-cloud"), "Prüf bitte, ob der Spezialist das kann")
+        case("W", "cloud model: delegation still works as before", "harness",
+             state.db.scalar("SELECT COUNT(*) FROM agent_runs WHERE agent_id=?", (spec_id,)) > n_after, "", t0)
 
     # safety and invisibility
     t0 = time.time()
