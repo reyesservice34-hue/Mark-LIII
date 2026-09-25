@@ -1301,17 +1301,32 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         ctx.emit("whatsapp", {"text": f"WhatsApp sent via {device['name']}"})
         return (cmd["result"] or cmd["error"] or "sent", cmd["status"] == "done")
 
+    async def whatsapp_to_owner(ctx: ToolContext, args: dict):
+        # Nur an den Nutzer selbst: ein "contact" im Aufruf wird verworfen (Sofortregel 5). Fremde Empfaenger
+        # laufen ueber notify.whatsapp_kontakt und brauchen deshalb eine Freigabe.
+        return await desktop_whatsapp(ctx, {k: v for k, v in args.items() if k != "contact"})
+
     reg.register(ToolSpec("notify.whatsapp", "Reach the user on their phone by WhatsApp, as a spoken voice "
                           "note in your own voice or as text. Goes through the desktop's linked WhatsApp, so "
                           "it needs that PC to be running. Use it when something matters and they are away "
-                          "from the machine.",
+                          "from the machine. Only ever writes to the user themselves; for anyone else use "
+                          "notify.whatsapp_kontakt.",
                           _obj({"message": _s("the finished message, written to be heard: short sentences, "
                                               "first person, no lists, no markdown"),
                                 "mode": _s("voice (default) or text"),
-                                "contact": _s("recipient as named in WhatsApp; omit for the configured one"),
                                 "device": _s("which desktop")}, ["message"]),
-                          category="communication", risk="medium", handler=desktop_whatsapp,
+                          category="communication", risk="medium", handler=whatsapp_to_owner,
                           timeout_seconds=200))
+    reg.register(ToolSpec("notify.whatsapp_kontakt", "Send a WhatsApp message to ANOTHER person than the user "
+                          "(a customer, a colleague). Goes through the desktop's linked WhatsApp. Always needs "
+                          "the user's approval before anything is sent: show the finished text and the recipient "
+                          "and wait for the yes.",
+                          _obj({"message": _s("the finished message"),
+                                "contact": _s("recipient as named in WhatsApp"),
+                                "mode": _s("text (default) or voice"),
+                                "device": _s("which desktop")}, ["message", "contact"]),
+                          category="communication", risk="high", requires_approval=True,
+                          handler=desktop_whatsapp, timeout_seconds=200))
 
     # ── teach mode ───────────────────────────────────────────────────────
     teaching = st.services["teaching"]
