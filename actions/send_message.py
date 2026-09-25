@@ -35,6 +35,16 @@ def _get_os() -> str:
         return "windows"
 
 
+def _get_owner_contact() -> str:
+    try:
+        cfg = json.loads(
+            (_base_dir() / "config" / "api_keys.json").read_text(encoding="utf-8")
+        )
+        return (cfg.get("owner_whatsapp_contact") or "").strip()
+    except Exception:
+        return ""
+
+
 def _require_pyautogui():
     if not _PYAUTOGUI:
         raise RuntimeError("PyAutoGUI not installed. Run: pip install pyautogui")
@@ -281,6 +291,31 @@ def send_message(
         detail=f"To: {receiver}\n“{preview}”",
         run=_do_send,
     )
+
+
+def notify_owner(message: str) -> bool:
+    """Direct WhatsApp message to the pre-configured owner contact — for
+    system alerts (see actions/system_monitor.py) that need to reach a human
+    even when nobody is watching the desktop HUD or the phone dashboard.
+
+    Deliberately bypasses the confirm gate above: the destination is fixed by
+    the owner's own config, never chosen live by the model, so there is no
+    "who is this going to" risk the gate exists to catch. Off by default —
+    a no-op until "owner_whatsapp_contact" is set in config/api_keys.json.
+    Zero added cost: reuses the same desktop WhatsApp automation as
+    send_message, over the owner's own WhatsApp account — never call this
+    from a model-facing tool."""
+    contact = _get_owner_contact()
+    if not contact or not _PYAUTOGUI:
+        return False
+    try:
+        result = _send_whatsapp(contact, message)
+        ok = "sent" in result.lower()
+        print(f"[SendMessage] {'✅' if ok else '❌'} Owner notify: {result}")
+        return ok
+    except Exception as e:
+        print(f"[SendMessage] ⚠️ Owner notify failed: {e}")
+        return False
 
 
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
