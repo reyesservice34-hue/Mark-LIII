@@ -51,6 +51,7 @@ Mark-LIII/
 │   ├── .env.example            Jede Einstellung, jedes Geheimnis — nur auf dem Server
 │   ├── README.md               Betrieb, Kopplung, Reverse Proxy
 │   ├── STRUKTUR.md             Diese Datei
+│   ├── INFRASTRUKTUR_GPU.md    Drei MIA-Server, GPU-Ausbau, Preise, offene Punkte
 │   │
 │   ├── backend/              FastAPI + SQLite (WAL)
 │   │   ├── app.py              Baut alles zusammen: Middleware, Module, SPA
