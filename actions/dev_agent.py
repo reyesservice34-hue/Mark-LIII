@@ -25,6 +25,15 @@ def _get_api_key() -> str:
 
 
 def _get_model(model_name: str):
+    from core.llm_client import get_llm_provider, call_llm_text
+
+    if get_llm_provider() == "anthropic":
+        class _Claude:
+            def generate_content(self, contents):
+                text = call_llm_text(contents, timeout=180)
+                return type("Response", (), {"text": text})()
+        return _Claude()
+
     from google import genai
     _c = genai.Client(api_key=_get_api_key())
 
