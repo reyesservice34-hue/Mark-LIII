@@ -226,8 +226,9 @@ _PLATFORM_MAP = [
 
 def _resolve_platform(platform_str: str):
     key = platform_str.lower().strip()
+    key_words = set(key.split())
     for keywords, handler in _PLATFORM_MAP:
-        if any(k in key for k in keywords):
+        if key in keywords or key_words & keywords:
             return handler
     return lambda r, m: _desktop_send(platform_str.strip().title(), r, m)
 
