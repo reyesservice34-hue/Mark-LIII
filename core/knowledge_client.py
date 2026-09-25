@@ -16,10 +16,15 @@ seconds — see _TIMEOUT.
 Ports match knowledge_services/docker-compose.yml exactly:
     8001  memory service        8002  knowledge base
     8003  embedding service     8004  session archive
-    8005  procedural brain
+    8005  procedural brain      6333  vector DB (Qdrant, own auth — see below)
+
+Cost note: embeddings run on a small local model (all-MiniLM-L6-v2, CPU-only,
+no external API) and Qdrant is self-hosted — the associative-memory path below
+adds zero API cost. It only ever touches your own server.
 """
 import json
 import sys
+import uuid
 from pathlib import Path
 
 import requests
@@ -42,7 +47,10 @@ _PORTS = {
     "embedding":         8003,
     "session_archive":   8004,
     "procedural_brain":  8005,
+    "vector_db":         6333,
 }
+
+_MEMORY_COLLECTION = "mia_memory"
 
 
 def _load_config() -> dict:
@@ -61,8 +69,22 @@ def get_token() -> str:
     return (_load_config().get("knowledge_service_token") or "").strip()
 
 
+def get_vector_api_key() -> str:
+    """Qdrant's own key (its docker-compose QDRANT_API_KEY), separate from the
+    Flask services' bearer token above — Qdrant is a different piece of software
+    with its own auth scheme."""
+    return (_load_config().get("qdrant_api_key") or "").strip()
+
+
 def is_enabled() -> bool:
     return bool(get_host() and get_token())
+
+
+def is_semantic_enabled() -> bool:
+    """Associative memory needs the host plus the embedding service and Qdrant —
+    both included in the same docker-compose stack, so this is just is_enabled()
+    today, kept separate in case that ever changes."""
+    return is_enabled()
 
 
 def _url(service: str, path: str) -> str:
@@ -143,3 +165,110 @@ def knowledge_list() -> list[str]:
 
 def knowledge_get(name: str) -> dict | None:
     return _request("GET", "knowledge", f"/knowledge/{name}")
+
+
+# ── Embedding service (text -> vector, local model, no API cost) ─────────────
+
+def embed_texts(texts: list[str]) -> list[list[float]] | None:
+    if not texts:
+        return None
+    data = _request("POST", "embedding", "/embed", json={"texts": texts})
+    if not data:
+        return None
+    vectors = data.get("embeddings")
+    return vectors if isinstance(vectors, list) else None
+
+
+# ── Vector DB (Qdrant — associative memory) ───────────────────────────────────
+# Qdrant is not one of the bearer-token Flask services above: it's a separate
+# piece of software with its own auth header ("api-key") and its own REST API
+# shape, so it gets its own small request helper instead of reusing _request().
+
+def _qdrant_headers() -> dict:
+    headers = {"Content-Type": "application/json"}
+    key = get_vector_api_key()
+    if key:
+        headers["api-key"] = key
+    return headers
+
+
+def _qdrant_request(method: str, path: str, **kwargs):
+    if not is_semantic_enabled():
+        return None
+    try:
+        resp = requests.request(
+            method, _url("vector_db", path),
+            headers=_qdrant_headers(), timeout=_TIMEOUT, **kwargs,
+        )
+        if not resp.ok:
+            print(f"[Vector] {path} -> HTTP {resp.status_code}: {resp.text[:150]}")
+            return None
+        return resp.json() if resp.content else {}
+    except requests.exceptions.RequestException as e:
+        print(f"[Vector] {path} unreachable: {e}")
+        return None
+    except Exception as e:
+        print(f"[Vector] {path} failed: {e}")
+        return None
+
+
+def _ensure_collection(name: str, vector_size: int) -> bool:
+    existing = _qdrant_request("GET", f"/collections/{name}")
+    if existing is not None:
+        return True
+    return _qdrant_request(
+        "PUT", f"/collections/{name}",
+        json={"vectors": {"size": vector_size, "distance": "Cosine"}},
+    ) is not None
+
+
+def _point_id(item_id: str) -> str:
+    """Qdrant point IDs must be an integer or a UUID — derive a stable UUID from
+    our own string IDs so upserting the same fact twice overwrites it."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, item_id))
+
+
+def semantic_memory_upsert(item_id: str, text: str, payload: dict | None = None) -> bool:
+    """Embeds `text` (free, local model) and stores it in Qdrant under a point ID
+    derived from item_id, so re-saving the same fact overwrites its vector."""
+    vectors = embed_texts([text])
+    if not vectors:
+        return False
+    vec = vectors[0]
+    if not _ensure_collection(_MEMORY_COLLECTION, len(vec)):
+        return False
+    point = {
+        "id": _point_id(item_id),
+        "vector": vec,
+        "payload": {**(payload or {}), "source_id": item_id, "text": text},
+    }
+    return _qdrant_request(
+        "PUT", f"/collections/{_MEMORY_COLLECTION}/points",
+        json={"points": [point]},
+    ) is not None
+
+
+def semantic_memory_delete(item_id: str) -> bool:
+    return _qdrant_request(
+        "POST", f"/collections/{_MEMORY_COLLECTION}/points/delete",
+        json={"points": [_point_id(item_id)]},
+    ) is not None
+
+
+def semantic_memory_search(query: str, limit: int = 5) -> list[dict]:
+    """Finds facts related to `query` by meaning, not just shared words — the
+    fallback for when the instant local keyword search in memory_manager.py
+    finds nothing. Returns [] if disabled, unreachable, or empty."""
+    vectors = embed_texts([query])
+    if not vectors:
+        return []
+    data = _qdrant_request(
+        "POST", f"/collections/{_MEMORY_COLLECTION}/points/search",
+        json={"vector": vectors[0], "limit": limit, "with_payload": True},
+    )
+    if not data:
+        return []
+    return [
+        {"score": r.get("score"), **(r.get("payload") or {})}
+        for r in data.get("result", [])
+    ]

@@ -1344,7 +1344,15 @@ class MiaLive:
     # ── Session memory ──────────────────────────────────────────────────────────
 
     async def _save_session_summary(self) -> None:
-        """Summarise the current session in 1-2 sentences and save to long_term.json."""
+        """Summarise the current session and consolidate it into long-term memory.
+
+        One single LLM call does both jobs — no extra API cost over the old
+        summary-only version. Alongside the 1-2 sentence summary, it also asks
+        for any facts the user stated but that live save_memory calls during
+        the conversation might have missed (the "sleep" pass: turning a raw
+        transcript into structured memory, the way review-during-sleep
+        consolidates a day's experience). Conservative by design — empty by
+        default, only what was explicitly said, never inferred."""
         log = self._session_log
         if len(log) < 3:          # need at least one exchange to be worth saving
             return
@@ -1357,9 +1365,15 @@ class MiaLive:
 
         convo = "\n".join(log[-40:])   # cap at last 40 turns to stay within token budget
         prompt = (
-            f"Summarize this conversation in 1-2 sentences in {lang}. "
-            "Focus on what the user accomplished or discussed. "
-            "Output ONLY the summary text, nothing else:\n\n" + convo
+            f"Review this conversation and return ONLY a JSON object, nothing else:\n"
+            f'{{"summary": "1-2 sentences in {lang} about what the user accomplished or discussed", '
+            f'"facts": [{{"category": "identity|preferences|projects|relationships|wishes|notes", '
+            f'"key": "short_snake_case_key", "value": "concise value in English"}}]}}\n\n'
+            "Rules for \"facts\": only include something the user EXPLICITLY stated about "
+            "themselves that is worth remembering long-term (name, preference, project, "
+            "relationship, plan). Never infer or guess. Leave the list empty if nothing "
+            "qualifies — an empty list is the common, correct answer, not a failure.\n\n"
+            "Conversation:\n" + convo
         )
         try:
             from google import genai as _genai
@@ -1369,13 +1383,39 @@ class MiaLive:
                 model="gemini-flash-latest",
                 contents=prompt,
             )
-            summary = (resp.text or "").strip()
+            raw = (resp.text or "").strip()
+            raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+            raw = re.sub(r"\n?```\s*$", "", raw)
+            data = json.loads(raw)
+
+            summary = str(data.get("summary") or "").strip()
             if summary:
                 save_session_summary(summary, lang)
+
+            self._consolidate_facts(data.get("facts"))
         except Exception as e:
-            print(f"[Memory] ⚠️ Session summary failed: {e}")
+            print(f"[Memory] ⚠️ Session summary/consolidation failed: {e}")
 
         self._archive_session_async(log)
+
+    def _consolidate_facts(self, facts) -> None:
+        """Writes facts extracted by the session-end review into long-term
+        memory, same path as the live save_memory tool. Silently drops
+        anything malformed rather than raising — this is best-effort cleanup,
+        not a critical path."""
+        if not isinstance(facts, list):
+            return
+        valid_categories = {"identity", "preferences", "projects", "relationships", "wishes", "notes"}
+        for fact in facts[:8]:   # hard cap — a runaway extraction should never flood memory
+            if not isinstance(fact, dict):
+                continue
+            category = fact.get("category") if fact.get("category") in valid_categories else "notes"
+            key      = str(fact.get("key") or "").strip()
+            value    = str(fact.get("value") or "").strip()
+            if not key or not value:
+                continue
+            update_memory({category: {key: {"value": value}}})
+            print(f"[Memory] 🌙 Consolidated: {category}/{key} = {value}")
 
     def _archive_session_async(self, log: list[str]) -> None:
         """Best-effort background archive of the full transcript to the optional
