@@ -4,6 +4,8 @@ import sys
 import time
 from pathlib import Path
 
+from core import confirm
+
 try:
     import pyautogui
     pyautogui.FAILSAFE = True
@@ -253,17 +255,32 @@ def send_message(
     if player:
         player.write_log(f"[msg] {platform} → {receiver}")
 
-    try:
-        handler = _resolve_platform(platform)
-        result  = handler(receiver, message_text)
-    except Exception as e:
-        result = f"Could not send message: {e}"
+    # ── The gate ─────────────────────────────────────────────────────────────
+    # Sending a real message to a real person is irreversible and visible to
+    # someone outside this conversation — exactly the category core/confirm.py
+    # exists for, and it went ungated before. A human presses CONFIRM on the
+    # HUD, or nothing goes out.
+    def _do_send() -> str:
+        try:
+            handler = _resolve_platform(platform)
+            result  = handler(receiver, message_text)
+        except Exception as e:
+            result = f"Could not send message: {e}"
 
-    print(f"[SendMessage] {'✅' if 'sent' in result.lower() else '❌'} {result}")
-    if player:
-        player.write_log(f"[msg] {result}")
+        print(f"[SendMessage] {'✅' if 'sent' in result.lower() else '❌'} {result}")
+        if player:
+            player.write_log(f"[msg] {result}")
+        return result
 
-    return result
+    if confirm.pending_title():
+        return ("There is already a confirmation waiting on screen. "
+                "Ask the user to answer that one first.")
+    return confirm.request(
+        key="send_message",
+        title=f"Send message via {platform.title()}",
+        detail=f"To: {receiver}\n“{preview}”",
+        run=_do_send,
+    )
 
 
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
