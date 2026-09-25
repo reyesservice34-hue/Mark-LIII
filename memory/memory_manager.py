@@ -1,5 +1,6 @@
 import json
 import re
+import threading
 from datetime import datetime
 from threading import Lock
 from pathlib import Path
@@ -156,6 +157,36 @@ def _recursive_update(target: dict, updates: dict) -> bool:
     return changed
 
 
+def _mirror_updates_async(memory_update: dict) -> None:
+    """Best-effort background mirror of just-changed facts to the optional remote
+    memory service (core/knowledge_client.py). Off unless "knowledge_host" is
+    configured; runs in a background thread so a slow/unreachable server can
+    never delay save_memory()."""
+    try:
+        from core.knowledge_client import is_enabled, memory_upsert
+    except Exception:
+        return
+    if not is_enabled():
+        return
+
+    def _do():
+        for cat, items in memory_update.items():
+            if not isinstance(items, dict):
+                continue
+            for key, entry in items.items():
+                if isinstance(entry, dict) and "value" not in entry:
+                    continue  # nested sub-category — not used by any current caller
+                value = entry.get("value") if isinstance(entry, dict) else entry
+                if not value or (isinstance(value, str) and not value.strip()):
+                    continue
+                memory_upsert(
+                    f"{cat}:{key}", str(value), actor="user",
+                    created_at=datetime.now().strftime("%Y-%m-%d"),
+                )
+
+    threading.Thread(target=_do, daemon=True).start()
+
+
 def update_memory(memory_update: dict) -> dict:
     if not isinstance(memory_update, dict) or not memory_update:
         return load_memory()
@@ -163,6 +194,7 @@ def update_memory(memory_update: dict) -> dict:
     if _recursive_update(memory, memory_update):
         save_memory(memory)
         print(f"[Memory] 💾 Saved: {list(memory_update.keys())}")
+        _mirror_updates_async(memory_update)
     return memory
 
 def _entry_value(entry) -> str:
@@ -427,6 +459,16 @@ def remember(key: str, value: str, category: str = "notes") -> str:
     return f"Remembered: {category}/{key} = {value}"
 
 
+def _mirror_delete_async(item_id: str) -> None:
+    try:
+        from core.knowledge_client import is_enabled, memory_delete
+    except Exception:
+        return
+    if not is_enabled():
+        return
+    threading.Thread(target=memory_delete, args=([item_id],), daemon=True).start()
+
+
 def forget(key: str, category: str = "notes") -> str:
     memory = load_memory()
     cat    = memory.get(category, {})
@@ -434,6 +476,7 @@ def forget(key: str, category: str = "notes") -> str:
         del cat[key]
         memory[category] = cat
         save_memory(memory)
+        _mirror_delete_async(f"{category}:{key}")
         return f"Forgotten: {category}/{key}"
     return f"Not found: {category}/{key}"
 

@@ -2,8 +2,11 @@ import subprocess
 import sys
 import json
 import re
+import threading
 import time
 from pathlib import Path
+
+from core.knowledge_client import procedure_add, procedure_find
 
 
 def get_base_dir():
@@ -397,6 +400,15 @@ def _fix_files(
             error_line and fix_path == error_file
         ) else ""
 
+        past_fixes = procedure_find(error_type)[:2]
+        past_hint = ""
+        if past_fixes:
+            examples = "\n\n".join(
+                f"Problem: {p['problem'][:300]}\nFix that worked:\n{p['solution'][:1500]}"
+                for p in past_fixes
+            )
+            past_hint = f"\n\nSimilar problems fixed before (for reference only, adapt as needed):\n{examples}"
+
         prompt = f"""You are an expert {language} debugger. Fix the broken file below.
 
 Project goal: {project_description}
@@ -415,6 +427,7 @@ Error output:
 
 Current (broken) code:
 {current_code}
+{past_hint}
 
 Rules:
 - Output ONLY the complete fixed code. No explanation, no markdown, no backticks.
@@ -528,8 +541,9 @@ def _build_project(
 
     _open_vscode(project_dir)
 
-    last_output   = ""
-    auto_installs = 0  
+    last_output    = ""
+    auto_installs  = 0
+    last_fix_record = None  # (problem_text, solution_code) from the fix that made the next run succeed
 
     for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
         log(f"Running project (attempt {attempt}/{MAX_FIX_ATTEMPTS})...")
@@ -537,6 +551,9 @@ def _build_project(
         log(f"Output preview: {last_output[:150]}")
 
         if not _has_error(last_output, run_command):
+            if last_fix_record:
+                problem, solution = last_fix_record
+                threading.Thread(target=procedure_add, args=(problem, solution), daemon=True).start()
             msg = (
                 f"Project '{proj_name}' is working, sir. "
                 f"Built in {attempt} attempt{'s' if attempt > 1 else ''}. "
@@ -569,6 +586,9 @@ def _build_project(
                 entry_point=entry_point,
             )
             file_codes.update(updated)
+            if updated:
+                fixed_path, fixed_code = next(iter(updated.items()))
+                last_fix_record = (f"{error_type}: {last_output[:500]}", fixed_code)
             time.sleep(1)
         except RateLimitError:
             msg = "Rate limit reached during fix. Project saved, check it manually in VSCode."

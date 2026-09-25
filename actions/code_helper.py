@@ -2,8 +2,11 @@ import subprocess
 import sys
 import json
 import re
+import threading
 import time
 from pathlib import Path
+
+from core.knowledge_client import procedure_add, procedure_find
 
 
 def get_base_dir():
@@ -194,6 +197,16 @@ Code:"""
 
 def _fix_code(code: str, error_output: str, description: str) -> str:
     model  = _get_gemini()
+
+    past_fixes = procedure_find(error_output[:200])[:2]
+    past_hint = ""
+    if past_fixes:
+        examples = "\n\n".join(
+            f"Problem: {p['problem'][:300]}\nFix that worked:\n{p['solution'][:1500]}"
+            for p in past_fixes
+        )
+        past_hint = f"\n\nSimilar problems fixed before (for reference only, adapt as needed):\n{examples}"
+
     prompt = f"""You are an expert debugger.
 The code below failed with the following error. Fix it.
 Return ONLY the corrected code — no explanation, no markdown, no backticks.
@@ -205,6 +218,7 @@ Error:
 
 Broken code:
 {code}
+{past_hint}
 
 Fixed code:"""
 
@@ -265,7 +279,8 @@ def _build(description, language, output_path, args, timeout, speak=None, player
         if speak: speak(msg)
         return msg
 
-    last_output = ""
+    last_output     = ""
+    last_fix_record = None  # (problem_text, solution_code) from the fix that made the next run succeed
     for attempt in range(1, MAX_BUILD_ATTEMPTS + 1):
         print(f"[Code] 🔄 Attempt {attempt}/{MAX_BUILD_ATTEMPTS}")
         if player:
@@ -274,6 +289,9 @@ def _build(description, language, output_path, args, timeout, speak=None, player
         last_output = _run_file(path, args, timeout)
 
         if not _has_error(last_output):
+            if last_fix_record:
+                problem, solution = last_fix_record
+                threading.Thread(target=procedure_add, args=(problem, solution), daemon=True).start()
             msg = (
                 f"Build complete, sir. "
                 f"The code is working after {attempt} attempt{'s' if attempt > 1 else ''}. "
@@ -289,6 +307,7 @@ def _build(description, language, output_path, args, timeout, speak=None, player
         try:
             code = _fix_code(code, last_output, description)
             _save_file(path, code)
+            last_fix_record = (last_output[:500], code)
         except Exception as e:
             msg = f"Could not fix code on attempt {attempt}: {e}"
             if speak: speak(msg)

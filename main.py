@@ -54,6 +54,7 @@ from memory.memory_manager import (
     save_session_summary, pop_last_session,
     search_memory, set_trim_notifier,
 )
+from core import knowledge_client
 
 # The file-backed tools (open_app, web_search, browser_control, …) are no longer
 # imported or declared here — they self-describe via a TOOL dict in their own
@@ -1373,6 +1374,29 @@ class MiaLive:
                 save_session_summary(summary, lang)
         except Exception as e:
             print(f"[Memory] ⚠️ Session summary failed: {e}")
+
+        self._archive_session_async(log)
+
+    def _archive_session_async(self, log: list[str]) -> None:
+        """Best-effort background archive of the full transcript to the optional
+        remote session-archive service. Runs in a background thread so an
+        unreachable/slow server never delays ending the session."""
+        if not knowledge_client.is_enabled():
+            return
+
+        session_id = datetime.now().strftime("%Y%m%dT%H%M%S")
+        messages = []
+        for line in log:
+            role, _, content = line.partition(": ")
+            messages.append({"role": role or "unknown", "content": content or line})
+
+        def _do():
+            knowledge_client.archive_session(
+                session_id, title=f"MIA session {session_id}",
+                actor="user", messages=messages,
+            )
+
+        threading.Thread(target=_do, daemon=True).start()
 
     # ── System monitor ──────────────────────────────────────────────────────────
 
