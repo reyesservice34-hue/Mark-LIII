@@ -1562,6 +1562,37 @@ class MiaLive:
         self.ui.write_log("SYS: Phone connected via Remote Dashboard.")
         self.ui.notify_phone_connected()
 
+    def _on_dashboard_confirm_answer(self, accepted: bool) -> None:
+        """A phone/browser client tapped Bestätigen/Abbrechen on the confirm
+        gate. Whichever surface answers first wins — confirm_gate.resolve()
+        is a no-op if the desktop HUD already answered the same request."""
+        try:
+            confirm_gate.resolve(accepted)
+        except Exception as e:
+            self.ui.write_log(f"ERR: Confirmation failed — {e}")
+
+    def _confirm_show(self, title: str, detail: str) -> None:
+        """core/confirm.py's single show callback — fans out to every surface
+        a human could be watching, not just the desktop HUD. Without this, a
+        gated action (e.g. send_message) waits on a banner that only appears
+        on the server's own screen, which is invisible to anyone using MIA
+        remotely through the phone dashboard."""
+        self.ui.show_confirm(title, detail)
+        if self._dashboard and self._loop:
+            asyncio.run_coroutine_threadsafe(
+                self._dashboard.broadcast({
+                    "type": "confirm_request", "title": title, "detail": detail,
+                }),
+                self._loop,
+            )
+
+    def _confirm_hide(self) -> None:
+        self.ui.hide_confirm()
+        if self._dashboard and self._loop:
+            asyncio.run_coroutine_threadsafe(
+                self._dashboard.broadcast({"type": "confirm_hide"}), self._loop,
+            )
+
     def _ring_phone_if_idle(self) -> None:
         """Signal connected dashboard clients to ring, for speech MIA is
         about to say on its own initiative (monitor alerts, proactive
@@ -1617,8 +1648,8 @@ class MiaLive:
         # trim is invisible without a way to say so. Both are bound once here
         # rather than passed down through every action signature.
         confirm_gate.bind(
-            show = self.ui.show_confirm,
-            hide = self.ui.hide_confirm,
+            show = self._confirm_show,
+            hide = self._confirm_hide,
             log  = self.ui.write_log,
         )
         set_trim_notifier(self.ui.write_log)
@@ -1637,6 +1668,7 @@ class MiaLive:
             from dashboard.server import DashboardServer
             self._dashboard = DashboardServer()
             self._dashboard.set_connect_callback(self._on_phone_connected)
+            self._dashboard.set_confirm_answer_callback(self._on_dashboard_confirm_answer)
             asyncio.create_task(self._dashboard.serve())
             # Runs for the whole lifetime, not just inside an active session
             asyncio.create_task(self._process_dashboard_commands())

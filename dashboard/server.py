@@ -386,6 +386,7 @@ class DashboardServer:
         self._command_queue               = asyncio.Queue()
         self._wake_callback               = None
         self._connect_callback            = None
+        self._confirm_answer_callback     = None
         self._pending_keys: dict[str, float] = {}
         self._device_sessions: dict[str, dict] = {}  # device_token → {session_key}
         self._phone_audio_queue: asyncio.Queue    = asyncio.Queue(maxsize=200)
@@ -452,6 +453,11 @@ class DashboardServer:
 
     def set_connect_callback(self, fn) -> None:
         self._connect_callback = fn
+
+    def set_confirm_answer_callback(self, fn) -> None:
+        """fn(accepted: bool) -> None, called when a phone/browser client
+        answers a confirm_request banner (see /api/confirm-answer)."""
+        self._confirm_answer_callback = fn
 
     # ── broadcast ────────────────────────────────────────────────────────
 
@@ -687,6 +693,19 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             if self._wake_callback:
                 self._wake_callback()
+            return JSONResponse({"ok": True})
+
+        @app.post("/api/confirm-answer")
+        async def confirm_answer_ep(req: Request):
+            """A human on the phone/browser answered the confirm_request banner
+            broadcast alongside core/confirm.py's local HUD banner — the two
+            surfaces race, and whichever answers first wins (see
+            main.py:_on_dashboard_confirm_answer)."""
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            body = await req.json()
+            if self._confirm_answer_callback:
+                self._confirm_answer_callback(bool(body.get("accepted")))
             return JSONResponse({"ok": True})
 
         # ── Phone mic real-time audio → Gemini Live ──────────────────────────
