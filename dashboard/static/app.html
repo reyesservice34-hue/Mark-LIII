@@ -841,6 +841,10 @@
 
     // ── File helpers ──────────────────────────────────────────────────────────
     const _fileLog = []; // { name, size, dir: 'sent'|'received', url }
+    // Every upload is echoed back to its own uploader over /ws as 'file_received'
+    // (the broadcast has no way to exclude the sender). Tag each upload with this
+    // tab's id so its own echo can be told apart from a genuinely different client.
+    const _clientId = (crypto.randomUUID ? crypto.randomUUID() : 'c_' + Math.random().toString(36).slice(2));
 
     function _fileIcon(name) {
       const ext = (name.split('.').pop() || '').toLowerCase();
@@ -931,11 +935,14 @@
 
       const fd = new FormData();
       fd.append('file', file);
+      fd.append('client_id', _clientId);
       xhr.send(fd);
     }
 
-    // File received by another WebSocket client (e.g., second open tab)
+    // File received by another WebSocket client (e.g., second open tab).
+    // Skip the echo of a file this same tab just uploaded — see _clientId.
     function _onFileReceived(m) {
+      if (m.origin && m.origin === _clientId) return;
       const dlUrl = `/uploads/${encodeURIComponent(m.name)}?token=${encodeURIComponent(_authToken)}`;
       const card  = document.createElement('div');
       card.className = 'msg-file';

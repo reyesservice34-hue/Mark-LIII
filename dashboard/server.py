@@ -30,7 +30,7 @@ except ImportError:
 # python-multipart is required for file uploads — optional dependency
 _UPLOAD_OK = False
 try:
-    from fastapi import UploadFile, File as FastAPIFile
+    from fastapi import UploadFile, File as FastAPIFile, Form
     _UPLOAD_OK = True
 except Exception:
     pass
@@ -523,6 +523,12 @@ class DashboardServer:
             tok = req.headers.get("authorization", "").removeprefix("Bearer ").strip()
             return bool(tok) and tok in self._tokens
 
+        # browsers request this unconditionally; avoid a noisy 404 in devtools
+        @app.get("/favicon.ico")
+        async def favicon():
+            from fastapi import Response
+            return Response(status_code=204)
+
         # serve CryptoJS from local cache, fallback to CDN redirect
         @app.get("/static/crypto.js")
         async def serve_crypto():
@@ -726,7 +732,8 @@ class DashboardServer:
 
         if _UPLOAD_OK:
             @app.post("/api/upload")
-            async def upload_file(req: Request, file: UploadFile = FastAPIFile(...)):
+            async def upload_file(req: Request, file: UploadFile = FastAPIFile(...),
+                                   client_id: str = Form(default="")):
                 if not _auth(req):
                     return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
@@ -766,6 +773,7 @@ class DashboardServer:
                     "type": "file_received",
                     "name": dest.name,
                     "size": size,
+                    "origin": client_id,
                     "saved_to": str(self._uploads_dir),
                 }))
                 return JSONResponse({"ok": True, "name": dest.name, "size": size})
