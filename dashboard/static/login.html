@@ -1,27 +1,28 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>MIA</title>
+  <title>MIA Core Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23120c08'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23ff8a1f' stroke-width='2.4'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ff8a1f'/%3E%3C/svg%3E">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
       --bg:     #000000;
       --card:   linear-gradient(160deg, rgba(255,255,255,0.06), rgba(0,0,0,0.6) 55%, rgba(0,0,0,0.82) 100%);
       --border: rgba(255,255,255,0.10);
-      --accent: #ab8bf5;
-      --adim:   rgba(171,139,245,0.15);
+      --accent: #ff8a1f;
+      --adim:   rgba(255,138,31,0.15);
       --text:   #f3f2f7;
       --muted:  #93939e;
-      --brain-a: #4c1d95;
-      --brain-b: #7c3aed;
-      --brain-c: #a78bfa;
+      --brain-a: #7a2f00;
+      --brain-b: #ff7a00;
+      --brain-c: #ffd7a3;
     }
     html, body {
       height: 100%;
       background:
-        radial-gradient(ellipse 60% 45% at 50% 8%, rgba(124,58,237,0.14), transparent 60%),
+        radial-gradient(ellipse 60% 45% at 50% 8%, rgba(255,138,31,0.11), transparent 60%),
         radial-gradient(ellipse at 50% 100%, #0a0a0c 0%, var(--bg) 60%);
       color: var(--text);
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -104,7 +105,7 @@
     .key-input:focus {
       border-color: var(--accent);
       background: var(--adim);
-      box-shadow: 0 0 0 3px rgba(171,139,245,0.16);
+      box-shadow: 0 0 0 3px rgba(255,138,31,0.16);
     }
     .err {
       font-size: 12px;
@@ -115,8 +116,8 @@
     .btn {
       width: 100%;
       padding: 14px;
-      background: rgba(171,139,245,0.16);
-      border: 1px solid rgba(171,139,245,0.45);
+      background: rgba(255,138,31,0.16);
+      border: 1px solid rgba(255,138,31,0.45);
       color: #f3ecff;
       font-size: 12px;
       font-weight: 700;
@@ -125,7 +126,7 @@
       cursor: pointer;
       transition: opacity 0.15s, transform 0.1s, box-shadow 0.2s;
     }
-    .btn:hover  { opacity: 0.9; box-shadow: 0 0 18px rgba(171,139,245,0.3); }
+    .btn:hover  { opacity: 0.9; box-shadow: 0 0 18px rgba(255,138,31,0.3); }
     .btn:active { transform: scale(0.98); }
     @keyframes shake {
       0%,100% { transform: translateX(0); }
@@ -192,21 +193,21 @@
         </g>
       </svg>
     </div>
-    <div class="logo"><em>J</em>ARVIS</div>
-    <div class="sub">Remote Access</div>
-    <p id="reconnecting">Reconnecting…</p>
-    <p class="hint">Press <strong style="color:var(--text)">Remote Control</strong> in the MIA desktop app to get a QR code or session key.</p>
+    <div class="logo"><em>M</em>IA</div>
+    <div class="sub">Fernzugriff</div>
+    <p id="reconnecting">Verbinde erneut…</p>
+    <p class="hint">Drücke <strong style="color:var(--text)">REMOTE CONTROL</strong> in der MIA-Anwendung, um einen QR-Code oder Sitzungsschlüssel zu erhalten.</p>
     <div class="key-wrap">
       <input class="key-input" id="key" type="text" maxlength="6"
              autocomplete="off" autocorrect="off" spellcheck="false"
              placeholder="· · · · · ·">
     </div>
     <div class="err" id="err"></div>
-    <button class="btn" onclick="doLogin()">CONNECT</button>
+    <button class="btn" onclick="doLogin()">VERBINDEN</button>
     <p class="voice-note">
-      🎤 <strong style="color:var(--text)">Voice commands:</strong> open
-      <code>chrome://flags</code> on your phone, search
-      <code>Insecure origins treated as secure</code>, add your MIA URL, tap Relaunch.
+      🎤 <strong style="color:var(--text)">Sprachbefehle:</strong> Auf dem Handy
+      <code>chrome://flags</code> öffnen, nach
+      <code>Insecure origins treated as secure</code> suchen, die MIA-URL eintragen, Relaunch antippen.
     </p>
   </div>
 
@@ -261,7 +262,7 @@
         });
         data = await r.json();
       } catch (e) {
-        document.getElementById('err').textContent = 'Connection error';
+        document.getElementById('err').textContent = 'Verbindungsfehler';
         shake(); return;
       }
       if (data.ok && data.token) {
@@ -271,7 +272,7 @@
       } else {
         inp.value = '';
         inp.focus();
-        document.getElementById('err').textContent = 'Invalid or expired key';
+        document.getElementById('err').textContent = 'Ungültiger oder abgelaufener Schlüssel';
         shake();
       }
     }
