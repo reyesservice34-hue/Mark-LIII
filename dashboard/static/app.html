@@ -1,23 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MIA Dashboard</title>
+  <title>MIA Core Dashboard</title>
   <script src="/static/crypto.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:      #000000;
+      --bg:      #05060a;
+      --bg2:     #0b0d10;
       --surface: rgba(255,255,255,0.045);
       --surface2:rgba(255,255,255,0.08);
       --border:  rgba(255,255,255,0.10);
       --accent:  #ff8a1f;
+      --accent2: #ff7a00;
+      --accent3: #ffb15a;
       --adim:    rgba(255,138,31,0.14);
       --text:    #f3f2f7;
       --muted:   #93939e;
       --green:   #22c55e;
       --gdim:    rgba(34,197,94,0.14);
+      --red:     #f87171;
       --glass:   linear-gradient(160deg, rgba(255,255,255,0.055), rgba(0,0,0,0.55) 55%, rgba(0,0,0,0.8) 100%);
       --brain-a: #7a2f00;
       --brain-b: #ff7a00;
@@ -26,47 +30,23 @@
     html, body {
       height: 100%; color: var(--text);
       background:
-        radial-gradient(ellipse 60% 40% at 30% 0%, rgba(124,58,237,0.10), transparent 60%),
-        radial-gradient(ellipse at 50% 100%, #0a0a0c 0%, var(--bg) 60%);
+        radial-gradient(ellipse 70% 45% at 50% 0%, rgba(255,122,0,0.06), transparent 60%),
+        radial-gradient(ellipse at 50% 100%, var(--bg2) 0%, var(--bg) 60%);
       background-attachment: fixed;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       display: flex; flex-direction: column; overflow: hidden;
     }
-
-    /* ── BRAIN AVATAR ── */
-    .brain { position: relative; width: 30px; height: 28px; flex-shrink: 0; filter: drop-shadow(0 0 5px rgba(0,0,0,0.5)); }
-    .brain svg { width: 100%; height: 100%; overflow: visible; display: block; }
-    .brain-outline path, .brain-outline use { fill: rgba(255,255,255,0.035); stroke: rgba(255,255,255,0.18); stroke-width: 1.4; }
-    .brain-groove { fill: none; stroke: rgba(255,255,255,0.14); stroke-width: 1.1; }
-    .brain-neural { fill:none; stroke:rgba(255,158,61,.68); stroke-width:.9; stroke-linecap:round; filter:drop-shadow(0 0 2px rgba(255,122,0,.75)); }
-    .brain-glass { fill:rgba(255,157,63,.045); stroke:rgba(255,203,148,.28); stroke-width:1.1; }
-
-    .brain-halo { opacity: 0.55; transform-origin: 50px 46px; animation: brainBreathe 4.6s ease-in-out infinite; }
-    .brain-node { fill: url(#brainGlow); transform-box: fill-box; transform-origin: center; animation: brainPulse 3.8s ease-in-out infinite; }
-    .brain-node.n2 { animation-delay: .5s }
-    .brain-node.n3 { animation-delay: 1.1s }
-    .brain-node.n4 { animation-delay: .3s }
-    .brain-node.n5 { animation-delay: .9s }
-    .brain-node.n6 { animation-delay: 1.4s }
-    @keyframes brainPulse   { 0%,100% { opacity:.35; transform:scale(.8);  } 50% { opacity:1;   transform:scale(1.2);  } }
-    @keyframes brainBreathe { 0%,100% { opacity:.4;  transform:scale(.9); } 50% { opacity:.8;  transform:scale(1.08); } }
-    .brain[data-state="idle"]      { --brain-a:#7a2f00; --brain-b:#ff7a00; --brain-c:#ffd7a3; }
-    .brain[data-state="awake"]     { --brain-a:#9a3e00; --brain-b:#ff8a1f; --brain-c:#ffe4bd; }
-    .brain[data-state="listening"] { --brain-a:#b34700; --brain-b:#ff9d3d; --brain-c:#fff0d6; }
-    .brain[data-state="speaking"]  { --brain-a:#c2410c; --brain-b:#ff6a00; --brain-c:#fff3df; }
-    .brain[data-state="idle"]      .brain-node, .brain[data-state="idle"]      .brain-halo { animation-duration: 4.6s; }
-    .brain[data-state="awake"]     .brain-node, .brain[data-state="awake"]     .brain-halo { animation-duration: 2.3s; }
-    .brain[data-state="listening"] .brain-node, .brain[data-state="listening"] .brain-halo { animation-duration: 1s;   }
-    .brain[data-state="speaking"]  .brain-node, .brain[data-state="speaking"]  .brain-halo { animation-duration: .5s;  }
 
     /* ── HEADER ── */
     header {
       flex-shrink: 0; display: flex; align-items: center; gap: 10px;
       padding: 13px 16px; border-bottom: 1px solid var(--border);
       background: var(--glass); backdrop-filter: blur(24px) saturate(140%);
+      z-index: 20;
     }
-    .logo { font-size: 15px; font-weight: 700; letter-spacing: 6px; }
+    .logo { font-size: 15px; font-weight: 800; letter-spacing: 5px; display: flex; flex-direction: column; line-height: 1.1; }
     .logo em { color: var(--accent); font-style: normal; }
+    .logo small { font-size: 8px; font-weight: 600; letter-spacing: 2.5px; color: var(--muted); }
     .pill {
       display: flex; align-items: center; gap: 6px; padding: 4px 11px;
       border-radius: 99px; background: var(--surface); border: 1px solid var(--border);
@@ -83,40 +63,162 @@
       border-radius: 4px; display: none; white-space: nowrap;
     }
     .enc-badge.on  { display: block; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25); color: var(--green); }
-    .enc-badge.off { display: block; background: rgba(255,100,100,0.08); border: 1px solid rgba(255,100,100,0.2); color: #f87171; }
-    .url { font-size: 10px; font-family: monospace; color: var(--muted); padding: 4px 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
-    @media (max-width: 380px) { .url { display: none; } }
+    .enc-badge.off { display: block; background: rgba(255,100,100,0.08); border: 1px solid rgba(255,100,100,0.2); color: var(--red); }
+    .url { font-size: 10px; font-family: monospace; color: var(--muted); padding: 4px 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; white-space: nowrap; }
+    @media (max-width: 560px) { .url { display: none; } }
+    @media (max-width: 480px) {
+      header { padding: 10px 12px; gap: 8px; }
+      .logo { font-size: 13px; letter-spacing: 3px; }
+      .logo small { display: none; }
+      .pill { padding: 3px 8px; font-size: 9px; }
+      .enc-badge { font-size: 8px; padding: 2px 6px; }
+    }
 
-    /* ── LIVE SYSTEM DECK ── */
-    .system-deck {
-      flex-shrink: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border);
-      background: rgba(0,0,0,.42); backdrop-filter: blur(22px) saturate(135%);
+    /* ── QUICK NAV (view switch) ── */
+    .quicknav {
+      flex-shrink: 0; display: flex; gap: 6px; padding: 8px 16px;
+      border-bottom: 1px solid var(--border); background: rgba(0,0,0,.42);
+      backdrop-filter: blur(22px) saturate(135%); overflow-x: auto; z-index: 19;
     }
-    .system-card {
-      min-width: 0; padding: 9px 11px; border: 1px solid var(--border); border-radius: 12px;
-      background: linear-gradient(150deg, rgba(255,255,255,.055), rgba(255,138,31,.025) 52%, rgba(0,0,0,.3));
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+    .qn-btn {
+      flex-shrink: 0; display: flex; align-items: center; gap: 7px;
+      padding: 8px 14px; border-radius: 11px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 700;
+      letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all .18s;
     }
-    .system-card .k { font-size: 8px; font-weight: 800; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; }
-    .system-card .v { margin-top: 3px; font-size: 14px; font-weight: 750; color: #f6f3ef; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .system-card.online .v { color: var(--green); }
-    .system-card.active .v { color: #ffd7a3; }
-    .system-card.dim .v { color: var(--muted); }
+    .qn-btn .qn-ic { font-size: 14px; line-height: 1; }
+    .qn-btn:hover { color: var(--text); border-color: rgba(255,138,31,.35); }
+    .qn-btn.active { color: var(--accent3); background: var(--adim); border-color: rgba(255,138,31,.4); box-shadow: 0 0 14px rgba(255,122,0,.12) inset; }
+
+    /* ── MAIN LAYOUT ── */
+    .stage { flex: 1; display: flex; min-height: 0; position: relative; }
+    .view { display: none; flex: 1; min-height: 0; min-width: 0; }
+    .view.active { display: flex; }
+
+    /* ── CORE VIEW: body hero + hud panel ── */
+    #view-core { position: relative; }
+    .body-wrap {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      position: relative; padding: 18px; min-width: 0; overflow: hidden;
+    }
+    .body-wrap::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(ellipse 55% 60% at 50% 42%, rgba(255,122,0,.09), transparent 65%);
+      pointer-events: none;
+    }
+    .android-shell { position: relative; width: min(78vw, 420px); max-height: 100%; filter: drop-shadow(0 20px 50px rgba(0,0,0,.6)); }
+    .android-shell svg { width: 100%; height: auto; display: block; overflow: visible; pointer-events: none; }
+
+    .hotspot { cursor: pointer; outline: none; pointer-events: auto; }
+    .hotspot .hs-hit { fill: transparent; }
+    .hotspot .hs-ring { fill: none; stroke: rgba(255,178,90,.55); stroke-width: 1.1; opacity: 0; transition: opacity .2s, r .2s; transform-box: fill-box; transform-origin: center; }
+    .hotspot .hs-dot  { fill: url(#hsGlow); opacity: .85; transition: opacity .2s, transform .2s; transform-box: fill-box; transform-origin: center; animation: hsPulse 3.2s ease-in-out infinite; }
+    .hotspot:hover .hs-dot, .hotspot:focus-visible .hs-dot, .hotspot.selected .hs-dot { opacity: 1; transform: scale(1.35); }
+    .hotspot:hover .hs-ring, .hotspot:focus-visible .hs-ring, .hotspot.selected .hs-ring { opacity: 1; }
+    @keyframes hsPulse { 0%,100% { opacity:.55; } 50% { opacity:1; } }
+    .hotspot .hs-label {
+      opacity: 0; transition: opacity .16s; pointer-events: none;
+      font-size: 6.2px; font-weight: 800; letter-spacing: .4px; fill: var(--accent3);
+      text-transform: uppercase;
+    }
+    .hotspot:hover .hs-label, .hotspot:focus-visible .hs-label, .hotspot.selected .hs-label { opacity: 1; }
+
+    .core-frame { fill: none; stroke: rgba(255,255,255,0.14); stroke-width: 1; }
+    .core-glass { fill: rgba(255,157,63,.035); stroke: rgba(255,203,148,.22); stroke-width: 1; }
+    .core-groove { fill: none; stroke: rgba(255,255,255,0.10); stroke-width: .8; }
+    .core-panel-line { stroke: rgba(255,255,255,0.08); stroke-width: .6; }
+    .energy-line { fill: none; stroke: rgba(255,138,31,.5); stroke-width: .8; stroke-dasharray: 2 3; animation: flow 2.4s linear infinite; opacity: .55; }
+    @keyframes flow { to { stroke-dashoffset: -20; } }
+    .core-glow { fill: url(#coreGlow); transform-box: fill-box; transform-origin: center; animation: brainBreathe 4.6s ease-in-out infinite; }
+    @keyframes brainBreathe { 0%,100% { opacity:.4; transform:scale(.92); } 50% { opacity:.85; transform:scale(1.06); } }
+
+    /* body reacts to global AI state */
+    .android-shell[data-state="awake"]     .core-glow { animation-duration: 2.3s; }
+    .android-shell[data-state="listening"] .core-glow { animation-duration: 1s; }
+    .android-shell[data-state="speaking"]  .core-glow { animation-duration: .6s; }
+    .android-shell[data-state="listening"] .eye-glow { opacity: 1 !important; }
+    .android-shell[data-state="speaking"]  .mouth-glow { opacity: 1 !important; }
+
+    /* ── HUD PANEL ── */
+    .hud-panel {
+      width: 0; flex-shrink: 0; overflow: hidden; transition: width .28s cubic-bezier(.4,0,.2,1);
+      border-left: 1px solid transparent;
+    }
+    .hud-panel.open { width: min(400px, 92vw); border-left: 1px solid var(--border); }
+    .hud-inner {
+      width: min(400px, 92vw); height: 100%; display: flex; flex-direction: column;
+      background: linear-gradient(160deg, rgba(20,16,12,.72), rgba(5,6,8,.92));
+      backdrop-filter: blur(28px) saturate(150%);
+    }
+    .hud-head { padding: 16px 18px 12px; border-bottom: 1px solid var(--border); position: relative; }
+    .hud-icon { font-size: 20px; margin-bottom: 6px; opacity: .9; }
+    .hud-title { font-size: 17px; font-weight: 800; letter-spacing: 1.5px; color: var(--text); }
+    .hud-sub { font-size: 11px; color: var(--muted); margin-top: 2px; letter-spacing: .3px; }
+    .hud-close {
+      position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 8px;
+      background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+      font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all .15s;
+    }
+    .hud-close:hover { color: var(--text); border-color: rgba(255,138,31,.4); }
+    .hud-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--border); }
+    .hud-tab {
+      flex: 1; padding: 9px 4px 10px; background: none; border: none; color: var(--muted);
+      font-size: 10px; font-weight: 800; letter-spacing: 1px; cursor: pointer; text-transform: uppercase;
+      border-bottom: 2px solid transparent; transition: all .15s;
+    }
+    .hud-tab:hover { color: var(--text); }
+    .hud-tab.active { color: var(--accent3); border-bottom-color: var(--accent); }
+    .hud-body { flex: 1; overflow-y: auto; padding: 16px 18px 20px; font-size: 13px; line-height: 1.6; color: var(--text); }
+    .hud-body::-webkit-scrollbar { width: 4px; }
+    .hud-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .hud-desc { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+    .hud-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border);
+      margin-bottom: 7px; font-size: 12px;
+    }
+    .hud-row .k { color: var(--muted); font-weight: 700; letter-spacing: .5px; font-size: 10.5px; text-transform: uppercase; }
+    .hud-row .v { font-weight: 700; color: var(--text); }
+    .hud-row .v.on   { color: var(--green); }
+    .hud-row .v.warn { color: var(--accent3); }
+    .hud-row .v.off  { color: var(--red); }
+    .hud-btn {
+      width: 100%; margin-top: 6px; padding: 11px; border-radius: 11px; border: 1px solid rgba(255,138,31,.4);
+      background: var(--adim); color: var(--accent3); font-size: 11px; font-weight: 800; letter-spacing: 1px;
+      text-transform: uppercase; cursor: pointer; transition: all .15s;
+    }
+    .hud-btn:hover { background: rgba(255,138,31,.24); }
+    .hud-btn:active { transform: scale(.98); }
+    .hud-btn.ghost { background: var(--surface); border-color: var(--border); color: var(--text); }
+    .hud-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 0; }
+    .hud-filelist { display: flex; flex-direction: column; gap: 7px; }
+    .hud-file { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
+    .hud-file .fi { font-size: 18px; }
+    .hud-file .fm { flex: 1; min-width: 0; }
+    .hud-file .fn { font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hud-file .fs { font-size: 10px; color: var(--muted); }
+    .hud-file a { color: var(--accent3); font-size: 10px; font-weight: 700; text-decoration: none; }
+
+    /* mobile: hud panel becomes bottom sheet */
     @media (max-width: 760px) {
-      .system-deck { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 8px 10px; gap: 6px; }
-      .system-card:nth-child(n+4) { display: none; }
-      .system-card { padding: 8px 9px; }
-      .system-card .v { font-size: 12px; }
+      .stage { flex-direction: column; }
+      .hud-panel { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto !important;
+        height: 0; max-height: 78vh; border-left: none; border-top: 1px solid var(--border);
+        z-index: 40; transition: height .28s cubic-bezier(.4,0,.2,1); border-radius: 18px 18px 0 0; overflow: hidden; }
+      .hud-panel.open { height: 62vh; }
+      .hud-inner { width: 100% !important; border-radius: 18px 18px 0 0; }
+      .android-shell { width: min(84vw, 340px); }
     }
 
-    /* ── FEED ── */
-    main { flex: 1; overflow-y: auto; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
-    main::-webkit-scrollbar { width: 4px; }
-    main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    /* ── CHAT VIEW ── */
+    #view-chat { flex-direction: column; }
+    main#feed { flex: 1; overflow-y: auto; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
+    main#feed::-webkit-scrollbar { width: 4px; }
+    main#feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
     .msg { max-width: 82%; padding: 11px 15px; border-radius: 18px; font-size: 14px; line-height: 1.55; animation: pop 0.18s ease; box-shadow: 0 4px 18px rgba(0,0,0,0.25); }
     @keyframes pop { from { opacity:0; transform:translateY(4px); } }
-    .msg-j   { align-self:flex-start; background:var(--adim);   border:1px solid rgba(171,139,245,0.22); border-bottom-left-radius:5px; backdrop-filter: blur(16px); }
+    .msg-j   { align-self:flex-start; background:var(--adim);   border:1px solid rgba(255,138,31,0.22); border-bottom-left-radius:5px; backdrop-filter: blur(16px); }
     .msg-u   { align-self:flex-end;   background:var(--surface); border:1px solid var(--border);        border-bottom-right-radius:5px; backdrop-filter: blur(16px); }
     .msg-sys { align-self:center; font-size:11px; color:var(--muted); padding:2px 0; background:transparent; border:none; box-shadow:none; letter-spacing:0.3px; }
     .lbl { font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; opacity:0.45; margin-bottom:4px; }
@@ -141,20 +243,38 @@
     .fc-bar { height: 100%; width: 0%; background: var(--accent); border-radius: 2px; transition: width 0.12s linear; }
     .fc-status { font-size: 10px; font-weight: 700; letter-spacing: 1px; flex-shrink: 0; color: var(--muted); }
     .fc-status.done { color: var(--green); }
-    .fc-status.err  { color: #f87171; }
+    .fc-status.err  { color: var(--red); }
     .fc-dl { display:block; margin-top:6px; font-size:11px; color:var(--accent); text-decoration:none; font-weight:600; }
     .fc-dl:hover { opacity: 0.8; }
 
-    /* ── FOOTER ── */
-    footer { flex-shrink:0; padding:11px 14px; border-top:1px solid var(--border); background:var(--glass); backdrop-filter: blur(24px) saturate(140%); display:flex; gap:8px; align-items:center; }
+    /* ── SYSTEM VIEW ── */
+    #view-system { padding: 20px 16px; overflow-y: auto; flex-direction: column; gap: 14px; }
+    .sys-heading { font-size: 12px; font-weight: 800; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+    .system-deck {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+    }
+    .system-card {
+      min-width: 0; padding: 14px 15px; border: 1px solid var(--border); border-radius: 14px;
+      background: linear-gradient(150deg, rgba(255,255,255,.055), rgba(255,138,31,.025) 52%, rgba(0,0,0,.3));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+    }
+    .system-card .k { font-size: 9px; font-weight: 800; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; }
+    .system-card .v { margin-top: 5px; font-size: 18px; font-weight: 750; color: #f6f3ef; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .system-card.online .v { color: var(--green); }
+    .system-card.active .v { color: var(--accent3); }
+    .system-card.dim .v { color: var(--muted); }
+
+    /* ── FOOTER (always-on quick command bar) ── */
+    footer { flex-shrink:0; padding:11px 14px; border-top:1px solid var(--border); background:var(--glass); backdrop-filter: blur(24px) saturate(140%); display:flex; gap:8px; align-items:center; z-index: 15; }
     #inp { flex:1; padding:12px 15px; background:var(--surface); border:1.5px solid var(--border); border-radius:14px; color:var(--text); font-size:14px; outline:none; transition:border-color 0.15s, box-shadow 0.15s; }
-    #inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(171,139,245,0.16); }
+    #inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,138,31,0.16); }
     #inp::placeholder { color: var(--muted); }
     .btn { padding:12px 16px; border:none; border-radius:14px; font-size:11px; font-weight:700; letter-spacing:1.5px; cursor:pointer; transition:opacity 0.15s,transform 0.1s,box-shadow 0.2s; }
     .btn:active { transform: scale(0.96); }
     .btn:hover  { opacity: 0.85; }
-    .btn-send { background: rgba(171,139,245,0.16); border: 1px solid rgba(171,139,245,0.45); color: #f3ecff; }
-    .btn-send:hover { box-shadow: 0 0 16px rgba(171,139,245,0.3); }
+    .btn-send { background: rgba(255,138,31,0.16); border: 1px solid rgba(255,138,31,0.45); color: #ffe9d1; }
+    .btn-send:hover { box-shadow: 0 0 16px rgba(255,138,31,0.3); }
     .btn-wake { background:var(--surface); border:1px solid var(--border); color:var(--muted); display:none; }
     .btn-wake.show { display:block; color:var(--green); border-color:rgba(34,197,94,0.35); }
     .btn-attach {
@@ -187,6 +307,14 @@
 
     @keyframes mic-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.65;transform:scale(0.97)} }
 
+    @media (max-width: 560px) {
+      footer { padding: 9px 8px; gap: 5px; }
+      #inp { padding: 11px 12px; font-size: 13px; }
+      .btn, .btn-attach, #mic-btn { padding: 11px 10px; font-size: 10px; }
+      #mic-btn .mic-label { display: none; }
+      .btn-wake, .end-session-btn { font-size: 9px; padding: 11px 8px; }
+    }
+
     /* ── TOAST ── */
     #toast {
       position:fixed; top:66px; left:50%; transform:translateX(-50%) translateY(-8px);
@@ -194,7 +322,7 @@
       color:var(--green); font-size:12px; font-weight:700; letter-spacing:1px;
       padding:7px 18px; border-radius:99px;
       opacity:0; transition:opacity 0.22s,transform 0.22s;
-      pointer-events:none; white-space:nowrap;
+      pointer-events:none; white-space:nowrap; z-index: 60;
     }
     #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
@@ -202,21 +330,21 @@
     #callBanner {
       position: fixed; top: 0; left: 0; right: 0; z-index: 50;
       display: none; align-items: center; justify-content: space-between; gap: 12px;
-      padding: 12px 16px; background: rgba(171,139,245,0.16);
-      border-bottom: 1px solid rgba(171,139,245,0.4);
+      padding: 12px 16px; background: rgba(255,138,31,0.16);
+      border-bottom: 1px solid rgba(255,138,31,0.4);
       backdrop-filter: blur(24px) saturate(140%);
       animation: pop 0.18s ease;
     }
     #callBanner.show { display: flex; }
-    #callBanner .cb-txt { font-size: 13px; font-weight: 700; letter-spacing: .3px; color: #f3ecff; }
+    #callBanner .cb-txt { font-size: 13px; font-weight: 700; letter-spacing: .3px; color: #ffe9d1; }
     #callBanner .cb-txt small { display: block; font-size: 10px; font-weight: 500; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; margin-top: 2px; }
     #callBanner .cb-btns { display: flex; gap: 8px; flex-shrink: 0; }
     #callBanner button { border: none; border-radius: 99px; padding: 8px 16px; font-size: 12px; font-weight: 700; cursor: pointer; }
     #callBanner .cb-answer { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.5); color: var(--green); animation: mic-pulse 1s ease-in-out infinite; }
-    #callBanner .cb-decline { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
+    #callBanner .cb-decline { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); color: var(--red); }
 
     @media (prefers-reduced-motion: reduce) {
-      .brain-node, .brain-halo, .dot, #mic-btn.recording { animation: none !important; }
+      .hs-dot, .core-glow, .dot, #mic-btn.recording, .energy-line { animation: none !important; }
     }
   </style>
 </head>
@@ -230,63 +358,218 @@
     </div>
   </div>
   <header>
-    <div class="brain" id="brain" data-state="idle" aria-hidden="true">
-      <svg viewBox="0 0 100 92">
-        <defs>
-          <radialGradient id="brainGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"   style="stop-color:var(--brain-c)" stop-opacity="0.95"/>
-            <stop offset="45%"  style="stop-color:var(--brain-b)" stop-opacity="0.55"/>
-            <stop offset="100%" style="stop-color:var(--brain-a)" stop-opacity="0"/>
-          </radialGradient>
-          <filter id="brainSoft" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="2.4"/>
-          </filter>
-          <filter id="brainHalo" x="-120%" y="-120%" width="340%" height="340%">
-            <feGaussianBlur stdDeviation="7"/>
-          </filter>
-        </defs>
-        <circle class="brain-halo" cx="50" cy="46" r="34" fill="url(#brainGlow)" filter="url(#brainHalo)"/>
-        <g class="brain-outline">
-          <path id="lobe" d="M50,8 C41,3 29,4 21,10 C13,16 8,25 10,35 C5,40 5,50 10,57 C9,65 14,73 23,77 C31,81 42,80 48,74 C51,71 51,66 49,62 C44,63 37,61 33,55 C29,50 30,43 35,39 C30,36 29,29 33,24 C30,21 31,15 37,12 C41,9 46,9 50,8 Z"/>
-          <use href="#lobe" transform="translate(100,0) scale(-1,1)"/>
-          <path class="brain-stem" d="M45,73 C45,80 47,86 50,88 C53,86 55,80 55,73 C53,75 47,75 45,73 Z"/>
-        </g>
-        <path class="brain-groove" d="M50,9 C48,20 51,31 50,42 C49,53 51,64 50,71"/>
-        <g class="brain-glass">
-          <ellipse cx="50" cy="45" rx="36" ry="31"/>
-        </g>
-        <g class="brain-neural">
-          <path d="M18 28 C29 20,36 24,44 33 S61 45,76 26"/>
-          <path d="M14 45 C27 37,34 42,43 49 S61 60,85 43"/>
-          <path d="M20 62 C32 54,39 58,49 67 S67 70,79 58"/>
-          <path d="M29 17 C35 29,45 28,50 40 C56 52,67 45,73 31"/>
-          <path d="M27 67 C34 57,42 54,50 45 C58 36,67 37,77 20"/>
-          <path d="M18 40 L31 32 L42 39 L54 31 L68 39 L82 31"/>
-        </g>
-        <g class="brain-nodes" filter="url(#brainSoft)">
-          <circle class="brain-node n1" cx="26" cy="23" r="6"/>
-          <circle class="brain-node n2" cx="17" cy="43" r="5.5"/>
-          <circle class="brain-node n3" cx="27" cy="62" r="6"/>
-          <circle class="brain-node n4" cx="74" cy="23" r="6"/>
-          <circle class="brain-node n5" cx="83" cy="43" r="5.5"/>
-          <circle class="brain-node n6" cx="73" cy="62" r="6"/>
-        </g>
-      </svg>
-    </div>
-    <div class="logo"><em>J</em>ARVIS</div>
-    <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
+    <div class="logo"><div><em>MIA</em> CORE</div><small>MY INTELLIGENT ANDROID</small></div>
+    <div class="pill" id="pill"><span class="dot"></span><span id="st">Verbinde</span></div>
     <div class="enc-badge" id="enc">AES-256</div>
     <div class="spacer"></div>
     <div class="url">__IP__:__PORT__</div>
   </header>
-  <section class="system-deck" id="system-deck" aria-label="Live system status">
-    <div class="system-card online" id="sys-server"><div class="k">Core</div><div class="v">ONLINE</div></div>
-    <div class="system-card" id="sys-clients"><div class="k">Live Clients</div><div class="v">–</div></div>
-    <div class="system-card" id="sys-devices"><div class="k">Paired Devices</div><div class="v">–</div></div>
-    <div class="system-card" id="sys-queue"><div class="k">Command Queue</div><div class="v">–</div></div>
-    <div class="system-card" id="sys-history"><div class="k">Session Events</div><div class="v">–</div></div>
-  </section>
-  <main id="feed"></main>
+
+  <nav class="quicknav" id="quicknav">
+    <button class="qn-btn active" data-view="core"><span class="qn-ic">◎</span>MIA CORE</button>
+    <button class="qn-btn" data-view="chat"><span class="qn-ic">💬</span>KOMMUNIKATION</button>
+    <button class="qn-btn" data-view="system"><span class="qn-ic">⚙</span>SYSTEM</button>
+  </nav>
+
+  <div class="stage">
+    <!-- ── CORE VIEW: android body + hotspots ── -->
+    <section id="view-core" class="view active">
+      <div class="body-wrap">
+        <div class="android-shell" id="android-shell" data-state="idle">
+          <svg viewBox="0 0 340 460" aria-label="MIA Android Core">
+            <defs>
+              <radialGradient id="hsGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%"  style="stop-color:var(--brain-c)" stop-opacity="0.95"/>
+                <stop offset="45%" style="stop-color:var(--brain-b)" stop-opacity="0.6"/>
+                <stop offset="100%" style="stop-color:var(--brain-a)" stop-opacity="0"/>
+              </radialGradient>
+              <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%"  style="stop-color:#ffe9d1" stop-opacity="0.95"/>
+                <stop offset="45%" style="stop-color:var(--accent2)" stop-opacity="0.55"/>
+                <stop offset="100%" style="stop-color:#3a1400" stop-opacity="0"/>
+              </radialGradient>
+              <linearGradient id="metalBody" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%"  stop-color="#1c1d20"/>
+                <stop offset="50%" stop-color="#101114"/>
+                <stop offset="100%" stop-color="#08090b"/>
+              </linearGradient>
+              <linearGradient id="metalHead" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%"  stop-color="#232427"/>
+                <stop offset="100%" stop-color="#0c0d10"/>
+              </linearGradient>
+              <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
+                <feGaussianBlur stdDeviation="2.2"/>
+              </filter>
+              <filter id="wideGlow" x="-120%" y="-120%" width="340%" height="340%">
+                <feGaussianBlur stdDeviation="8"/>
+              </filter>
+            </defs>
+
+            <!-- ambient body glow -->
+            <ellipse cx="170" cy="230" rx="150" ry="200" fill="url(#coreGlow)" opacity="0.05"/>
+
+            <!-- torso / shoulders -->
+            <path d="M96,168 C70,182 54,214 50,258 L40,420 L118,420 L124,300 L128,420 L212,420 L216,300 L222,420 L300,420 L290,258 C286,214 270,182 244,168 C222,196 118,196 96,168 Z"
+                  fill="url(#metalBody)" class="core-frame"/>
+            <!-- chest plate -->
+            <path d="M118,178 C140,196 200,196 222,178 L232,268 C210,286 130,286 108,268 Z" fill="rgba(255,255,255,0.02)" class="core-frame"/>
+            <g class="core-panel-line">
+              <line x1="150" y1="200" x2="150" y2="270"/>
+              <line x1="190" y1="200" x2="190" y2="270"/>
+              <line x1="120" y1="230" x2="220" y2="230"/>
+            </g>
+            <!-- neck -->
+            <path d="M148,120 L148,166 C158,176 182,176 192,166 L192,120 Z" fill="url(#metalHead)" class="core-frame"/>
+            <!-- head -->
+            <path d="M170,30 C202,30 224,54 224,86 C224,116 206,138 170,138 C134,138 116,116 116,86 C116,54 138,30 170,30 Z"
+                  fill="url(#metalHead)" class="core-frame"/>
+            <path class="core-groove" d="M170,32 L170,136 M132,60 C145,52 195,52 208,60"/>
+
+            <!-- energy lines: head -> chest -> hands -->
+            <path class="energy-line" d="M170,136 L170,196"/>
+            <path class="energy-line" d="M150,230 C110,260 90,330 84,410"/>
+            <path class="energy-line" d="M190,230 C230,260 250,330 256,410"/>
+
+            <!-- arms -->
+            <path d="M96,178 C68,196 50,240 46,300 L38,412 L70,412 L82,304 C86,268 96,236 112,208 Z" fill="url(#metalBody)" class="core-frame"/>
+            <path d="M244,178 C272,196 290,240 294,300 L302,412 L270,412 L258,304 C254,268 244,236 228,208 Z" fill="url(#metalBody)" class="core-frame"/>
+
+            <!-- hands -->
+            <ellipse cx="52" cy="418" rx="20" ry="16" fill="url(#metalHead)" class="core-frame"/>
+            <ellipse cx="288" cy="418" rx="20" ry="16" fill="url(#metalHead)" class="core-frame"/>
+
+            <!-- eyes -->
+            <g class="eye-glow" style="opacity:.75">
+              <ellipse cx="150" cy="84" rx="7" ry="4" fill="var(--accent2)" filter="url(#softGlow)"/>
+              <ellipse cx="190" cy="84" rx="7" ry="4" fill="var(--accent2)" filter="url(#softGlow)"/>
+            </g>
+            <!-- mouth -->
+            <rect class="mouth-glow" x="156" y="108" width="28" height="4" rx="2" fill="var(--accent2)" filter="url(#softGlow)" style="opacity:.5"/>
+
+            <!-- chest core glow -->
+            <circle class="core-glow" cx="170" cy="226" r="26" filter="url(#wideGlow)"/>
+            <circle cx="170" cy="226" r="9" fill="url(#hsGlow)" filter="url(#softGlow)"/>
+
+            <!-- immune ring -->
+            <ellipse cx="170" cy="232" rx="70" ry="58" fill="none" stroke="rgba(255,178,90,.22)" stroke-width="1" stroke-dasharray="3 5"/>
+
+            <!-- ══ HOTSPOTS ══ -->
+            <g class="hotspot" data-zone="gehirn" tabindex="0" role="button" aria-label="Gehirn">
+              <circle class="hs-hit" cx="170" cy="53" r="17"/>
+              <circle class="hs-ring" cx="170" cy="53" r="14"/>
+              <circle class="hs-dot" cx="170" cy="53" r="5" filter="url(#softGlow)"/>
+              <text class="hs-label" x="170" y="34" text-anchor="middle">Gehirn</text>
+            </g>
+
+            <g class="hotspot" data-zone="augen" tabindex="0" role="button" aria-label="Sinnesorgane">
+              <circle class="hs-hit" cx="170" cy="86" r="13"/>
+              <circle class="hs-ring" cx="170" cy="86" r="11"/>
+              <circle class="hs-dot" cx="170" cy="86" r="3.6" filter="url(#softGlow)"/>
+              <text class="hs-label" x="92" y="90" text-anchor="middle">Sinne</text>
+            </g>
+
+            <g class="hotspot" data-zone="mund" tabindex="0" role="button" aria-label="Mund">
+              <circle class="hs-hit" cx="170" cy="116" r="13"/>
+              <circle class="hs-ring" cx="170" cy="116" r="11"/>
+              <circle class="hs-dot" cx="170" cy="116" r="3.4" filter="url(#softGlow)"/>
+              <text class="hs-label" x="248" y="120" text-anchor="middle">Mund</text>
+            </g>
+
+            <g class="hotspot" data-zone="core" tabindex="0" role="button" aria-label="Zentraler Core">
+              <circle class="hs-hit" cx="170" cy="226" r="24"/>
+              <circle class="hs-ring" cx="170" cy="226" r="30"/>
+              <text class="hs-label" x="170" y="270" text-anchor="middle">Core</text>
+            </g>
+
+            <g class="hotspot" data-zone="instinkt" tabindex="0" role="button" aria-label="Instinkt">
+              <circle class="hs-hit" cx="116" cy="258" r="16"/>
+              <circle class="hs-ring" cx="116" cy="258" r="12"/>
+              <circle class="hs-dot" cx="116" cy="258" r="3" filter="url(#softGlow)"/>
+              <text class="hs-label" x="88" y="262" text-anchor="middle">Instinkt</text>
+            </g>
+
+            <g class="hotspot" data-zone="immunsystem" tabindex="0" role="button" aria-label="Immunsystem">
+              <circle class="hs-hit" cx="224" cy="258" r="16"/>
+              <circle class="hs-ring" cx="224" cy="258" r="12"/>
+              <circle class="hs-dot" cx="224" cy="258" r="3" filter="url(#softGlow)"/>
+              <text class="hs-label" x="256" y="262" text-anchor="middle">Immun</text>
+            </g>
+
+            <g class="hotspot" data-zone="skelett" tabindex="0" role="button" aria-label="Skelett">
+              <circle class="hs-hit" cx="170" cy="320" r="24"/>
+              <circle class="hs-ring" cx="170" cy="320" r="16"/>
+              <circle class="hs-dot" cx="170" cy="320" r="3.2" filter="url(#softGlow)"/>
+              <text class="hs-label" x="170" y="345" text-anchor="middle">Skelett</text>
+            </g>
+
+            <g class="hotspot" data-zone="reflexe" tabindex="0" role="button" aria-label="Reflexe">
+              <circle class="hs-hit" cx="90" cy="330" r="20"/>
+              <circle class="hs-ring" cx="90" cy="330" r="12"/>
+              <circle class="hs-dot" cx="90" cy="330" r="3" filter="url(#softGlow)"/>
+              <text class="hs-label" x="70" y="360" text-anchor="middle">Reflexe</text>
+            </g>
+
+            <g class="hotspot" data-zone="fernsteuerung" tabindex="0" role="button" aria-label="Fernsteuerung">
+              <circle class="hs-hit" cx="250" cy="330" r="20"/>
+              <circle class="hs-ring" cx="250" cy="330" r="12"/>
+              <circle class="hs-dot" cx="250" cy="330" r="3" filter="url(#softGlow)"/>
+              <text class="hs-label" x="270" y="360" text-anchor="middle">Fern</text>
+            </g>
+
+            <g class="hotspot" data-zone="haende" tabindex="0" role="button" aria-label="Hände">
+              <circle class="hs-hit" cx="52" cy="418" r="26"/>
+              <circle class="hs-ring" cx="52" cy="418" r="18"/>
+              <circle class="hs-dot" cx="52" cy="418" r="3.4" filter="url(#softGlow)"/>
+              <text class="hs-label" x="52" y="452" text-anchor="middle">Hände</text>
+            </g>
+            <g class="hotspot" data-zone="haende" tabindex="0" role="button" aria-label="Hände">
+              <circle class="hs-hit" cx="288" cy="418" r="26"/>
+              <circle class="hs-ring" cx="288" cy="418" r="18"/>
+              <circle class="hs-dot" cx="288" cy="418" r="3.4" filter="url(#softGlow)"/>
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      <aside class="hud-panel" id="hud-panel">
+        <div class="hud-inner">
+          <div class="hud-head">
+            <div class="hud-icon" id="hud-icon">◎</div>
+            <div class="hud-title" id="hud-title">—</div>
+            <div class="hud-sub" id="hud-sub">—</div>
+            <button class="hud-close" id="hud-close" aria-label="Schließen">✕</button>
+          </div>
+          <div class="hud-tabs" id="hud-tabs">
+            <button class="hud-tab active" data-tab="overview">Übersicht</button>
+            <button class="hud-tab" data-tab="details">Details</button>
+            <button class="hud-tab" data-tab="tools">Tools</button>
+            <button class="hud-tab" data-tab="settings">Einstellungen</button>
+          </div>
+          <div class="hud-body" id="hud-body"></div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ── CHAT VIEW ── -->
+    <section id="view-chat" class="view">
+      <main id="feed"></main>
+    </section>
+
+    <!-- ── SYSTEM VIEW ── -->
+    <section id="view-system" class="view">
+      <div>
+        <div class="sys-heading">Systemstatus</div>
+        <div class="system-deck" id="system-deck">
+          <div class="system-card online" id="sys-server"><div class="k">Core</div><div class="v">ONLINE</div></div>
+          <div class="system-card" id="sys-clients"><div class="k">Live Clients</div><div class="v">–</div></div>
+          <div class="system-card" id="sys-devices"><div class="k">Gekoppelte Geräte</div><div class="v">–</div></div>
+          <div class="system-card" id="sys-queue"><div class="k">Befehlswarteschlange</div><div class="v">–</div></div>
+          <div class="system-card" id="sys-history"><div class="k">Sitzungsereignisse</div><div class="v">–</div></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
   <footer>
     <input id="inp" placeholder="Befehl an MIA senden…" autocomplete="off">
     <label class="btn-attach" for="file-inp" title="Datei senden">📎</label>
@@ -312,14 +595,23 @@
       return fetch(url, opts);
     }
 
-    // ── Live system deck ──────────────────────────────────────────────────────
-    const _sys = {
-      server:  document.querySelector('#sys-server .v'),
-      clients: document.querySelector('#sys-clients .v'),
-      devices: document.querySelector('#sys-devices .v'),
-      queue:   document.querySelector('#sys-queue .v'),
-      history: document.querySelector('#sys-history .v'),
-    };
+    // ── View switching (MIA Core / Kommunikation / System) ───────────────────
+    const _views = ['core', 'chat', 'system'];
+    function switchView(name) {
+      if (!_views.includes(name)) return;
+      _views.forEach(v => {
+        document.getElementById('view-' + v).classList.toggle('active', v === name);
+      });
+      document.querySelectorAll('.qn-btn').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+      if (name === 'chat') { feed.scrollTop = feed.scrollHeight; }
+    }
+    document.querySelectorAll('.qn-btn').forEach(b => {
+      b.addEventListener('click', () => switchView(b.dataset.view));
+    });
+
+    // ── Live system deck (shared by System view + Core HUD panel) ────────────
+    let _lastSysStatus = null;
+    let _lastPingMs = null;
     function _setSystemCard(id, value, active = false) {
       const card = document.getElementById(id);
       const val = card?.querySelector('.v');
@@ -329,24 +621,29 @@
       card.classList.add(active ? 'active' : 'online');
     }
     async function refreshSystemDeck() {
+      const t0 = performance.now();
       try {
         const res = await _authFetch('/api/system-status', { cache: 'no-store' });
         if (!res.ok) throw new Error('status unavailable');
         const s = await res.json();
+        _lastPingMs = Math.round(performance.now() - t0);
+        _lastSysStatus = s;
         _setSystemCard('sys-server', 'ONLINE');
         _setSystemCard('sys-clients', s.live_clients, s.live_clients > 0);
         _setSystemCard('sys-devices', s.paired_devices, s.paired_devices > 0);
         _setSystemCard('sys-queue', s.command_queue, s.command_queue > 0);
         _setSystemCard('sys-history', s.session_events, s.session_events > 0);
       } catch {
+        _lastSysStatus = null;
         const card = document.getElementById('sys-server');
         const val = card?.querySelector('.v');
         if (card && val) {
-          val.textContent = 'UNAVAILABLE';
+          val.textContent = 'NICHT VERFÜGBAR';
           card.classList.remove('online', 'active');
           card.classList.add('dim');
         }
       }
+      _renderHudIfOpen();
     }
     refreshSystemDeck();
     setInterval(refreshSystemDeck, 5000);
@@ -385,15 +682,16 @@
     if (_encReady) { encBadge.className = 'enc-badge on'; }
     else           { encBadge.className = 'enc-badge off'; encBadge.textContent = 'NO ENC'; }
 
-    // ── Brain avatar state ────────────────────────────────────────────────────
-    const brain = document.getElementById('brain');
+    // ── Android body / brain state ────────────────────────────────────────────
+    const androidShell = document.getElementById('android-shell');
     let _baseBrainState = 'idle';
     let _brainTimer;
-    function _setBrainState(s) { brain.dataset.state = s; }
+    function _setBrainState(s) { androidShell.dataset.state = s; }
     function _pulseBrain(state, ms = 1400) {
       _setBrainState(state);
       clearTimeout(_brainTimer);
       _brainTimer = setTimeout(() => _setBrainState(_baseBrainState), ms);
+      _renderHudIfOpen();
     }
 
     // ── WebSocket ─────────────────────────────────────────────────────────────
@@ -406,14 +704,14 @@
     const _wsUrl   = `${_wsProto}://${location.host}/ws?token=${encodeURIComponent(_authToken)}`;
     const ws       = new WebSocket(_wsUrl);
 
-    ws.onopen    = () => { sys('Remote session active.'); toast('Connected to MIA'); };
-    ws.onclose   = () => sys('Connection lost — refresh to reconnect.');
-    ws.onerror   = () => sys('Connection error.');
+    ws.onopen    = () => { sys('Remote-Sitzung aktiv.'); toast('Mit MIA verbunden'); };
+    ws.onclose   = () => sys('Verbindung getrennt — Seite neu laden, um erneut zu verbinden.');
+    ws.onerror   = () => sys('Verbindungsfehler.');
     ws.onmessage = (e) => {
       const m = JSON.parse(e.data);
       if (m.type === 'log')           append(m.speaker, m.text);
       if (m.type === 'status')        setStatus(m.state);
-      if (m.type === 'wake')          sys('Wake word detected — connecting…');
+      if (m.type === 'wake')          sys('Aufwortwort erkannt — verbinde…');
       if (m.type === 'sys')           sys(m.text);
       if (m.type === 'file_received') _onFileReceived(m);
       if (m.type === 'audio')         _playPcm16(m.data, m.rate);
@@ -423,13 +721,14 @@
 
     function setStatus(s) {
       if (s === 'active') {
-        pill.className = 'pill on'; stTxt.textContent = 'Active'; wake.classList.remove('show');
+        pill.className = 'pill on'; stTxt.textContent = 'Aktiv'; wake.classList.remove('show');
         _baseBrainState = 'awake';
       } else {
-        pill.className = 'pill'; stTxt.textContent = 'Sleeping'; wake.classList.add('show');
+        pill.className = 'pill'; stTxt.textContent = 'Ruhend'; wake.classList.add('show');
         _baseBrainState = 'idle';
       }
       _setBrainState(_baseBrainState);
+      _renderHudIfOpen();
     }
 
     function append(speaker, text) {
@@ -440,7 +739,7 @@
         _pulseBrain('speaking');
       } else {
         d.className = 'msg msg-u';
-        d.innerHTML = `<div class="lbl">You</div>${esc(text)}`;
+        d.innerHTML = `<div class="lbl">Du</div>${esc(text)}`;
         _pulseBrain('listening', 900);
       }
       feed.appendChild(d);
@@ -458,6 +757,8 @@
     }
 
     // ── File helpers ──────────────────────────────────────────────────────────
+    const _fileLog = []; // { name, size, dir: 'sent'|'received', url }
+
     function _fileIcon(name) {
       const ext = (name.split('.').pop() || '').toLowerCase();
       if (['jpg','jpeg','png','gif','webp','heic','heif','avif','bmp','svg'].includes(ext)) return '🖼️';
@@ -483,14 +784,13 @@
     function _uploadFile(file) {
       const id = 'fc_' + Date.now() + '_' + Math.random().toString(36).slice(2);
 
-      // Create file card in feed
       const card = document.createElement('div');
       card.className = 'msg-file';
       card.id = id;
       card.innerHTML = `
         <div class="fc-icon">${_fileIcon(file.name)}</div>
         <div class="fc-meta">
-          <div class="fc-lbl">Sending</div>
+          <div class="fc-lbl">Wird gesendet</div>
           <div class="fc-name">${esc(file.name)}</div>
           <div class="fc-size">${_fmtSize(file.size)}</div>
           <div class="fc-bar-wrap"><div class="fc-bar" id="${id}_bar"></div></div>
@@ -524,14 +824,16 @@
           const dlUrl = `/uploads/${encodeURIComponent(savedName)}?token=${encodeURIComponent(_authToken)}`;
           if (bar)  { bar.style.width = '100%'; bar.style.background = 'var(--green)'; }
           if (st)   { st.textContent = '✓'; st.className = 'fc-status done'; }
-          if (lbl)  lbl.textContent = 'Sent';
+          if (lbl)  lbl.textContent = 'Gesendet';
           if (meta) meta.insertAdjacentHTML('beforeend',
-            `<a class="fc-dl" href="${dlUrl}" download="${esc(savedName)}">⬇ Download back</a>`);
-          toast('File sent!');
+            `<a class="fc-dl" href="${dlUrl}" download="${esc(savedName)}">⬇ Zurückladen</a>`);
+          toast('Datei gesendet!');
+          _fileLog.unshift({ name: savedName, size: file.size, dir: 'sent', url: dlUrl });
+          _renderHudIfOpen();
         } else {
-          let errMsg = 'Upload failed';
+          let errMsg = 'Upload fehlgeschlagen';
           try { errMsg = JSON.parse(xhr.responseText).error || errMsg; } catch {}
-          if (bar) bar.style.background = '#f87171';
+          if (bar) bar.style.background = 'var(--red)';
           if (st)  { st.textContent = 'ERR'; st.className = 'fc-status err'; }
           if (lbl) lbl.textContent = errMsg;
         }
@@ -541,7 +843,7 @@
         const st  = document.getElementById(`${id}_st`);
         const lbl = card.querySelector('.fc-lbl');
         if (st)  { st.textContent = 'ERR'; st.className = 'fc-status err'; }
-        if (lbl) lbl.textContent = 'Connection error';
+        if (lbl) lbl.textContent = 'Verbindungsfehler';
       };
 
       const fd = new FormData();
@@ -557,16 +859,18 @@
       card.innerHTML = `
         <div class="fc-icon">${_fileIcon(m.name)}</div>
         <div class="fc-meta">
-          <div class="fc-lbl">Received</div>
+          <div class="fc-lbl">Empfangen</div>
           <div class="fc-name">${esc(m.name)}</div>
           <div class="fc-size">${_fmtSize(m.size)}</div>
-          <a class="fc-dl" href="${dlUrl}" download="${esc(m.name)}">⬇ Download</a>
+          <a class="fc-dl" href="${dlUrl}" download="${esc(m.name)}">⬇ Herunterladen</a>
         </div>
         <div class="fc-status done">✓</div>
       `;
       feed.appendChild(card);
       feed.scrollTop = feed.scrollHeight;
-      toast('File received on computer!');
+      toast('Datei am Computer empfangen!');
+      _fileLog.unshift({ name: m.name, size: m.size, dir: 'received', url: dlUrl });
+      _renderHudIfOpen();
     }
 
     // File input change handler
@@ -592,7 +896,7 @@
     }
 
     function doWake() {
-      sys('Sending wake signal…');
+      sys('Sende Aufwecksignal…');
       _authFetch('/api/wake', { method: 'POST' });
     }
 
@@ -699,6 +1003,7 @@
       micBtn.classList.toggle('session-active', _voiceSessionActive);
       endSessionBtn.classList.toggle('show', _voiceSessionActive);
       _setBrainState(_voiceSessionActive ? 'awake' : _baseBrainState);
+      _renderHudIfOpen();
     }
 
     // Float32 PCM → resample to 16 kHz + convert to Int16
@@ -719,29 +1024,29 @@
 
     function _showVoiceSetup() {
       if (document.getElementById('voice-setup')) return; // show once
+      switchView('chat');
       const origin = location.origin;
       const card = document.createElement('div');
       card.id = 'voice-setup';
       card.style.cssText = [
-        'align-self:stretch', 'background:rgba(171,139,245,0.07)',
-        'border:1px solid rgba(171,139,245,0.22)', 'border-radius:16px',
+        'align-self:stretch', 'background:rgba(255,138,31,0.07)',
+        'border:1px solid rgba(255,138,31,0.22)', 'border-radius:16px',
         'padding:16px 18px', 'font-size:13px', 'line-height:1.8',
         'animation:pop 0.18s ease'
       ].join(';');
       card.innerHTML =
-        '<div style="font-weight:700;color:#c4b0fb;letter-spacing:.5px;margin-bottom:10px">🎤 One-time voice setup</div>' +
+        '<div style="font-weight:700;color:#ffd7a3;letter-spacing:.5px;margin-bottom:10px">🎤 Einmalige Sprach-Einrichtung</div>' +
         '<ol style="padding-left:18px;color:#a9a9b3;margin:0;display:flex;flex-direction:column;gap:4px">' +
-        '<li>Open a new tab → go to <span style="background:rgba(255,255,255,0.07);padding:1px 6px;border-radius:4px;font-family:monospace;font-size:12px">chrome://flags</span></li>' +
-        '<li>Search: <strong style="color:#f3f2f7">Insecure origins treated as secure</strong></li>' +
-        '<li>Paste this URL into the box:<br><span id="flags-url" style="background:rgba(255,255,255,0.07);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:11px;user-select:all;cursor:pointer">' + esc(origin) + '</span></li>' +
-        '<li>Set to <strong style="color:#22c55e">Enabled</strong> → tap <strong style="color:#f3f2f7">Relaunch</strong></li>' +
-        '<li>Return here and tap 🎤</li>' +
+        '<li>Neuen Tab öffnen → gehe zu <span style="background:rgba(255,255,255,0.07);padding:1px 6px;border-radius:4px;font-family:monospace;font-size:12px">chrome://flags</span></li>' +
+        '<li>Suche: <strong style="color:#f3f2f7">Insecure origins treated as secure</strong></li>' +
+        '<li>Füge diese URL in das Feld ein:<br><span id="flags-url" style="background:rgba(255,255,255,0.07);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:11px;user-select:all;cursor:pointer">' + esc(origin) + '</span></li>' +
+        '<li>Auf <strong style="color:#22c55e">Enabled</strong> setzen → <strong style="color:#f3f2f7">Relaunch</strong> tippen</li>' +
+        '<li>Hierher zurückkehren und 🎤 tippen</li>' +
         '</ol>';
       feed.appendChild(card);
       feed.scrollTop = feed.scrollHeight;
-      // tap to copy
       card.querySelector('#flags-url').addEventListener('click', () => {
-        navigator.clipboard?.writeText(origin).then(() => toast('URL copied!')).catch(() => {});
+        navigator.clipboard?.writeText(origin).then(() => toast('URL kopiert!')).catch(() => {});
       });
     }
 
@@ -767,8 +1072,8 @@
         });
       } catch (e) {
         sys(e.name === 'NotAllowedError'
-          ? 'Microphone denied — tap the address bar lock and allow microphone.'
-          : 'Mic error: ' + e.message);
+          ? 'Mikrofon verweigert — auf das Adressleisten-Schloss tippen und Mikrofon erlauben.'
+          : 'Mikrofonfehler: ' + e.message);
         if (!_reconnect) { _voiceSessionActive = false; _micIdle(); }
         return;
       }
@@ -826,21 +1131,22 @@
         micBtn.classList.add('recording', 'session-active');
         endSessionBtn.classList.add('show');
         _setBrainState('listening');
-        sys('Voice live — speak now');
+        sys('Sprachverbindung live — jetzt sprechen');
         toast('🎤 Live');
+        _renderHudIfOpen();
       };
 
       ws.onclose = () => {
         _cleanupVoiceTransport();
         if (_voiceSessionActive) {
-          sys('Voice-Verbindung unterbrochen — Sitzung bleibt aktiv, verbinde neu…');
+          sys('Sprachverbindung unterbrochen — Sitzung bleibt aktiv, verbinde neu…');
           clearTimeout(_voiceReconnectTimer);
           _voiceReconnectTimer = setTimeout(() => {
             if (_voiceSessionActive && !_voiceWs) doMic(true);
           }, 1200);
         }
       };
-      ws.onerror = () => { sys('Voice connection interrupted.'); };
+      ws.onerror = () => { sys('Sprachverbindung unterbrochen.'); };
 
       _voiceWs  = ws;
       _audioCtx = ctx;
@@ -868,6 +1174,238 @@
       sys('Mia-Sitzung beendet.');
       toast('Sitzung beendet');
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ── BODY HUD PANEL — zone config + rendering ─────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════
+    const hudPanel = document.getElementById('hud-panel');
+    const hudTitle = document.getElementById('hud-title');
+    const hudSub   = document.getElementById('hud-sub');
+    const hudIcon  = document.getElementById('hud-icon');
+    const hudBody  = document.getElementById('hud-body');
+    let _activeZone = null;
+    let _activeTab  = 'overview';
+
+    function _stateLabel() {
+      const map = { idle: 'Ruhend', awake: 'Wach', listening: 'Hört zu', speaking: 'Spricht' };
+      return map[androidShell.dataset.state] || androidShell.dataset.state;
+    }
+
+    const _zones = {
+      gehirn: {
+        icon: '🧠', title: 'GEHIRN', sub: 'Denken / Planung / Erinnerung',
+        desc: 'Der KI-Core von MIA. Hier laufen Denken, Verbindung und Kontext zusammen.',
+        overview: () => `
+          <div class="hud-desc">${_zones.gehirn.desc}</div>
+          <div class="hud-row"><span class="k">Zustand</span><span class="v ${androidShell.dataset.state === 'idle' ? '' : 'on'}">${_stateLabel()}</span></div>
+          <div class="hud-row"><span class="k">Verbindung</span><span class="v ${pill.classList.contains('on') ? 'on' : 'warn'}">${stTxt.textContent}</span></div>
+          <div class="hud-row"><span class="k">Sitzungsereignisse</span><span class="v">${_lastSysStatus ? _lastSysStatus.session_events : '–'}</span></div>
+        `,
+        details: () => `
+          <div class="hud-desc">Technischer Verbindungskanal zur Reasoning-Engine.</div>
+          <div class="hud-row"><span class="k">WebSocket</span><span class="v ${ws.readyState === 1 ? 'on' : 'off'}">${['Verbindet','Offen','Schließt','Geschlossen'][ws.readyState]}</span></div>
+          <div class="hud-row"><span class="k">Verschlüsselung</span><span class="v ${_encReady ? 'on' : 'off'}">${_encReady ? 'AES-256 aktiv' : 'Inaktiv'}</span></div>
+        `,
+        tools: () => `
+          <button class="hud-btn" id="hud-act-wake">Aufwecken</button>
+          <button class="hud-btn ghost" id="hud-act-chat">Chat öffnen</button>
+        `,
+        toolsInit: () => {
+          document.getElementById('hud-act-wake')?.addEventListener('click', doWake);
+          document.getElementById('hud-act-chat')?.addEventListener('click', () => switchView('chat'));
+        },
+        settings: () => `<div class="hud-desc">Keine separaten Einstellungen — Befehle werden über die Eingabezeile unten gesteuert.</div>`,
+      },
+      augen: {
+        icon: '👁', title: 'SINNESORGANE', sub: 'Sehen / Hören / Wahrnehmung',
+        desc: 'Mikrofon-Wahrnehmung — MIA hört über den Live-Sprachkanal zu.',
+        overview: () => `
+          <div class="hud-desc">${_zones.augen.desc}</div>
+          <div class="hud-row"><span class="k">Sprachsitzung</span><span class="v ${_voiceSessionActive ? 'on' : ''}">${_voiceSessionActive ? 'Aktiv' : 'Inaktiv'}</span></div>
+          <div class="hud-row"><span class="k">Aufnahme</span><span class="v ${micBtn.classList.contains('recording') ? 'on' : ''}">${micBtn.classList.contains('recording') ? 'Läuft' : 'Gestoppt'}</span></div>
+        `,
+        details: () => `
+          <div class="hud-desc">Audiokanal: PCM16 · 16 kHz Eingang, 24 kHz Wiedergabe.</div>
+          <div class="hud-row"><span class="k">Mikrofonzugriff</span><span class="v">${navigator.mediaDevices?.getUserMedia ? 'Unterstützt' : 'Nicht verfügbar'}</span></div>
+        `,
+        tools: () => `
+          <button class="hud-btn" id="hud-act-mic">${_voiceSessionActive ? 'Sitzung beenden' : 'Sprechen starten'}</button>
+        `,
+        toolsInit: () => {
+          document.getElementById('hud-act-mic')?.addEventListener('click', () => {
+            _voiceSessionActive ? endVoiceSession() : doMic();
+            setTimeout(_renderHudIfOpen, 200);
+          });
+        },
+        settings: () => `<div class="hud-desc">Mikrofonrechte werden vom Browser verwaltet (Adressleisten-Schloss).</div>`,
+      },
+      mund: {
+        icon: '💬', title: 'MUND', sub: 'Sprache / Kommunikation / Ausgabe',
+        desc: 'Der Kommunikationskanal — Text- und Sprachausgabe von MIA.',
+        overview: () => `
+          <div class="hud-desc">${_zones.mund.desc}</div>
+          <div class="hud-row"><span class="k">Letzter Kanal</span><span class="v">${feed.lastElementChild ? 'Aktiv' : 'Kein Verlauf'}</span></div>
+          <div class="hud-row"><span class="k">Verbindung</span><span class="v ${pill.classList.contains('on') ? 'on' : 'warn'}">${stTxt.textContent}</span></div>
+        `,
+        details: () => `<div class="hud-desc">Nachrichten werden Ende-zu-Ende über AES-256 verschlüsselt, sofern ein Sitzungsschlüssel vorliegt.</div>`,
+        tools: () => `<button class="hud-btn" id="hud-act-open-chat">Kommunikation öffnen</button>`,
+        toolsInit: () => {
+          document.getElementById('hud-act-open-chat')?.addEventListener('click', () => switchView('chat'));
+        },
+        settings: () => `<div class="hud-desc">Keine separaten Einstellungen.</div>`,
+      },
+      core: {
+        icon: '◎', title: 'ZENTRALER CORE', sub: 'Hauptsteuerung von MIA',
+        desc: 'Der zentrale Systemkern — Gesamtstatus aller verbundenen Komponenten.',
+        overview: () => `
+          <div class="hud-desc">${_zones.core.desc}</div>
+          <div class="hud-row"><span class="k">Core</span><span class="v on">ONLINE</span></div>
+          <div class="hud-row"><span class="k">Live Clients</span><span class="v">${_lastSysStatus ? _lastSysStatus.live_clients : '–'}</span></div>
+          <div class="hud-row"><span class="k">Gekoppelte Geräte</span><span class="v">${_lastSysStatus ? _lastSysStatus.paired_devices : '–'}</span></div>
+        `,
+        details: () => `
+          <div class="hud-row"><span class="k">Befehlswarteschlange</span><span class="v">${_lastSysStatus ? _lastSysStatus.command_queue : '–'}</span></div>
+          <div class="hud-row"><span class="k">Sitzungsereignisse</span><span class="v">${_lastSysStatus ? _lastSysStatus.session_events : '–'}</span></div>
+        `,
+        tools: () => `
+          <button class="hud-btn" id="hud-act-wake2">Aufwecken</button>
+          <button class="hud-btn ghost" id="hud-act-sys">System-Ansicht öffnen</button>
+        `,
+        toolsInit: () => {
+          document.getElementById('hud-act-wake2')?.addEventListener('click', doWake);
+          document.getElementById('hud-act-sys')?.addEventListener('click', () => switchView('system'));
+        },
+        settings: () => `<div class="hud-desc">Systemweite Einstellungen sind serverseitig konfiguriert.</div>`,
+      },
+      instinkt: {
+        icon: '💠', title: 'INSTINKT', sub: 'Priorisierung / Warteschlange',
+        desc: 'Priorisiert eingehende Befehle über die Warteschlange.',
+        overview: () => `
+          <div class="hud-desc">${_zones.instinkt.desc}</div>
+          <div class="hud-row"><span class="k">Befehlswarteschlange</span><span class="v ${_lastSysStatus && _lastSysStatus.command_queue > 0 ? 'warn' : ''}">${_lastSysStatus ? _lastSysStatus.command_queue : '–'}</span></div>
+        `,
+        details: () => `<div class="hud-desc">Befehle werden in Ankunftsreihenfolge verarbeitet und über den Core gemeldet.</div>`,
+        tools: () => `<div class="hud-empty">Keine manuellen Aktionen erforderlich.</div>`,
+        settings: () => `<div class="hud-desc">Keine separaten Einstellungen.</div>`,
+      },
+      immunsystem: {
+        icon: '🛡', title: 'IMMUNSYSTEM', sub: 'Schutz / Überwachung / Sicherheit',
+        desc: 'Absicherung der Verbindung: Verschlüsselung, Authentifizierung, Transportsicherheit.',
+        overview: () => `
+          <div class="hud-desc">${_zones.immunsystem.desc}</div>
+          <div class="hud-row"><span class="k">Verschlüsselung</span><span class="v ${_encReady ? 'on' : 'off'}">${_encReady ? 'AES-256 aktiv' : 'Nicht aktiv'}</span></div>
+          <div class="hud-row"><span class="k">Sitzungstoken</span><span class="v ${_authToken ? 'on' : 'off'}">${_authToken ? 'Vorhanden' : 'Fehlt'}</span></div>
+          <div class="hud-row"><span class="k">Transport</span><span class="v ${location.protocol === 'https:' ? 'on' : 'warn'}">${location.protocol === 'https:' ? 'HTTPS' : 'HTTP'}</span></div>
+        `,
+        details: () => `<div class="hud-desc">Schlüsselableitung erfolgt lokal aus dem Sitzungsschlüssel; Klartext-Schlüssel verlassen den Browser nicht.</div>`,
+        tools: () => `<div class="hud-empty">Keine manuellen Aktionen erforderlich.</div>`,
+        settings: () => `<div class="hud-desc">Sicherheitsrichtlinien werden serverseitig verwaltet.</div>`,
+      },
+      skelett: {
+        icon: '🦴', title: 'SKELETT', sub: 'Stabilität / Client-Integrität',
+        desc: 'Technischer Zustand des verbundenen Endgeräts.',
+        overview: () => `
+          <div class="hud-desc">${_zones.skelett.desc}</div>
+          <div class="hud-row"><span class="k">Netzwerk</span><span class="v ${navigator.onLine ? 'on' : 'off'}">${navigator.onLine ? 'Online' : 'Offline'}</span></div>
+          <div class="hud-row"><span class="k">Ansicht</span><span class="v">${window.innerWidth}×${window.innerHeight}</span></div>
+        `,
+        details: () => `<div class="hud-desc" style="word-break:break-word">${esc(navigator.userAgent)}</div>`,
+        tools: () => `<div class="hud-empty">Keine manuellen Aktionen erforderlich.</div>`,
+        settings: () => `<div class="hud-desc">Keine separaten Einstellungen.</div>`,
+      },
+      reflexe: {
+        icon: '⚡', title: 'REFLEXE', sub: 'Schnelle Reaktion / Latenz',
+        desc: 'Reaktionszeit zwischen Dashboard und Core-Server.',
+        overview: () => `
+          <div class="hud-desc">${_zones.reflexe.desc}</div>
+          <div class="hud-row"><span class="k">Letzte Antwortzeit</span><span class="v ${_lastPingMs != null && _lastPingMs < 300 ? 'on' : 'warn'}">${_lastPingMs != null ? _lastPingMs + ' ms' : '–'}</span></div>
+        `,
+        details: () => `<div class="hud-desc">Gemessen bei der letzten Systemstatus-Abfrage (alle 5 Sekunden).</div>`,
+        tools: () => `<button class="hud-btn ghost" id="hud-act-refresh">Jetzt messen</button>`,
+        toolsInit: () => {
+          document.getElementById('hud-act-refresh')?.addEventListener('click', async () => { await refreshSystemDeck(); });
+        },
+        settings: () => `<div class="hud-desc">Keine separaten Einstellungen.</div>`,
+      },
+      fernsteuerung: {
+        icon: '📡', title: 'FERNSTEUERUNG', sub: 'Zugriff / Geräte / Synchronisation',
+        desc: 'Gekoppelte Geräte und aktive Fernzugriffe auf MIA.',
+        overview: () => `
+          <div class="hud-desc">${_zones.fernsteuerung.desc}</div>
+          <div class="hud-row"><span class="k">Gekoppelte Geräte</span><span class="v">${_lastSysStatus ? _lastSysStatus.paired_devices : '–'}</span></div>
+          <div class="hud-row"><span class="k">Live Clients</span><span class="v">${_lastSysStatus ? _lastSysStatus.live_clients : '–'}</span></div>
+        `,
+        details: () => `<div class="hud-desc">Eingehende Anrufe von MIA erscheinen als Banner am oberen Bildschirmrand, sobald kein Mikrofon geöffnet ist.</div>`,
+        tools: () => `<div class="hud-empty">Keine manuellen Aktionen erforderlich.</div>`,
+        settings: () => `<div class="hud-desc">Geräte werden über die Haupt-App von MIA gekoppelt.</div>`,
+      },
+      haende: {
+        icon: '✋', title: 'HÄNDE', sub: 'Ausführung / Dateien / Aktionen',
+        desc: 'Datei-Übertragung zwischen diesem Gerät und MIA.',
+        overview: () => `
+          <div class="hud-desc">${_zones.haende.desc}</div>
+          <div class="hud-row"><span class="k">Übertragene Dateien</span><span class="v">${_fileLog.length}</span></div>
+        `,
+        details: () => _fileLog.length
+          ? `<div class="hud-filelist">${_fileLog.slice(0, 12).map(f => `
+              <div class="hud-file">
+                <div class="fi">${_fileIcon(f.name)}</div>
+                <div class="fm"><div class="fn">${esc(f.name)}</div><div class="fs">${_fmtSize(f.size)} · ${f.dir === 'sent' ? 'Gesendet' : 'Empfangen'}</div></div>
+                <a href="${f.url}" download="${esc(f.name)}">⬇</a>
+              </div>`).join('')}</div>`
+          : `<div class="hud-empty">Noch keine Dateien übertragen.</div>`,
+        tools: () => `<button class="hud-btn" id="hud-act-file">Datei senden</button>`,
+        toolsInit: () => {
+          document.getElementById('hud-act-file')?.addEventListener('click', () => document.getElementById('file-inp').click());
+        },
+        settings: () => `<div class="hud-desc">Keine separaten Einstellungen.</div>`,
+      },
+    };
+
+    function _renderHudTab() {
+      const zone = _zones[_activeZone];
+      if (!zone) return;
+      const fn = zone[_activeTab];
+      hudBody.innerHTML = fn ? fn() : '<div class="hud-empty">Keine Daten.</div>';
+      if (_activeTab === 'tools' && zone.toolsInit) zone.toolsInit();
+    }
+
+    function _renderHudIfOpen() {
+      if (hudPanel.classList.contains('open')) _renderHudTab();
+    }
+
+    function openZone(zoneId) {
+      const zone = _zones[zoneId];
+      if (!zone) return;
+      _activeZone = zoneId;
+      _activeTab  = 'overview';
+      document.querySelectorAll('.hotspot').forEach(h => h.classList.toggle('selected', h.dataset.zone === zoneId));
+      hudIcon.textContent  = zone.icon;
+      hudTitle.textContent = zone.title;
+      hudSub.textContent   = zone.sub;
+      document.querySelectorAll('.hud-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'overview'));
+      hudPanel.classList.add('open');
+      _renderHudTab();
+    }
+
+    function closePanel() {
+      hudPanel.classList.remove('open');
+      _activeZone = null;
+      document.querySelectorAll('.hotspot').forEach(h => h.classList.remove('selected'));
+    }
+
+    document.querySelectorAll('.hotspot').forEach(h => {
+      h.addEventListener('click', () => openZone(h.dataset.zone));
+      h.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openZone(h.dataset.zone); } });
+    });
+    document.getElementById('hud-close').addEventListener('click', closePanel);
+    document.querySelectorAll('.hud-tab').forEach(t => {
+      t.addEventListener('click', () => {
+        _activeTab = t.dataset.tab;
+        document.querySelectorAll('.hud-tab').forEach(x => x.classList.toggle('active', x === t));
+        _renderHudTab();
+      });
+    });
   </script>
 </body>
 </html>
