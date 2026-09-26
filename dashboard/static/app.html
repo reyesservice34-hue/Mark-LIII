@@ -90,6 +90,47 @@
     .qn-btn:hover { color: var(--text); border-color: rgba(255,138,31,.35); }
     .qn-btn.active { color: var(--accent3); background: var(--adim); border-color: rgba(255,138,31,.4); box-shadow: 0 0 14px rgba(255,122,0,.12) inset; }
 
+    /* ── CLOCK (header, real system time) ── */
+    .clock { display: flex; flex-direction: column; align-items: flex-end; font-family: 'SFMono-Regular', Consolas, monospace; line-height: 1.2; margin-right: 6px; }
+    .clock .ctime { font-size: 15px; font-weight: 800; letter-spacing: 1px; color: var(--text); }
+    .clock .cdate { font-size: 9px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; }
+    @media (max-width: 480px) { .clock { display: none; } }
+
+    /* ── SIDEBAR (desktop) ── */
+    .body-shell { flex: 1; display: flex; min-height: 0; }
+    .content-col { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    .sidebar { display: none; }
+    .sb-avatar {
+      display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px;
+      border-bottom: 1px solid var(--border); margin-bottom: 10px;
+    }
+    .sb-avatar-ic {
+      width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+      background: radial-gradient(circle at 35% 30%, #ffe9d1, var(--accent) 55%, #7a2f00 100%);
+      display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 12px; color: #1a0f00;
+    }
+    .sb-avatar-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .sb-avatar-meta .nm { font-size: 13px; font-weight: 800; letter-spacing: 1.5px; }
+    .sb-avatar-meta .stx { font-size: 10px; color: var(--muted); display: flex; align-items: center; gap: 5px; text-transform: uppercase; letter-spacing: .5px; }
+    .sb-avatar-meta .stx .dot2 { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .sb-avatar-meta .stx.on { color: var(--green); }
+    .sb-avatar-meta .stx.on .dot2 { background: var(--green); animation: blink 2s infinite; }
+    .sb-item {
+      display: flex; align-items: center; gap: 11px; padding: 10px 11px; border-radius: 11px;
+      border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; text-align: left;
+      width: 100%; transition: all .15s;
+    }
+    .sb-item .ic { font-size: 16px; width: 18px; text-align: center; flex-shrink: 0; }
+    .sb-item .lb { display: flex; flex-direction: column; gap: 1px; }
+    .sb-item .lb b { font-size: 11px; font-weight: 800; letter-spacing: .8px; color: inherit; }
+    .sb-item .lb small { font-size: 9px; letter-spacing: .5px; color: var(--muted); text-transform: uppercase; }
+    .sb-item:hover { color: var(--text); background: var(--surface); }
+    .sb-item.active { color: var(--accent3); background: var(--adim); border-color: rgba(255,138,31,.35); }
+    @media (min-width: 768px) {
+      .sidebar { display: flex; flex-direction: column; width: 208px; flex-shrink: 0; padding: 16px 10px; gap: 3px; border-right: 1px solid var(--border); background: rgba(0,0,0,.32); }
+      .quicknav { display: none; }
+    }
+
     /* ── MAIN LAYOUT ── */
     .stage { flex: 1; display: flex; min-height: 0; position: relative; }
     .view { display: none; flex: 1; min-height: 0; min-width: 0; }
@@ -362,16 +403,32 @@
     <div class="pill" id="pill"><span class="dot"></span><span id="st">Verbinde</span></div>
     <div class="enc-badge" id="enc">AES-256</div>
     <div class="spacer"></div>
+    <div class="clock" id="clock"><span class="ctime" id="clock-time">--:--</span><span class="cdate" id="clock-date">–</span></div>
     <div class="url">__IP__:__PORT__</div>
   </header>
 
-  <nav class="quicknav" id="quicknav">
-    <button class="qn-btn active" data-view="core"><span class="qn-ic">◎</span>MIA CORE</button>
-    <button class="qn-btn" data-view="chat"><span class="qn-ic">💬</span>KOMMUNIKATION</button>
-    <button class="qn-btn" data-view="system"><span class="qn-ic">⚙</span>SYSTEM</button>
-  </nav>
+  <div class="body-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sb-avatar">
+        <div class="sb-avatar-ic">MIA</div>
+        <div class="sb-avatar-meta">
+          <div class="nm">MIA</div>
+          <div class="stx" id="sb-status"><span class="dot2"></span><span id="sb-status-txt">Ruhend</span></div>
+        </div>
+      </div>
+      <button class="sb-item nav-btn active" data-view="core"><span class="ic">◎</span><span class="lb"><b>MIA CORE</b><small>Steuerung</small></span></button>
+      <button class="sb-item nav-btn" data-view="chat"><span class="ic">💬</span><span class="lb"><b>Kommunikation</b><small>Sprache / Text</small></span></button>
+      <button class="sb-item nav-btn" data-view="system"><span class="ic">⚙</span><span class="lb"><b>System</b><small>Status</small></span></button>
+    </aside>
 
-  <div class="stage">
+    <div class="content-col">
+      <nav class="quicknav" id="quicknav">
+        <button class="qn-btn nav-btn active" data-view="core"><span class="qn-ic">◎</span>MIA CORE</button>
+        <button class="qn-btn nav-btn" data-view="chat"><span class="qn-ic">💬</span>KOMMUNIKATION</button>
+        <button class="qn-btn nav-btn" data-view="system"><span class="qn-ic">⚙</span>SYSTEM</button>
+      </nav>
+
+      <div class="stage">
     <!-- ── CORE VIEW: android body + hotspots ── -->
     <section id="view-core" class="view active">
       <div class="body-wrap">
@@ -568,6 +625,8 @@
         </div>
       </div>
     </section>
+      </div>
+    </div>
   </div>
 
   <footer>
@@ -602,12 +661,32 @@
       _views.forEach(v => {
         document.getElementById('view-' + v).classList.toggle('active', v === name);
       });
-      document.querySelectorAll('.qn-btn').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === name));
       if (name === 'chat') { feed.scrollTop = feed.scrollHeight; }
     }
-    document.querySelectorAll('.qn-btn').forEach(b => {
+    document.querySelectorAll('.nav-btn').forEach(b => {
       b.addEventListener('click', () => switchView(b.dataset.view));
     });
+
+    // ── Live clock (real system time — header) ─────────────────────────────
+    const _clockTime = document.getElementById('clock-time');
+    const _clockDate = document.getElementById('clock-date');
+    function _tickClock() {
+      const now = new Date();
+      _clockTime.textContent = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      _clockDate.textContent = now.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    _tickClock();
+    setInterval(_tickClock, 15000);
+
+    // ── Sidebar identity chip mirrors the connection pill ───────────────────
+    const _sbStatus    = document.getElementById('sb-status');
+    const _sbStatusTxt = document.getElementById('sb-status-txt');
+    function _syncSidebarStatus() {
+      if (!_sbStatus) return;
+      _sbStatus.classList.toggle('on', pill.classList.contains('on'));
+      _sbStatusTxt.textContent = stTxt.textContent;
+    }
 
     // ── Live system deck (shared by System view + Core HUD panel) ────────────
     let _lastSysStatus = null;
@@ -728,8 +807,10 @@
         _baseBrainState = 'idle';
       }
       _setBrainState(_baseBrainState);
+      _syncSidebarStatus();
       _renderHudIfOpen();
     }
+    _syncSidebarStatus();
 
     function append(speaker, text) {
       const d = document.createElement('div');
