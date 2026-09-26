@@ -94,8 +94,6 @@ python -m pip install --quiet -r requirements.txt
 New-Item -ItemType Directory -Force -Path "$Ziel\\config" | Out-Null
 $cfgPfad = "$Ziel\\config\\api_keys.json"
 $cfg = @{{
-  "JARVIS_GATEWAY_URL" = $Server
-  "JARVIS_GATEWAY_TOKEN" = $Token
   "JARVIS_DEVICE_NAME" = $DeviceName
   "jarvis_gateway_url" = $Server
   "jarvis_gateway_token" = $Token
