@@ -134,8 +134,8 @@ def test_save_assistant_config_round_trip_strips_and_normalizes():
 
 
 # ── Stimme ────────────────────────────────────────────────────────────────
-def test_get_voice_defaults_to_charon():
-    assert cm.get_voice() == cm.DEFAULT_VOICE == "Charon"
+def test_get_voice_defaults_to_kore():
+    assert cm.get_voice() == cm.DEFAULT_VOICE == "Kore"
 
 
 def test_save_and_get_voice_round_trip():
