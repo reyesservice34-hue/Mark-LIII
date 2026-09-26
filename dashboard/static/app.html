@@ -159,8 +159,10 @@
     @keyframes hsPulse { 0%,100% { opacity:.55; } 50% { opacity:1; } }
     .hotspot .hs-label {
       opacity: 0; transition: opacity .16s; pointer-events: none;
-      font-size: 6.2px; font-weight: 800; letter-spacing: .4px; fill: var(--accent3);
+      font-size: 8.5px; font-weight: 800; letter-spacing: .4px; fill: var(--accent3);
       text-transform: uppercase;
+      paint-order: stroke;
+      stroke: rgba(0,0,0,.65); stroke-width: 2px; stroke-linejoin: round;
     }
     .hotspot:hover .hs-label, .hotspot:focus-visible .hs-label, .hotspot.selected .hs-label { opacity: 1; }
 
@@ -512,24 +514,24 @@
 
             <!-- ══ HOTSPOTS ══ -->
             <g class="hotspot" data-zone="gehirn" tabindex="0" role="button" aria-label="Gehirn">
-              <circle class="hs-hit" cx="170" cy="53" r="17"/>
-              <circle class="hs-ring" cx="170" cy="53" r="14"/>
-              <circle class="hs-dot" cx="170" cy="53" r="5" filter="url(#softGlow)"/>
-              <text class="hs-label" x="170" y="34" text-anchor="middle">Gehirn</text>
+              <circle class="hs-hit" cx="170" cy="50" r="14"/>
+              <circle class="hs-ring" cx="170" cy="50" r="12"/>
+              <circle class="hs-dot" cx="170" cy="50" r="5" filter="url(#softGlow)"/>
+              <text class="hs-label" x="170" y="32" text-anchor="middle">Gehirn</text>
             </g>
 
             <g class="hotspot" data-zone="augen" tabindex="0" role="button" aria-label="Sinnesorgane">
-              <circle class="hs-hit" cx="170" cy="86" r="13"/>
-              <circle class="hs-ring" cx="170" cy="86" r="11"/>
-              <circle class="hs-dot" cx="170" cy="86" r="3.6" filter="url(#softGlow)"/>
-              <text class="hs-label" x="92" y="90" text-anchor="middle">Sinne</text>
+              <circle class="hs-hit" cx="170" cy="84" r="11"/>
+              <circle class="hs-ring" cx="170" cy="84" r="9.5"/>
+              <circle class="hs-dot" cx="170" cy="84" r="3.6" filter="url(#softGlow)"/>
+              <text class="hs-label" x="92" y="88" text-anchor="middle">Sinne</text>
             </g>
 
             <g class="hotspot" data-zone="mund" tabindex="0" role="button" aria-label="Mund">
-              <circle class="hs-hit" cx="170" cy="116" r="13"/>
-              <circle class="hs-ring" cx="170" cy="116" r="11"/>
-              <circle class="hs-dot" cx="170" cy="116" r="3.4" filter="url(#softGlow)"/>
-              <text class="hs-label" x="248" y="120" text-anchor="middle">Mund</text>
+              <circle class="hs-hit" cx="170" cy="110" r="11"/>
+              <circle class="hs-ring" cx="170" cy="110" r="9.5"/>
+              <circle class="hs-dot" cx="170" cy="110" r="3.4" filter="url(#softGlow)"/>
+              <text class="hs-label" x="248" y="114" text-anchor="middle">Mund</text>
             </g>
 
             <g class="hotspot" data-zone="core" tabindex="0" role="button" aria-label="Zentraler Core">
@@ -790,7 +792,7 @@
       const m = JSON.parse(e.data);
       if (m.type === 'log')           append(m.speaker, m.text);
       if (m.type === 'status')        setStatus(m.state);
-      if (m.type === 'wake')          sys('Aufwortwort erkannt — verbinde…');
+      if (m.type === 'wake')          sys('Aufweckwort erkannt — verbinde…');
       if (m.type === 'sys')           sys(m.text);
       if (m.type === 'file_received') _onFileReceived(m);
       if (m.type === 'audio')         _playPcm16(m.data, m.rate);
