@@ -1593,13 +1593,34 @@ class MiaLive:
                     # has no desktop WAKE button — so it wakes MIA if asleep.
                     if self._wake_enabled and not self._awake:
                         self.wake(reason="remote command")
-                    await self.session.send_client_content(
-                        turns={"role": "user", "parts": [{"text": text}]},
-                        turn_complete=True,
-                    )
-                    self.ui.write_log(f"[Web]: {text}")
+                    try:
+                        await self.session.send_client_content(
+                            turns={"role": "user", "parts": [{"text": text}]},
+                            turn_complete=True,
+                        )
+                        self.ui.write_log(f"[Web]: {text}")
+                    except Exception as e:
+                        # Without this, a send failure here left the browser
+                        # chat looking like it silently swallowed the message —
+                        # it needs to see something went wrong, not nothing.
+                        print(f"[Dashboard] Send failed: {e}")
+                        asyncio.create_task(self._dashboard.broadcast({
+                            "type": "sys",
+                            "text": "Befehl konnte nicht gesendet werden — "
+                                     "Verbindung zu MIA wird neu aufgebaut.",
+                        }))
                 else:
+                    # No live session (still connecting/reconnecting, or the
+                    # 8s wait above timed out) — the command was queued but
+                    # never delivered. Same reasoning: say so in the chat
+                    # instead of leaving the user staring at silence.
                     print(f"[Dashboard] Dropped command (no session): {text}")
+                    asyncio.create_task(self._dashboard.broadcast({
+                        "type": "sys",
+                        "text": "MIA ist gerade nicht verbunden — Befehl konnte "
+                                 "nicht zugestellt werden. Bitte in Kürze erneut "
+                                 "versuchen.",
+                    }))
             except asyncio.TimeoutError:
                 pass
             except Exception as e:
