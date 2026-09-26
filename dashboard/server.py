@@ -372,6 +372,37 @@ def _read(name: str) -> str:
     return (STATIC_DIR / name).read_text(encoding="utf-8")
 
 
+_SERVER_STARTED_AT = time.time()
+
+
+def _cpu_percent() -> float | None:
+    """Best-effort CPU load, 0-100. No extra dependency: normalizes the 1-min
+    loadavg by core count on POSIX; unavailable (e.g. Windows) → None."""
+    try:
+        load1, _, _ = __import__("os").getloadavg()
+        cores = __import__("os").cpu_count() or 1
+        return round(min(100.0, (load1 / cores) * 100), 1)
+    except (OSError, AttributeError):
+        return None
+
+
+def _memory_percent() -> float | None:
+    """Best-effort RAM usage, 0-100, parsed from /proc/meminfo (Linux only)."""
+    try:
+        info = {}
+        with open("/proc/meminfo", "r", encoding="utf-8") as f:
+            for line in f:
+                key, _, rest = line.partition(":")
+                info[key] = int(rest.strip().split()[0])  # kB
+        total = info.get("MemTotal")
+        avail = info.get("MemAvailable")
+        if not total or avail is None:
+            return None
+        return round((1 - avail / total) * 100, 1)
+    except (OSError, KeyError, ValueError, IndexError):
+        return None
+
+
 # ── DashboardServer ───────────────────────────────────────────────────────────
 
 class DashboardServer:
@@ -654,9 +685,17 @@ class DashboardServer:
 
         @app.get("/api/system-status")
         async def system_status(req: Request):
-            """Return non-sensitive runtime health used by the dashboard status deck."""
+            """Return non-sensitive runtime health used by the dashboard status deck.
+
+            MIA's voice/audio loop and this dashboard share one asyncio event
+            loop (see main.py), so the small blocking file reads here run in a
+            thread — otherwise a dashboard poll could stall MIA's real-time
+            audio mid-sentence."""
             if not _auth(req):
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            cpu_percent, memory_percent = await asyncio.gather(
+                asyncio.to_thread(_cpu_percent), asyncio.to_thread(_memory_percent)
+            )
             return JSONResponse({
                 "ok": True,
                 "live_clients": len(self._clients),
@@ -666,6 +705,9 @@ class DashboardServer:
                 "command_queue": self._command_queue.qsize(),
                 "session_events": len(self._history),
                 "voice_queue": self._phone_audio_queue.qsize(),
+                "cpu_percent": cpu_percent,
+                "memory_percent": memory_percent,
+                "uptime_secs": round(time.time() - _SERVER_STARTED_AT),
             })
 
         @app.post("/api/command")
@@ -748,6 +790,8 @@ class DashboardServer:
                 size = 0
                 max_bytes = MAX_UPLOAD_MB * 1024 * 1024
                 try:
+                    # Disk writes run in a thread — MIA's audio loop shares this
+                    # event loop, so a large upload must not stall it mid-sentence.
                     with open(dest, "wb") as fout:
                         while True:
                             chunk = await file.read(65536)
@@ -761,7 +805,7 @@ class DashboardServer:
                                     {"error": f"File too large (max {MAX_UPLOAD_MB} MB)"},
                                     status_code=413,
                                 )
-                            fout.write(chunk)
+                            await asyncio.to_thread(fout.write, chunk)
                 except Exception as exc:
                     try:
                         dest.unlink(missing_ok=True)
@@ -785,10 +829,7 @@ class DashboardServer:
                     status_code=503,
                 )
 
-        @app.get("/api/files")
-        async def list_files(req: Request):
-            if not _auth(req):
-                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        def _list_upload_files() -> list[dict]:
             files = []
             try:
                 for f in sorted(
@@ -799,6 +840,14 @@ class DashboardServer:
                     files.append({"name": f.name, "size": f.stat().st_size})
             except Exception:
                 pass
+            return files
+
+        @app.get("/api/files")
+        async def list_files(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            # Directory scan runs in a thread — same shared-event-loop reason as above.
+            files = await asyncio.to_thread(_list_upload_files)
             return JSONResponse({"files": files})
 
         @app.get("/uploads/{filename}")
