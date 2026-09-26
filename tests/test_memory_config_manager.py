@@ -133,6 +133,20 @@ def test_save_assistant_config_round_trip_strips_and_normalizes():
     assert cm.get_user_name() == "Christoph"
 
 
+def test_save_user_name_strips_and_round_trips_without_touching_assistant_name():
+    cm.save_assistant_config("Mia", "Christoph")
+    result = cm.save_user_name("  Chef  ")
+    assert result == "Chef"
+    assert cm.get_user_name() == "Chef"
+    assert cm.get_assistant_name() == "Mia"
+
+
+def test_save_user_name_with_blank_clears_it():
+    cm.save_user_name("Chef")
+    cm.save_user_name("   ")
+    assert cm.get_user_name() == ""
+
+
 # ── Stimme ────────────────────────────────────────────────────────────────
 def test_get_voice_defaults_to_kore():
     assert cm.get_voice() == cm.DEFAULT_VOICE == "Kore"

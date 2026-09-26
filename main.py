@@ -720,7 +720,20 @@ class MiaLive:
             f"[PERSONALITY]\n{PERSONALITY_MODES[get_personality_mode()]}\n\n"
         )
 
+        # Late-night discretion: gentler and quieter in the small hours, when
+        # the user (or people near them) may be trying to sleep.
+        context_ctx = ""
+        if now.hour >= 23 or now.hour < 6:
+            context_ctx = (
+                "[CONTEXT]\n"
+                "It's late at night. Keep your tone calm and quiet, favor short "
+                "replies, and skip enthusiasm or upbeat energy unless the user "
+                "brings it first.\n\n"
+            )
+
         parts = [time_ctx, identity_ctx, personality_ctx]
+        if context_ctx:
+            parts.append(context_ctx)
         if mem_str:
             parts.append(mem_str)
         parts.append(sys_prompt)
