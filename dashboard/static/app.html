@@ -727,7 +727,18 @@
       _renderHudIfOpen();
     }
     refreshSystemDeck();
-    setInterval(refreshSystemDeck, 5000);
+    // Paused while the tab is hidden — no point polling MIA's shared event
+    // loop for a dashboard nobody is looking at.
+    let _statusTimer = setInterval(refreshSystemDeck, 5000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        clearInterval(_statusTimer);
+      } else {
+        refreshSystemDeck();
+        clearInterval(_statusTimer);
+        _statusTimer = setInterval(refreshSystemDeck, 5000);
+      }
+    });
 
     // ── AES-256-CBC encryption (CryptoJS) ────────────────────────────────────
     // Legacy KDF salt — must match dashboard/server.py; never displayed.
@@ -783,12 +794,26 @@
 
     const _wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
     const _wsUrl   = `${_wsProto}://${location.host}/ws?token=${encodeURIComponent(_authToken)}`;
-    const ws       = new WebSocket(_wsUrl);
+    let ws;
+    let _wsReconnectDelay = 1000;
+    let _wsWasConnected   = false;
 
-    ws.onopen    = () => { sys('Remote-Sitzung aktiv.'); toast('Mit MIA verbunden'); };
-    ws.onclose   = () => sys('Verbindung getrennt — Seite neu laden, um erneut zu verbinden.');
-    ws.onerror   = () => sys('Verbindungsfehler.');
-    ws.onmessage = (e) => {
+    function connectWs() {
+      ws = new WebSocket(_wsUrl);
+
+      ws.onopen = () => {
+        if (_wsWasConnected) sys('Verbindung wiederhergestellt.'); else sys('Remote-Sitzung aktiv.');
+        toast('Mit MIA verbunden');
+        _wsWasConnected = true;
+        _wsReconnectDelay = 1000;
+      };
+      ws.onclose = () => {
+        sys('Verbindung getrennt — verbinde neu…');
+        setTimeout(connectWs, _wsReconnectDelay);
+        _wsReconnectDelay = Math.min(_wsReconnectDelay * 2, 15000);
+      };
+      ws.onerror = () => {};
+      ws.onmessage = (e) => {
       const m = JSON.parse(e.data);
       if (m.type === 'log')           append(m.speaker, m.text);
       if (m.type === 'status')        setStatus(m.state);
@@ -798,7 +823,9 @@
       if (m.type === 'audio')         _playPcm16(m.data, m.rate);
       if (m.type === 'audio_stop')    _stopPlayback();
       if (m.type === 'incoming_call') _showIncomingCall();
-    };
+      };
+    }
+    connectWs();
 
     function setStatus(s) {
       if (s === 'active') {
