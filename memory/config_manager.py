@@ -122,6 +122,15 @@ def save_assistant_config(assistant_name: str, user_name: str) -> None:
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
 
 
+def save_user_name(user_name: str) -> str:
+    """Persist only the user's preferred name/nickname, leaving every other
+    field (assistant name, API keys, ...) untouched. Returns the stripped
+    value that was stored."""
+    name = (user_name or "").strip()
+    _patch_config(user_name=name)
+    return name
+
+
 # ── Assistant voice ──────────────────────────────────────────────────────────
 # Gemini Live prebuilt voices. Names are proper nouns — identical in every
 # language, so this list is safe to show verbatim in any locale.
