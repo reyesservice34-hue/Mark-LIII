@@ -72,6 +72,7 @@ from actions.web_search        import _news as _fetch_news_sync
 from memory.config_manager     import (
     get_brief_enabled, get_voice, get_wake_word_enabled, save_wake_word_enabled,    get_input_device, get_output_device,
     normalize_assistant_name, migrate_assistant_identity,
+    get_personality_mode, PERSONALITY_MODES,
 )
 from core.plugin_loader        import discover_plugins
 from core                      import undo as undo_stack
@@ -715,7 +716,11 @@ class MiaLive:
             f"{_addr}\n\n"
         )
 
-        parts = [time_ctx, identity_ctx]
+        personality_ctx = (
+            f"[PERSONALITY]\n{PERSONALITY_MODES[get_personality_mode()]}\n\n"
+        )
+
+        parts = [time_ctx, identity_ctx, personality_ctx]
         if mem_str:
             parts.append(mem_str)
         parts.append(sys_prompt)

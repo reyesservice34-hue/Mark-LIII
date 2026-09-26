@@ -160,6 +160,34 @@ def test_wake_word_enabled_defaults_false_and_round_trips():
     assert cm.get_wake_word_enabled() is True
 
 
+# ── Personality mode ─────────────────────────────────────────────────────────
+def test_personality_mode_defaults_to_professional():
+    assert cm.get_personality_mode() == cm.DEFAULT_PERSONALITY_MODE == "professional"
+
+
+@pytest.mark.parametrize("mode", ["casual", "concise", "warm", "professional"])
+def test_save_and_get_personality_mode_round_trip(mode):
+    cm.save_personality_mode(mode)
+    assert cm.get_personality_mode() == mode
+
+
+def test_save_personality_mode_with_unknown_value_falls_back_to_default():
+    resolved = cm.save_personality_mode("sarcastic")
+    assert resolved == cm.DEFAULT_PERSONALITY_MODE
+    assert cm.get_personality_mode() == cm.DEFAULT_PERSONALITY_MODE
+
+
+def test_get_personality_mode_falls_back_when_stored_value_is_not_recognised():
+    cm._patch_config(personality_mode="nonsense")
+    assert cm.get_personality_mode() == cm.DEFAULT_PERSONALITY_MODE
+
+
+def test_all_personality_modes_have_non_empty_descriptions():
+    for mode, description in cm.PERSONALITY_MODES.items():
+        assert isinstance(mode, str) and mode
+        assert isinstance(description, str) and description.strip()
+
+
 def test_brief_enabled_defaults_true_and_round_trips():
     assert cm.get_brief_enabled() is True
     cm.save_brief_enabled(False)
