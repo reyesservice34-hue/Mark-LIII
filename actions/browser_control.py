@@ -58,6 +58,35 @@ def _user_agent() -> str:
     )
 
 
+# Persistent automation profiles (used when a real browser profile cannot be
+# opened). Older installs kept them in ~/.jarvis_profiles; the directory is moved
+# once to ~/.mia_profiles so the sign-ins stored in it survive the rename.
+_PROFILES_ROOT        = Path.home() / ".mia_profiles"
+_LEGACY_PROFILES_ROOT = Path.home() / ".jarvis_profiles"
+
+
+def _automation_profile(name: str, legacy_name: str | None = None) -> Path:
+    """Return (and create) ~/.mia_profiles/<name>, migrating legacy data once.
+
+    If the move is impossible (e.g. a browser still holds the old profile open),
+    the legacy directory is used unchanged rather than losing its sign-ins."""
+    root = _PROFILES_ROOT
+    if not root.exists() and _LEGACY_PROFILES_ROOT.is_dir():
+        try:
+            _LEGACY_PROFILES_ROOT.rename(root)
+        except OSError as e:
+            print(f"[Browser] ⚠️  Could not migrate {_LEGACY_PROFILES_ROOT} ({e}) — using it as-is")
+            root = _LEGACY_PROFILES_ROOT
+    target = root / name
+    if legacy_name and not target.exists() and (root / legacy_name).is_dir():
+        try:
+            (root / legacy_name).rename(target)
+        except OSError:
+            target = root / legacy_name
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
 def _real_profile_dir(browser: str) -> str:
     home  = Path.home()
     local = os.environ.get("LOCALAPPDATA", "")
@@ -107,8 +136,7 @@ def _real_profile_dir(browser: str) -> str:
             print(f"[Browser] ✅ Real profile found for {browser}: {p}")
             return str(p)
 
-    fallback = home / ".jarvis_profiles" / browser
-    fallback.mkdir(parents=True, exist_ok=True)
+    fallback = _automation_profile(browser)
     print(f"[Browser] ⚠️  Real profile not found for {browser}, using: {fallback}")
     return str(fallback)
 
@@ -532,9 +560,7 @@ class _BrowserSession:
         engine_obj  = getattr(self._pw, engine_name)
 
         if engine_name == "firefox":
-            profile = _firefox_profile_dir() or str(
-                Path.home() / ".jarvis_profiles" / "firefox"
-            )
+            profile = _firefox_profile_dir() or str(_automation_profile("firefox"))
             kwargs: dict = {
                 "headless":    False,
                 "slow_mo":     0,
@@ -547,18 +573,16 @@ class _BrowserSession:
             try:
                 self._context = await engine_obj.launch_persistent_context(profile, **kwargs)
             except Exception as e:
-                print(f"[Browser] Firefox real profile failed ({e}), using JARVIS profile")
-                jarvis = str(Path.home() / ".jarvis_profiles" / "firefox_jarvis")
-                Path(jarvis).mkdir(parents=True, exist_ok=True)
-                self._context = await engine_obj.launch_persistent_context(jarvis, **kwargs)
+                print(f"[Browser] Firefox real profile failed ({e}), using MIA automation profile")
+                auto_profile = str(_automation_profile("firefox_mia", legacy_name="firefox_jarvis"))
+                self._context = await engine_obj.launch_persistent_context(auto_profile, **kwargs)
 
             self._page = await self._adopt_page()
             print(f"[Browser] ✅ Firefox launched")
             return
 
         if engine_name == "webkit":
-            safari_profile = str(Path.home() / ".jarvis_profiles" / "safari")
-            Path(safari_profile).mkdir(parents=True, exist_ok=True)
+            safari_profile = str(_automation_profile("safari"))
             kwargs = {
                 "headless":    False,
                 "slow_mo":     0,
@@ -609,16 +633,15 @@ class _BrowserSession:
 
         # The real profile could not be opened (browser already open / locked
         # profile / newer Chrome versions block the real profile under
-        # automation). Fall back to a persistent JARVIS automation profile —
+        # automation). Fall back to a persistent MIA automation profile —
         # accounts logged in here once stay logged in on later sessions too.
-        jarvis_profile = str(Path.home() / ".jarvis_profiles" / self.browser_name)
-        Path(jarvis_profile).mkdir(parents=True, exist_ok=True)
-        print(f"[Browser] Retrying with JARVIS profile: {jarvis_profile}")
+        auto_profile = str(_automation_profile(self.browser_name))
+        print(f"[Browser] Retrying with MIA automation profile: {auto_profile}")
 
         try:
-            self._context = await engine_obj.launch_persistent_context(jarvis_profile, **kwargs)
+            self._context = await engine_obj.launch_persistent_context(auto_profile, **kwargs)
             self._page = await self._adopt_page()
-            print(f"[Browser] ✅ Launched [{label}] with JARVIS profile "
+            print(f"[Browser] ✅ Launched [{label}] with MIA automation profile "
                   f"(sign-ins persist across sessions)")
         except Exception as e2:
             raise RuntimeError(f"Could not launch {self.browser_name}: {e2}") from e2
@@ -805,7 +828,7 @@ class _BrowserSession:
     async def screenshot(self, path: str = None) -> str:
         page = await self._get_page()
         try:
-            save_path = path or str(Path.home() / "Desktop" / "jarvis_screenshot.png")
+            save_path = path or str(Path.home() / "Desktop" / "mia_screenshot.png")
             await page.screenshot(path=save_path, full_page=False)
             return f"Screenshot saved: {save_path}"
         except Exception as e:

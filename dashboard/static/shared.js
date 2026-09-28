@@ -16,8 +16,8 @@
 // MiaState model; the renderer shows whichever has priority. Nothing is simulated.
 
 // ── Auth — bearer token ───────────────────────────────────────────────────
-const _authToken  = sessionStorage.getItem('jarvis_token');
-const _sessionKey = sessionStorage.getItem('jarvis_key');
+const _authToken  = sessionStorage.getItem('mia_token');
+const _sessionKey = sessionStorage.getItem('mia_key');
 const _basePath = location.pathname.startsWith('/companion/') ? '/companion' : '';
 const _isDesktopDashboard = location.pathname === '/desktop' || location.pathname.endsWith('/desktop');
 function _url(path) { return _basePath + path; }
@@ -28,7 +28,7 @@ if (!_authToken) {
   // automatically from a previously paired device — no QR re-scan needed.
   // `next` carries the page we were actually trying to reach (e.g. /desktop)
   // through the login round trip, so it doesn't always dump you on /.
-  const _devTok = localStorage.getItem('jarvis_device_token');
+  const _devTok = (localStorage.getItem('mia_device_token') || localStorage.getItem('jarvis_device_token'));
   const _next = encodeURIComponent(location.pathname + location.search);
   location.replace(_devTok
     ? `${_basePath}/auto-device-login?device_token=${encodeURIComponent(_devTok)}&next=${_next}`

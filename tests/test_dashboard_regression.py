@@ -30,7 +30,7 @@ def test_login_is_one_time_and_bad_key_rejected(server, client):
 def test_qr_auto_login_creates_session(server, client):
     key = server.new_key()
     r = client.get("/auto-login", params={"key": key})
-    assert r.status_code == 200 and "jarvis_token" in r.text
+    assert r.status_code == 200 and "mia_token" in r.text
     assert "Link Expired" in client.get("/auto-login", params={"key": key}).text
 
 

@@ -1,0 +1,88 @@
+#!/bin/bash
+# Test Prompt Optimization Engine
+# Shows how natural language gets transformed into perfect prompts
+
+echo ""
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║     🧠 PROMPT OPTIMIZATION ENGINE - DEMONSTRATION              ║"
+echo "║        Natural Language → Optimized Prompt → Execution          ║"
+echo "╚════════════════════════════════════════════════════════════════╝"
+echo ""
+
+cd "$(dirname "$0")"
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Example 1: Pricing Request"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Your Input (Natural Language):"
+echo '  "Erstelle einen Preisplan für mein neues Projekt"'
+echo ""
+echo "JARVIS Processing:"
+python3 scripts/prompt_optimization_engine.py "Erstelle einen Preisplan für mein neues Projekt" 2>&1 | grep -v "^INFO"
+echo ""
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Example 2: Planning Request"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Your Input (Natural Language):"
+echo '  "Plane den nächsten Sprint mit Milestones und Deadlines"'
+echo ""
+echo "JARVIS Processing:"
+python3 scripts/prompt_optimization_engine.py "Plane den nächsten Sprint mit Milestones und Deadlines" 2>&1 | grep -v "^INFO"
+echo ""
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Example 3: Technical Request"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Your Input (Natural Language):"
+echo '  "Schreibe ein Python-Skript für die Datenverarbeitung mit Error Handling"'
+echo ""
+echo "JARVIS Processing:"
+python3 scripts/prompt_optimization_engine.py "Schreibe ein Python-Skript für die Datenverarbeitung mit Error Handling" 2>&1 | grep -v "^INFO"
+echo ""
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Example 4: Research Request"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Your Input (Natural Language):"
+echo '  "Recherchiere die besten KI-Tools auf dem Markt mit Vor- und Nachteilen"'
+echo ""
+echo "JARVIS Processing:"
+python3 scripts/prompt_optimization_engine.py "Recherchiere die besten KI-Tools auf dem Markt mit Vor- und Nachteilen" 2>&1 | grep -v "^INFO"
+echo ""
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Example 5: Advisory Request"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Your Input (Natural Language):"
+echo '  "Gib mir einen Rat wie ich mein Geschäft automatisieren kann"'
+echo ""
+echo "JARVIS Processing:"
+python3 scripts/prompt_optimization_engine.py "Gib mir einen Rat wie ich mein Geschäft automatisieren kann" 2>&1 | grep -v "^INFO"
+echo ""
+
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║                    ✨ DEMONSTRATION COMPLETE                   ║"
+echo "╚════════════════════════════════════════════════════════════════╝"
+echo ""
+echo "📊 What you just saw:"
+echo "   ✅ Natural language input from YOU"
+echo "   ✅ Automatic category detection (pricing/planning/technical/etc)"
+echo "   ✅ Complexity analysis (low/medium/high)"
+echo "   ✅ Language detection (German/English)"
+echo "   ✅ Perfect, optimized prompt generated"
+echo ""
+echo "🎯 Next: This optimized prompt is given to 10-agent system:"
+echo "   → prompt_architect (refines)"
+echo "   → executor (executes)"
+echo "   → Relevant agents (angebot, dispo, recherche, etc)"
+echo "   → reviewer (verifies quality)"
+echo "   → Response to you"
+echo ""
+echo "📝 All optimizations saved in: optimized_prompts_history.json"
+echo ""

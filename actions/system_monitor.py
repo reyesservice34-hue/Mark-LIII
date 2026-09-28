@@ -5,6 +5,7 @@ Zero subprocess calls on all platforms — uses ctypes/pynvml/psutil/wmi only.
 import ctypes
 import platform
 import time
+from datetime import datetime, timedelta
 
 import psutil
 
@@ -19,6 +20,62 @@ DEFAULT_THRESHOLDS = {
 
 _COOLDOWN   = 300
 _CPU_STREAK = 3
+
+# ── Habituation — a reflex that fires identically every time isn't a reflex,
+# it's a broken record. If the same alert type has fired this many times within
+# the window, the wording shifts from "warn every time" to "this keeps
+# happening, is it expected?" ────────────────────────────────────────────────
+_RECUR_WINDOW_DAYS = 7
+_RECUR_THRESHOLD   = 3
+_RECUR_LOG_MAX     = 30   # cap stored timestamps per alert type
+
+
+def _load_alert_log() -> dict:
+    from memory.memory_manager import load_memory
+    data = load_memory().get("alert_log", {})
+    return data if isinstance(data, dict) else {}
+
+
+def _save_alert_log(log: dict) -> None:
+    import json
+    from memory.memory_manager import load_memory, MEMORY_PATH, _lock
+    memory = load_memory()
+    memory["alert_log"] = log
+    with _lock:
+        MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        MEMORY_PATH.write_text(
+            json.dumps(memory, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+
+def _parse_ts(ts: str):
+    try:
+        return datetime.fromisoformat(ts)
+    except Exception:
+        return None
+
+
+def _record_and_check_recurrence(key: str) -> int:
+    """Logs this alert firing and returns how many times this same alert type
+    has fired in the last _RECUR_WINDOW_DAYS days (including now).
+    Best-effort: a broken memory file must never block an alert from firing."""
+    try:
+        log     = _load_alert_log()
+        now     = datetime.now()
+        cutoff  = now - timedelta(days=_RECUR_WINDOW_DAYS)
+        entries = [t for t in log.get(key, []) if (_parse_ts(t) or cutoff) > cutoff]
+        entries.append(now.isoformat())
+        log[key] = entries[-_RECUR_LOG_MAX:]
+        _save_alert_log(log)
+        return len(log[key])
+    except Exception:
+        return 1
+
+
+# entries filter above: an unparseable timestamp falls back to `cutoff`, so
+# `cutoff > cutoff` is False and the bad entry is dropped — a valid datetime
+# is always truthy, so `or` never masks a real (even very old) timestamp.
 
 # ── NVML DLL cache (Windows: nvml.dll, Linux: libnvidia-ml.so.1) ─────────────
 _nvml_lib: object = None
@@ -151,6 +208,18 @@ class SystemMonitor:
     def _record(self, key: str):
         self._last_alert[key] = time.monotonic()
 
+    def _alert_text(self, key: str, value: float, first_time_tpl: str, recurring_tpl: str) -> str:
+        """Logs this firing and picks the message: a fresh warning the first
+        few times, a "this keeps happening" note once it's a known pattern —
+        a reflex that habituates instead of firing identically forever.
+        Both templates are plain (non-f) strings filled in here via .format(),
+        so a template is never evaluated before its variables exist."""
+        count = _record_and_check_recurrence(key)
+        self._record(key)
+        if count >= _RECUR_THRESHOLD:
+            return recurring_tpl.format(value=value, count=count, window=_RECUR_WINDOW_DAYS)
+        return first_time_tpl.format(value=value)
+
     def check(self) -> str | None:
         try:
             cpu  = psutil.cpu_percent(interval=None)
@@ -165,36 +234,48 @@ class SystemMonitor:
         if cpu >= self.thresholds["cpu"]:
             self._cpu_streak += 1
             if self._cpu_streak >= _CPU_STREAK and self._can_alert("cpu"):
-                alerts.append(
-                    f"[SYSTEM_ALERT] CPU usage has been critically high ({cpu:.0f}%) "
+                alerts.append(self._alert_text(
+                    "cpu", cpu,
+                    "[SYSTEM_ALERT] CPU usage has been critically high ({value:.0f}%) "
                     "for several seconds. Warn the user in their language and suggest "
-                    "closing heavy applications."
-                )
-                self._record("cpu")
+                    "closing heavy applications.",
+                    "[SYSTEM_ALERT] CPU usage is critically high ({value:.0f}%) again — "
+                    "the {count}th time in {window} days. Briefly mention in the user's "
+                    "language that this keeps happening and ask if it's expected (e.g. a "
+                    "known scheduled task), rather than repeating the same warning.",
+                ))
                 self._cpu_streak = 0
         else:
             self._cpu_streak = 0
 
         if ram >= self.thresholds["ram"] and self._can_alert("ram"):
-            alerts.append(
-                f"[SYSTEM_ALERT] RAM is at {ram:.0f}% — nearly exhausted. "
-                "Warn the user in their language and suggest freeing memory."
-            )
-            self._record("ram")
+            alerts.append(self._alert_text(
+                "ram", ram,
+                "[SYSTEM_ALERT] RAM is at {value:.0f}% — nearly exhausted. "
+                "Warn the user in their language and suggest freeing memory.",
+                "[SYSTEM_ALERT] RAM is at {value:.0f}% again — the {count}th time in "
+                "{window} days. Briefly mention that this keeps happening and ask if "
+                "it's expected, rather than repeating the same warning.",
+            ))
 
         if temp > 0 and temp >= self.thresholds["temp"] and self._can_alert("temp"):
-            alerts.append(
-                f"[SYSTEM_ALERT] CPU temperature is {temp:.0f}°C — above the safe limit. "
+            alerts.append(self._alert_text(
+                "temp", temp,
+                "[SYSTEM_ALERT] CPU temperature is {value:.0f}°C — above the safe limit. "
                 "Warn the user in their language and advise reducing system load "
-                "or checking cooling."
-            )
-            self._record("temp")
+                "or checking cooling.",
+                "[SYSTEM_ALERT] CPU temperature is {value:.0f}°C again — the {count}th "
+                "time in {window} days. Briefly mention this keeps happening rather than "
+                "repeating the full warning.",
+            ))
 
         if gpu >= 0 and gpu >= self.thresholds["gpu"] and self._can_alert("gpu"):
-            alerts.append(
-                f"[SYSTEM_ALERT] GPU load is at {gpu:.0f}%. "
-                "Briefly inform the user in their language."
-            )
-            self._record("gpu")
+            alerts.append(self._alert_text(
+                "gpu", gpu,
+                "[SYSTEM_ALERT] GPU load is at {value:.0f}%. "
+                "Briefly inform the user in their language.",
+                "[SYSTEM_ALERT] GPU load is at {value:.0f}% again — the {count}th time "
+                "in {window} days. A brief, low-key mention is enough.",
+            ))
 
         return " ".join(alerts) if alerts else None

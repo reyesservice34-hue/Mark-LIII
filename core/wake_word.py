@@ -1,5 +1,5 @@
 """
-Local wake-word detection for JARVIS ("Hey Jarvis").
+Local wake-word detection for MIA.
 
 Design goals:
   • ZERO cost when the feature is off — openwakeword is imported ONLY inside
@@ -13,7 +13,11 @@ Design goals:
     network call except the one-time model download the user triggers from the UI.
 
 openwakeword ships small ONNX models (a few MB each) and runs comfortably on a
-CPU. The pretrained wake phrase used here is "Hey Jarvis".
+CPU. openwakeword has no pretrained "Hey MIA" model, so the spoken phrase is
+still the one the bundled pretrained model was trained on (WAKE_PHRASE below).
+This is a technical model identifier only: it never reaches the system prompt,
+the assistant's name or its persona. Swapping in a custom-trained "Hey MIA"
+model means changing WAKE_MODEL / WAKE_PHRASE here and nowhere else.
 """
 from __future__ import annotations
 
@@ -24,8 +28,10 @@ import threading
 from pathlib import Path
 from typing import Callable
 
-# Pretrained openwakeword model that listens for "Hey Jarvis".
+# Pretrained openwakeword model (legacy model id — see module docstring).
 WAKE_MODEL = "hey_jarvis"
+# What the user has to say for WAKE_MODEL. Every UI/log text reads it from here.
+WAKE_PHRASE = "Hey Jarvis"
 # Score in [0,1]; above this counts as a detection. Tunable per environment.
 DEFAULT_THRESHOLD = 0.5
 # Mic frames arrive at 16 kHz int16; this is just the detector's input rate.
@@ -137,7 +143,7 @@ class WakeWordDetector:
         self._ready = True
         self._thread = threading.Thread(target=self._loop, daemon=True, name="WakeWordThread")
         self._thread.start()
-        self._logger("Wake word: listening for 'Hey Jarvis'.")
+        self._logger(f"Wake word: listening for '{WAKE_PHRASE}'.")
         return True
 
     def stop(self) -> None:
@@ -178,9 +184,9 @@ class WakeWordDetector:
                 scores = self._model.predict(np.asarray(frame, dtype=np.int16))
                 score = 0.0
                 if isinstance(scores, dict):
-                    # match the jarvis model regardless of exact key suffix
+                    # match WAKE_MODEL regardless of exact key suffix
                     for k, v in scores.items():
-                        if "jarvis" in k.lower():
+                        if WAKE_MODEL in k.lower():
                             score = max(score, float(v))
                     if score == 0.0 and scores:
                         score = max(float(v) for v in scores.values())

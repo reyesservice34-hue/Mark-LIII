@@ -1,0 +1,11 @@
+{
+  "setup_type": "autonomous",
+  "timestamp": "2026-09-17T13:56:32.989507",
+  "credentials": {
+    "account_sid_sample": "AC48E822D6...",
+    "whatsapp_number": "whatsapp:+14155552671"
+  },
+  "mode": "test_local",
+  "upgrade_path": "Replace TWILIO_* values in .env with real credentials from https://www.twilio.com/console",
+  "status": "READY"
+}

@@ -312,8 +312,8 @@
     _soundOn = b.dataset.sound === 'on'; try { localStorage.setItem('mia_sound', _soundOn ? 'on' : 'off'); } catch (_) {}
     if (!_soundOn) _stopPlayback(); segState('[data-sound]', 'sound', b.dataset.sound);
   }));
-  $('reconnect-btn').addEventListener('click', () => { sessionStorage.removeItem('jarvis_token'); location.reload(); });
-  $('logout-btn').addEventListener('click', () => { sessionStorage.removeItem('jarvis_token'); sessionStorage.removeItem('jarvis_key'); localStorage.removeItem('jarvis_device_token'); location.replace(_basePath + '/login'); });
+  $('reconnect-btn').addEventListener('click', () => { sessionStorage.removeItem('mia_token'); location.reload(); });
+  $('logout-btn').addEventListener('click', () => { sessionStorage.removeItem('mia_token'); sessionStorage.removeItem('mia_key'); localStorage.removeItem('mia_device_token'); localStorage.removeItem('jarvis_device_token'); location.replace(_basePath + '/login'); });
   let revokeArmed = 0;
   $('revoke-btn').addEventListener('click', async e => {
     const btn = e.currentTarget;

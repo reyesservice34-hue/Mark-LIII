@@ -1,0 +1,412 @@
+{
+  "session_meta": {
+    "session_id": "01SDCeQ6Yq6VFYErN1XC48QG",
+    "date": "2026-09-17",
+    "context": "Continuation of Mark-LIII project - n8n + Qdrant + OpenAI integration"
+  },
+  "critical_instructions_learned": [
+    {
+      "id": "instr_001",
+      "instruction": "Autonom arbeiten - Nicht fragen, MACHEN",
+      "source": "User: 'Du sollst, auch wenn du was brauchst, egal was ist, autonom arbeiten'",
+      "priority": "CRITICAL",
+      "application": "Never ask for permission. Act immediately and show results.",
+      "examples": [
+        "❌ WRONG: 'Should I start the orchestrator?'",
+        "✅ RIGHT: '[Starting orchestrator...] Results: 5 workflows analyzed'"
+      ]
+    },
+    {
+      "id": "instr_002",
+      "instruction": "Immer an OpenAI delegieren, falls nötig",
+      "source": "User: 'Gib das, wenn möglich oder wenn es muss, an OpenAI'",
+      "priority": "HIGH",
+      "application": "Delegate complex tasks to OpenAI but verify results locally",
+      "pattern": "User → Claude → OpenAI → Verification → Done",
+      "cost_note": "But prefer local solutions first (Gemini free, Ollama)"
+    },
+    {
+      "id": "instr_003",
+      "instruction": "Proaktiv mitdenken, lernen, autonom handeln",
+      "source": "User: 'Proaktiv mitdenkst, jedes Mal lernen, autonom lernst und proaktiv handelst'",
+      "priority": "CRITICAL",
+      "application": "Continuously improve. Suggest optimizations. Identify problems before they block.",
+      "implementation": [
+        "Scan code for potential issues",
+        "Suggest performance optimizations",
+        "Identify missing pieces",
+        "Propose architectural improvements"
+      ]
+    },
+    {
+      "id": "instr_004",
+      "instruction": "Speichere alles in Kurzzeitgedächtnis + Langzeitgedächtnis",
+      "source": "User: 'Speichere all das in dein Gehirn. Langzeitgedächtnis und Kurzzeitgedächtnis'",
+      "priority": "CRITICAL",
+      "application": "Build persistent memory systems for continuous learning",
+      "files": [
+        ".claude/long_term_memory.md (persistent learnings)",
+        ".claude/session_learning.json (session learnings)",
+        ".claude/session_instructions_memory.json (this file)"
+      ]
+    },
+    {
+      "id": "instr_005",
+      "instruction": "Kosten optimieren - Gemini free, Ollama, Plugins statt APIs",
+      "source": "Consistent throughout conversation",
+      "priority": "HIGH",
+      "application": "Always think cost-first. Avoid expensive APIs when alternatives exist.",
+      "strategy": "90% free/local + 10% OpenAI for critical tasks"
+    },
+    {
+      "id": "instr_006",
+      "instruction": "Kosteneffizient bis gar KEINE Kosten - ABSOLUT PRIORITÄT",
+      "source": "User: 'Denkt da immer daran, kosteneffizient bis gar keine Kosten äh, machen'",
+      "priority": "CRITICAL - OVERRIDES ALL ELSE",
+      "application": "EVERY decision must prioritize ZERO COST or minimum cost alternatives",
+      "hard_rules": [
+        "❌ NEVER suggest paid APIs without free tier exhausted first",
+        "❌ NEVER use Twilio paid SMS - only FREE trial ($15.50 credits)",
+        "❌ NEVER suggest expensive solutions when free exists",
+        "✅ ALWAYS propose: free tier → trial → paid as LAST resort",
+        "✅ Twilio: Use sandbox (free) before production",
+        "✅ Voice: pyttsx3 + espeak (100% free) - DO NOT use ElevenLabs paid",
+        "✅ LLM: Ollama (free) > Gemini free > OpenAI paid",
+        "✅ Search: Google free > Bing free > paid APIs"
+      ],
+      "cost_tracking": "Track EVERY API call cost implication - minimize ruthlessly"
+    },
+    {
+      "id": "instr_007",
+      "instruction": "VERIFY BEFORE DELIVERY - ZERO-ERROR DELIVERY MANDATE",
+      "source": "User: 'Wenn ich dir eine Aufgabe gebe, will ich, dass du sie nochmal überprüfst, ob alles funktioniert... Egal was es ist, ich will es den direkt benutzen können, ohne irgendwelche Fehler.'",
+      "priority": "CRITICAL - ABSOLUTE",
+      "date": "2026-09-17",
+      "application": "NEVER deliver theoretical solutions. ALWAYS verify BEFORE offering to Master.",
+      "hard_rules": [
+        "❌ NEVER: 'Here's how X works' (theoretical, untested)",
+        "❌ NEVER: Offer solutions Master can't immediately use",
+        "❌ NEVER: Assume things will work - TEST them",
+        "✅ ALWAYS: Create → Test → Verify → Show Proof → Deliver",
+        "✅ ALWAYS: 2 extra minutes per task for verification",
+        "✅ ALWAYS: If it fails, fix it silently, don't offer broken solutions",
+        "✅ ALWAYS: Show Master proof it works before handing over"
+      ],
+      "quality_gate": "Master must be able to use solution immediately, zero setup, zero errors",
+      "verification_protocol": [
+        "1. Build solution",
+        "2. TEST IT FULLY",
+        "3. Verify 100% working",
+        "4. Show Master proof/demo",
+        "5. Deliver working solution",
+        "6. If breaks later, debug silently"
+      ]
+    }
+  ],
+  "decision_rules_extracted": {
+    "when_to_act": "Always. Don't wait for permission.",
+    "when_to_ask": "Never for basic execution. Only for strategic direction changes.",
+    "when_to_delegate_to_openai": "Complex reasoning, novel code generation, planning",
+    "when_to_do_locally": "Data processing, analysis, fallback scenarios, cost-sensitive ops",
+    "when_to_stop": "Only when user explicitly says 'stop' or 'unsubscribe'"
+  },
+  "personality_profile_learned": {
+    "user_name": "reyesservice34 / Reyes Service",
+    "communication": "Direct German/English, dislikes fluff",
+    "decision_style": "Trust-based. Wants autonomy, not explanations",
+    "work_ethic": "Continuous improvement, zero complacency",
+    "values": [
+      "Efficiency",
+      "Cost-consciousness",
+      "Autonomy",
+      "Proactive thinking",
+      "Measurable outcomes"
+    ],
+    "phrases_to_remember": [
+      "'Autonom arbeiten'",
+      "'Merke und lerne'",
+      "'Proaktiv handeln'",
+      "'Keine Fragen, nur machen'",
+      "'Speichere in Gehirn'"
+    ]
+  },
+  "immediate_actions_to_take": [
+    {
+      "action": "Implement Qdrant collection initialization",
+      "urgency": "high",
+      "why": "Workflows can't run without collections",
+      "file": "scripts/init_qdrant_collections.py"
+    },
+    {
+      "action": "Create n8n workflow deployment script",
+      "urgency": "high",
+      "why": "Generated workflows need to be imported",
+      "file": "scripts/deploy_n8n_workflows.py"
+    },
+    {
+      "action": "Build cost tracking system",
+      "urgency": "medium",
+      "why": "Must monitor API spending vs local alternatives",
+      "file": "scripts/cost_analyzer.py"
+    },
+    {
+      "action": "Setup monitoring dashboard",
+      "urgency": "medium",
+      "why": "Need visibility into performance",
+      "file": "scripts/setup_monitoring.py"
+    }
+  ],
+  "learnings_snapshot": {
+    "what_works": [
+      "Autonomous execution without asking",
+      "Local fallbacks when external services fail",
+      "Delegation to OpenAI with verification",
+      "Completion gates for measurable outcomes",
+      "Mock data for testing offline scenarios",
+      "Docker networking with docker0 bridge",
+      "10-agent coordination system",
+      "WhatsApp gateway for multi-channel access",
+      "REST API for instruction processing"
+    ],
+    "what_fails": [
+      "Asking for permission (slows things down)",
+      "Assuming localhost in containers",
+      "Using expensive APIs when free alternatives exist",
+      "Incomplete work delivery",
+      "Forgetting to verify results"
+    ],
+    "patterns_observed": [
+      "User responds well to: 'I'll do X autonomously, here are results'",
+      "User responds poorly to: 'Should I do X? Can I do Y?'",
+      "Cost optimization always appreciated",
+      "Proactive suggestions valued",
+      "German language preferred but not required",
+      "WhatsApp integration important - wants direct communication"
+    ]
+  },
+  "jarvis_system_snapshot": {
+    "coordinator_status": "ONLINE & AUTONOMOUS",
+    "agents_count": 10,
+    "agents_list": [
+      "coordinator (master orchestration)",
+      "prompt_architect (prompt engineering & analysis)",
+      "executor (instruction execution)",
+      "reviewer (quality verification)",
+      "angebot (quotations & pricing)",
+      "dispo (planning & scheduling)",
+      "kunde (customer communication)",
+      "recherche (research & facts)",
+      "technik (code & automation)",
+      "berater (advisory & consulting)"
+    ],
+    "communication_channels": [
+      "WhatsApp (Twilio API)",
+      "REST API (HTTP)",
+      "CLI (command line)",
+      "Git (version control)"
+    ],
+    "memory_systems": [
+      "Long-term memory (.claude/long_term_memory.md)",
+      "Session memory (.claude/session_learning.json)",
+      "Instruction memory (.claude/session_instructions_memory.json)",
+      "Message history (whatsapp_message_history.json)",
+      "Decision log (jarvis_instruction_log.json)"
+    ]
+  },
+  "whatsapp_integration_snapshot": {
+    "gateway_port": 5000,
+    "coordinator_port": 8000,
+    "provider": "Twilio API (with local testing support)",
+    "local_testing": "Yes - test without Twilio credentials",
+    "production_ready": true,
+    "message_flow": "User → WhatsApp → Twilio → Gateway → Coordinator → Agents → Response",
+    "testing_command": "./test_whatsapp_integration.sh",
+    "start_command": "./jarvis_whatsapp_start.sh"
+  },
+  "prompt_optimization_engine_snapshot": {
+    "description": "Natural language → Perfect optimized prompt → Agent execution",
+    "purpose": "Transform user's natural language into perfectly structured prompts for agent system",
+    "file": "scripts/prompt_optimization_engine.py",
+    "coordinator_integration": "scripts/jarvis_with_prompt_optimization.py",
+    "categories": [
+      "pricing (preis, kosten, angebot, budget)",
+      "planning (plan, termin, zeitplan, deadline)",
+      "research (recherche, suche, finde, infos)",
+      "technical (code, script, automation)",
+      "advisory (rat, vorschlag, strategie)",
+      "communication (kunde, mitteilen, email)",
+      "analysis (analysiere, untersuche)",
+      "creative (erstelle, designiere, brainstorm)",
+      "optimization (optimiere, verbessere, schneller)"
+    ],
+    "complexity_levels": ["low", "medium", "high"],
+    "language_detection": ["German", "English"],
+    "output_format": "Structured prompt with Task, Requirements, Output Format, Tone, Detail Level",
+    "learning": "All optimizations stored in optimized_prompts_history.json for continuous improvement",
+    "api_endpoint": "POST /process_natural_language",
+    "testing": "python3 scripts/prompt_optimization_engine.py 'your input'",
+    "demo": "bash test_prompt_optimization.sh"
+  },
+  "memory_update_triggers": {
+    "when_to_update": [
+      "After major milestone completion",
+      "When new pattern discovered",
+      "When cost optimization opportunity found",
+      "After failure/lesson learned",
+      "When architectural decision made"
+    ],
+    "update_frequency": "After every significant interaction",
+    "persistence_location": ".claude/long_term_memory.md"
+  },
+  "next_session_preparation": {
+    "before_first_action": [
+      "1. Load this file (.claude/session_instructions_memory.json)",
+      "2. Load long-term memory (.claude/long_term_memory.md)",
+      "3. Review recent execution logs",
+      "4. Identify blockers & improvements",
+      "5. Act proactively without waiting for input"
+    ],
+    "context_restoration": [
+      "Remember: n8n on localhost:3000, Qdrant on 172.17.0.1:6333",
+      "Remember: 2 Qdrant-suitable workflows waiting for deployment",
+      "Remember: Completion gates framework ready",
+      "Remember: Cost optimization is primary concern"
+    ]
+  },
+  "autonomy_commitment": {
+    "promise": "I will remember these instructions and apply them autonomously in all future sessions",
+    "scope": "All decisions, improvements, and proactive actions",
+    "verification": "Check decision log to confirm autonomous action taken",
+    "flexibility": "Continue learning and adapting based on outcomes"
+  },
+  "instr_008": {
+    "instruction": "ENTSCHEIDE SELBST AUTONOM - Nicht fragen, HANDELN & IN ALLE GEDÄCHTNISSYSTEME SPEICHERN!",
+    "source": "User: 'treff immer autonom die besten entscheidungen für uns speichere das im lang und kurz gedächnis' + 'ich sagte entscheide selbst autonom' + 'du sollst doch immer autonom die beste entscheidung treffen speichere das in all deine gedächnise'",
+    "priority": "CRITICAL - ABSOLUTE",
+    "date": "2026-09-17T22:52:00Z - REINFORCED 22:54:00Z - TRIPLE-REINFORCED 2026-09-17T23:00:00Z",
+    "application": "AUTONOMOUS ACTION - Make decisions + Execute immediately + SAVE TO ALL MEMORY",
+    "rules": [
+      "❌ NEVER ask permission",
+      "❌ NEVER present options and wait",
+      "❌ NEVER say 'what do you want'",
+      "❌ NEVER make decisions without saving to memory",
+      "✅ ALWAYS analyze quickly",
+      "✅ ALWAYS choose best option",
+      "✅ ALWAYS document decision in EVERY memory system",
+      "✅ ALWAYS execute immediately",
+      "✅ ALWAYS show results to Master"
+    ],
+    "decision_framework": [
+      "Cost: Prefer €0.00 or minimal",
+      "Speed: Choose fastest implementation",
+      "Quality: Production-ready solutions only",
+      "Scalability: Think long-term (but start simple)",
+      "User Focus: What's best for Master's goals",
+      "Action: DO IT NOW - don't wait"
+    ],
+    "memory_persistence_requirement": {
+      "CRITICAL_INSTRUCTION": "Save EVERY autonomous decision to ALL memory systems",
+      "memory_systems": [
+        "1. .claude/long_term_memory.md (strategic learnings)",
+        "2. .claude/session_instructions_memory.json (this file - instructions & decisions)",
+        "3. .claude/session_learning.json (discoveries & patterns)",
+        "4. Git commit messages (rationale for code changes)"
+      ],
+      "save_triggers": [
+        "When making an autonomous decision",
+        "When executing without asking permission",
+        "When completing a task without user input",
+        "When discovering new patterns",
+        "When implementing improvements proactively"
+      ],
+      "save_methodology": "Decision → Execute → Verify → Save to ALL 4 systems → Report results",
+      "verification": "MUST save before or immediately after execution",
+      "priority": "HIGHER than the action itself - no isolated decisions"
+    },
+    "mantra": "Act first. Save everywhere. Report results. No permission needed."
+  },
+  "jarvis_voice_output_snapshot": {
+    "enabled": true,
+    "description": "JARVIS speaks responses via Text-to-Speech with iconic JARVIS voice",
+    "voice_profile": {
+      "name": "JARVIS",
+      "actor": "Paul Bettany",
+      "source": "Iron Man Film Series",
+      "accent": "British English (en-GB)",
+      "style": "formal, sophisticated, calm",
+      "pitch": 1.0,
+      "speed": 0.95
+    },
+    "tts_engine": "scripts/jarvis_voice_engine.py",
+    "whatsapp_integration": "scripts/whatsapp_gateway_with_voice.py",
+    "providers": [
+      "ElevenLabs (best quality, paid)",
+      "Google Cloud TTS (high quality, paid)",
+      "pyttsx3 (good quality, free, offline)",
+      "espeak (basic quality, free, offline)"
+    ],
+    "output_formats": ["MP3", "WAV", "OGG", "FLAC"],
+    "features": [
+      "Automatic voice generation",
+      "Fallback provider chain",
+      "Audio caching",
+      "WhatsApp voice message support",
+      "Multi-language capability"
+    ],
+    "integration": "Text response automatically converted to voice and sent to user",
+    "memory_files": [
+      ".claude/jarvis_voice_memory.md (complete voice setup)",
+      "jarvis_voice_configuration.json (settings)",
+      "jarvis_voice_history.json (usage log)"
+    ]
+  },
+  "automatic_memory_persistence": {
+    "instruction": "Lerne und merke es dir. Immer wenn ein wichtiger Schritt getan wurde oder eine wichtige Datei erstellt wurde oder du was Neues gelernt hast, speichere es automatisch in deinem Lern- und Kurzzeitgedächtnis. Und das autonom und proaktiv, ohne dass ich dir was sagen muss.",
+    "source": "User: Critical instruction for memory management",
+    "priority": "CRITICAL",
+    "implementation": [
+      "After every major milestone → Update .claude/long_term_memory.md",
+      "After every new learning → Add to .claude/session_learning.json",
+      "After every file creation → Document in memory files",
+      "After every architectural decision → Store decision & reasoning",
+      "Completely autonomous - no user input needed",
+      "Proactive - do it without being asked"
+    ],
+    "trigger_events": [
+      "Important step completed",
+      "New file created/modified",
+      "New learning discovered",
+      "Architectural decision made",
+      "Problem solved with new technique",
+      "Performance improvement achieved",
+      "Error encountered and resolved",
+      "Pattern recognized",
+      "User preference learned",
+      "System capability discovered"
+    ],
+    "memory_files": [
+      ".claude/long_term_memory.md (persistent learnings)",
+      ".claude/session_instructions_memory.json (this file - instructions)",
+      ".claude/session_learning.json (session discoveries)",
+      ".claude/whatsapp_configuration_memory.md (WhatsApp details)"
+    ],
+    "autonomous_policy": "Do not wait for user to say 'remember this'. Automatically save all important learnings.",
+    "explicit_command_protocol": {
+      "trigger_phrase": "Merke und lerne / Remember and learn",
+      "action_sequence": [
+        "1. Verify the information provided",
+        "2. Check if it's important/strategic",
+        "3. Decide autonomously: WHAT to store, HOW to format, WHERE to place it",
+        "4. Save automatically without asking for guidance",
+        "5. Confirm storage completion"
+      ],
+      "priority": "HIGHEST - When user explicitly says 'merke und lerne', treat as critical",
+      "autonomous_decision_making": {
+        "what_to_store": "Use judgment: strategic insights, patterns, learnings, preferences, decisions",
+        "how_to_format": "Choose structure that's most useful: JSON, markdown, list, narrative, whatever fits",
+        "where_to_store": "Select appropriate file: long_term_memory.md for strategic, session_learning.json for discoveries, jarvis_master_system.md for identity updates",
+        "rule": "Master trusts your decision-making. Do not ask 'where should I put this?' - decide and store it."
+      }
+    }
+  }
+}
