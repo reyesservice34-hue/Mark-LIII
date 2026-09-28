@@ -1093,6 +1093,16 @@ class DashboardServer:
             else:
                 text = (body.get("text") or "").strip()
             if text:
+                import re as _re
+                _match = _re.search(r"/root/Mark-LIII/[A-Za-z0-9_./-]+", text)
+                if _match:
+                    _root = _Path("/root/Mark-LIII").resolve()
+                    _target = _Path(_match.group(0)).resolve()
+                    if _target.is_relative_to(_root) and _target.is_file():
+                        _content = _target.read_text(encoding="utf-8", errors="ignore")[:12000]
+                        await self.broadcast({"type": "log", "speaker": "jarvis",
+                                              "text": f"Ich habe die Datei gelesen: {_target}\n\n{_content}"})
+                        return JSONResponse({"ok": True, "local_file_read": str(_target)})
                 await self._command_queue.put(text)
                 if self._wake_callback:
                     self._wake_callback()
@@ -1116,6 +1126,21 @@ class DashboardServer:
                 text = (body.get("text") or "").strip()
             if not text:
                 return JSONResponse({"error": "empty text"}, status_code=400)
+            # Deterministic local project-file access: an explicit Mark-LIII path
+            # must be read before MIA answers; do not make a small local model guess.
+            import re as _re
+            _match = _re.search(r"/root/Mark-LIII/[A-Za-z0-9_./-]+", text)
+            if _match:
+                _root = _Path("/root/Mark-LIII").resolve()
+                _target = _Path(_match.group(0)).resolve()
+                if _target.is_relative_to(_root) and _target.is_file():
+                    _content = _target.read_text(encoding="utf-8", errors="ignore")
+                    _shown = _content[:12000]
+                    if len(_content) > len(_shown):
+                        _shown += f"\n\n[Ausgabe gekuerzt; {len(_content)} Zeichen insgesamt.]"
+                    return JSONResponse({"ok": True, "understood_as": text,
+                                         "answer": f"Ich habe die Datei gelesen: {_target}\n\n{_shown}"})
+                return JSONResponse({"error": f"Projektdatei nicht gefunden: {_target}"}, status_code=404)
             try:
                 import sys as _sys
                 from pathlib import Path as _Path

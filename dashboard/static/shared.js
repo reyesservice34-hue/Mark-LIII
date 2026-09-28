@@ -374,14 +374,14 @@ async function doSend() {
   const enc  = _encrypt(txt);
   const body = enc ? { enc } : { text: txt };
   try {
-    const response = await _authFetch('/api/command', {
+    const response = await _authFetch('/api/local-chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    if (!response.ok) throw new Error();
-    _showThinking();
-    _S.set('thinking', true, 25000);
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || 'Lokale MIA-Antwort fehlgeschlagen.');
+    append('jarvis', result.answer || 'Ich konnte darauf lokal keine Antwort erzeugen.');
   } catch {
     sys('Senden fehlgeschlagen — Text wiederhergestellt.');
     if (!inp.value) inp.value = txt;

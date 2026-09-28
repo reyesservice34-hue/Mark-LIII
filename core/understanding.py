@@ -34,7 +34,27 @@ _FILLERS = re.compile(
     re.IGNORECASE,
 )
 _MULTI_SPACE = re.compile(r"\s{2,}")
-_REPEATED_START = re.compile(r"^(.{3,30}?),\s*\1", re.IGNORECASE)  # "ich möchte, ich möchte"
+_DISCOURSE_ALSO = re.compile(r"(?:^|[,;])\s*also\b[,]?\s*", re.IGNORECASE)
+_SPACE_BEFORE_PUNCTUATION = re.compile(r"\s+([,;:.!?])")
+_REPEATED_PUNCTUATION = re.compile(r"([,;:.!?])(?:\s*\1)+")
+# Nur typische abgebrochene Absichtsanfänge zusammenziehen. Eine allgemeine
+# Wort-Deduplizierung würde gewollte Verstärkungen ("sehr, sehr wichtig") oder
+# Mengen-/Maßangaben beschädigen.
+_REPEATED_INTENT = re.compile(
+    r"\b(ich\s+(?:möchte|will|wollte|kann|könnte|brauche|hätte))\s*,?\s*\1\b",
+    re.IGNORECASE,
+)
+_OVERLAPPING_REQUEST = re.compile(
+    r"^(kannst\s+du|könntest\s+du|können\s+sie|könnten\s+sie)\s+"
+    r"ich\s+möchte\s+dass\s+du\s+",
+    re.IGNORECASE,
+)
+_QUESTION_START = re.compile(
+    r"^(?:wer|was|wann|wo|wohin|woher|warum|wieso|weshalb|wie|welch\w*|"
+    r"kannst\s+du|könntest\s+du|können\s+sie|könnten\s+sie|"
+    r"hast\s+du|haben\s+sie|bist\s+du|sind\s+sie|darf\s+ich|soll\s+ich)\b",
+    re.IGNORECASE,
+)
 
 _CLARIFY_SYSTEM_PROMPT = (
     "Du bist eine reine TEXT-BEREINIGUNG, keine Assistentin. Du beantwortest NICHTS, "
@@ -65,12 +85,31 @@ _CLARIFY_SYSTEM_PROMPT = (
 
 def _rule_based_cleanup(text: str) -> str:
     cleaned = _FILLERS.sub("", text)
-    cleaned = _MULTI_SPACE.sub(" ", cleaned).strip(" ,.")
-    m = _REPEATED_START.match(cleaned)
-    if m:
-        cleaned = cleaned[m.end(1):].lstrip(", ").strip()
-        cleaned = m.group(1) + " " + cleaned if not cleaned.lower().startswith(m.group(1).lower()) else cleaned
-    return cleaned.strip()
+    # "also" nur am Anfang oder direkt nach einer Sprechpause als Fuellwort
+    # entfernen; in Saetzen wie "wenn A, also gilt B" kann es Bedeutung tragen.
+    cleaned = _DISCOURSE_ALSO.sub(" ", cleaned)
+    cleaned = _MULTI_SPACE.sub(" ", cleaned)
+    cleaned = _SPACE_BEFORE_PUNCTUATION.sub(r"\1", cleaned)
+    # Ein entferntes Fuellwort zwischen zwei Sprechpausen hinterlaesst sonst
+    # ",,"; dort gehoert gar kein Komma in den bereinigten Satz.
+    cleaned = re.sub(r",\s*,", " ", cleaned)
+    cleaned = _REPEATED_PUNCTUATION.sub(r"\1", cleaned)
+    cleaned = re.sub(r"(?:^|\s),\s*", " ", cleaned)
+    cleaned = _REPEATED_INTENT.sub(r"\1", cleaned)
+    cleaned = cleaned.strip()
+    # Bei der ueberlagerten Form die bereits grammatikalisch vollstaendige
+    # Wunschform behalten. Das vermeidet eine falsche Verbform wie
+    # "Kannst du ... startest?", ohne Verben allgemein umkonjugieren zu raten.
+    cleaned = _OVERLAPPING_REQUEST.sub("Ich möchte, dass du ", cleaned)
+    cleaned = _MULTI_SPACE.sub(" ", cleaned).strip(" ,.;:!?")
+    if not cleaned:
+        return ""
+
+    # Nur das erste Zeichen normalisieren; der Rest bleibt unverändert, damit
+    # Eigennamen, Maße, Datums- und Zeitangaben nicht umgeschrieben werden.
+    cleaned = cleaned[0].upper() + cleaned[1:]
+    ending = "?" if _QUESTION_START.match(cleaned) else "."
+    return cleaned + ending
 
 
 def clarify(raw_text: str, timeout: float = 8.0) -> str:

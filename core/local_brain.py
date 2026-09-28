@@ -33,7 +33,7 @@ PROMPT_PATH = BASE_DIR / "core" / "prompt.txt"
 
 OLLAMA_URL = "http://127.0.0.1:11434"       # Ollama laeuft bereits lokal AUF dem Brain-Server (15GB RAM, 8 Kerne)
 SPEACHES_URL = "http://127.0.0.1:8005"      # mia-speaches-kerstin, lokal auf diesem (Brain) Server
-OLLAMA_MODEL = "qwen2.5:3b"                 # dasselbe Modell wie understanding.py - vermeidet teures Modell-Wechseln in Ollama
+OLLAMA_MODEL = "qwen3:1.7b"                 # dasselbe Modell wie understanding.py - vermeidet teures Modell-Wechseln in Ollama
 
 
 import re as _re_top
@@ -332,7 +332,7 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
     for _round in range(4):  # max 4 Tool-Call-Runden pro Turn, verhindert Endlosschleifen
         resp = requests.post(
             f"{OLLAMA_URL}/api/chat",
-            json={"model": OLLAMA_MODEL, "messages": messages, "stream": False,
+            json={"model": OLLAMA_MODEL, "messages": messages, "stream": False, "think": False,
                   "keep_alive": "30m", "options": {"temperature": 0.0},  # deterministisch: bei Default-Temperatur driftete das 3B-Modell in Tool-Runden gelegentlich ab
                   **({"tools": tools} if tools else {})},
             timeout=180,
@@ -455,7 +455,7 @@ def chat_stream_and_speak(user_text: str, history: list[dict] | None = None, voi
     for _round in range(4 if not skip_tool_rounds else 0):
         resp = requests.post(
             f"{OLLAMA_URL}/api/chat",
-            json={"model": OLLAMA_MODEL, "messages": messages, "tools": tools, "stream": False,
+            json={"model": OLLAMA_MODEL, "messages": messages, "tools": tools, "stream": False, "think": False,
                   "keep_alive": "30m", "options": {"temperature": 0.0}},  # deterministisch: bei Default-Temperatur driftete das 3B-Modell in Tool-Runden gelegentlich in andere Sprachen ab und rief das Tool nicht auf
             timeout=120,  # 60s war zu knapp: nach einem Embedding-Call (bge-m3) muss Ollama das Chat-Modell ggf. neu laden
         )
@@ -511,7 +511,7 @@ def chat_stream_and_speak(user_text: str, history: list[dict] | None = None, voi
     full_answer = ""
     resp = requests.post(
         f"{OLLAMA_URL}/api/chat",
-        json={"model": OLLAMA_MODEL, "messages": messages, "stream": True,
+        json={"model": OLLAMA_MODEL, "messages": messages, "stream": True, "think": False,
               "keep_alive": "30m",  # Chat-Modell warm halten, sonst Neuladen nach Embedding-Calls
               "options": {"temperature": 0.0}},
         timeout=300,  # Read-Timeout bis zum ersten Token: Prompt-Eval mit Wissens-Kontext dauert auf CPU laenger als 120s
