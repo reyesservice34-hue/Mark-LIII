@@ -72,6 +72,7 @@ from actions.web_search        import _news as _fetch_news_sync
 from memory.config_manager     import (
     get_brief_enabled, get_voice, get_wake_word_enabled, save_wake_word_enabled,    get_input_device, get_output_device,
     normalize_assistant_name, migrate_assistant_identity,
+    get_personality_mode, PERSONALITY_MODES,
 )
 from core.plugin_loader        import discover_plugins
 from core                      import undo as undo_stack
@@ -715,7 +716,24 @@ class MiaLive:
             f"{_addr}\n\n"
         )
 
-        parts = [time_ctx, identity_ctx]
+        personality_ctx = (
+            f"[PERSONALITY]\n{PERSONALITY_MODES[get_personality_mode()]}\n\n"
+        )
+
+        # Late-night discretion: gentler and quieter in the small hours, when
+        # the user (or people near them) may be trying to sleep.
+        context_ctx = ""
+        if now.hour >= 23 or now.hour < 6:
+            context_ctx = (
+                "[CONTEXT]\n"
+                "It's late at night. Keep your tone calm and quiet, favor short "
+                "replies, and skip enthusiasm or upbeat energy unless the user "
+                "brings it first.\n\n"
+            )
+
+        parts = [time_ctx, identity_ctx, personality_ctx]
+        if context_ctx:
+            parts.append(context_ctx)
         if mem_str:
             parts.append(mem_str)
         parts.append(sys_prompt)
@@ -1624,13 +1642,34 @@ class MiaLive:
                     # has no desktop WAKE button — so it wakes MIA if asleep.
                     if self._wake_enabled and not self._awake:
                         self.wake(reason="remote command")
-                    await self.session.send_client_content(
-                        turns={"role": "user", "parts": [{"text": text}]},
-                        turn_complete=True,
-                    )
-                    self.ui.write_log(f"[Web]: {text}")
+                    try:
+                        await self.session.send_client_content(
+                            turns={"role": "user", "parts": [{"text": text}]},
+                            turn_complete=True,
+                        )
+                        self.ui.write_log(f"[Web]: {text}")
+                    except Exception as e:
+                        # Without this, a send failure here left the browser
+                        # chat looking like it silently swallowed the message —
+                        # it needs to see something went wrong, not nothing.
+                        print(f"[Dashboard] Send failed: {e}")
+                        asyncio.create_task(self._dashboard.broadcast({
+                            "type": "sys",
+                            "text": "Befehl konnte nicht gesendet werden — "
+                                     "Verbindung zu MIA wird neu aufgebaut.",
+                        }))
                 else:
+                    # No live session (still connecting/reconnecting, or the
+                    # 8s wait above timed out) — the command was queued but
+                    # never delivered. Same reasoning: say so in the chat
+                    # instead of leaving the user staring at silence.
                     print(f"[Dashboard] Dropped command (no session): {text}")
+                    asyncio.create_task(self._dashboard.broadcast({
+                        "type": "sys",
+                        "text": "MIA ist gerade nicht verbunden — Befehl konnte "
+                                 "nicht zugestellt werden. Bitte in Kürze erneut "
+                                 "versuchen.",
+                    }))
             except asyncio.TimeoutError:
                 pass
             except Exception as e:

@@ -1,0 +1,11 @@
+[
+  {
+    "instruction": "Create a complete n8n workflow configuration that integrates OpenAI embeddings with Qdrant for semantic search.\n\nAnalysis shows 2 workflows ready: Semantic Search Pipeline (wf_003), Document Classification (wf_004).\nGenerate complete n8n JSON workflow definition with:\n1. Input node for documents/queries\n2. OpenAI embedding node (text-embedding-3-small)\n3. Document chunking (max 512 tokens)\n4. Qdrant vector DB connection (host: 172.17.0.1:6333, collection: documents)\n5. Similarity search with threshold 0.7\n6. Results formatting and output\n7. Error handling nodes\n\nReturn as importable n8n JSON workflow.",
+    "timestamp": "2026-09-17T13:09:17.553877",
+    "status": "error",
+    "openai_response": null,
+    "execution_output": null,
+    "verification": null,
+    "error": "'OpenAI' object has no attribute 'messages'"
+  }
+]

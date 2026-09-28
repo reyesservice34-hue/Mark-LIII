@@ -122,11 +122,20 @@ def save_assistant_config(assistant_name: str, user_name: str) -> None:
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
 
 
+def save_user_name(user_name: str) -> str:
+    """Persist only the user's preferred name/nickname, leaving every other
+    field (assistant name, API keys, ...) untouched. Returns the stripped
+    value that was stored."""
+    name = (user_name or "").strip()
+    _patch_config(user_name=name)
+    return name
+
+
 # ── Assistant voice ──────────────────────────────────────────────────────────
 # Gemini Live prebuilt voices. Names are proper nouns — identical in every
 # language, so this list is safe to show verbatim in any locale.
 AVAILABLE_VOICES = ["Charon", "Puck", "Kore", "Fenrir", "Aoede"]
-DEFAULT_VOICE    = "Charon"
+DEFAULT_VOICE    = "Kore"
 
 
 def get_voice() -> str:
@@ -176,6 +185,47 @@ def get_autonomous_mode() -> bool:
 
 def save_autonomous_mode(enabled: bool) -> None:
     _patch_config(autonomous_mode=bool(enabled))
+
+
+# ── Personality mode ─────────────────────────────────────────────────────────
+# A small set of tone presets the user can switch between by voice. Each entry
+# is the fragment injected into the system prompt (see main.py._build_config)
+# so the persisted choice survives a restart, not just the current session.
+PERSONALITY_MODES = {
+    "professional": (
+        "Professional, efficient, direct. No fluff, no jokes unless the user "
+        "makes one first. Keep responses tight and businesslike."
+    ),
+    "casual": (
+        "Relaxed and casual, like a sharp friend. Light humor and banter are "
+        "welcome. Still get things done — casual in tone, not in accuracy."
+    ),
+    "concise": (
+        "As few words as possible. One short sentence when one will do. No "
+        "small talk, no pleasantries, straight to the answer or the result."
+    ),
+    "warm": (
+        "Warm, encouraging, and personable. Show genuine interest in the "
+        "user's day and projects. Still efficient — warmth, not verbosity."
+    ),
+}
+DEFAULT_PERSONALITY_MODE = "professional"
+
+
+def get_personality_mode() -> str:
+    """Return the configured personality mode, or the default if unset or
+    unrecognised."""
+    mode = load_api_keys().get("personality_mode", DEFAULT_PERSONALITY_MODE)
+    return mode if mode in PERSONALITY_MODES else DEFAULT_PERSONALITY_MODE
+
+
+def save_personality_mode(mode: str) -> str:
+    """Persist the chosen personality mode. An unknown mode collapses to the
+    default so a bad value can never reach the system prompt. Returns the
+    mode that was actually stored."""
+    resolved = mode if mode in PERSONALITY_MODES else DEFAULT_PERSONALITY_MODE
+    _patch_config(personality_mode=resolved)
+    return resolved
 
 
 def get_brief_enabled() -> bool:
