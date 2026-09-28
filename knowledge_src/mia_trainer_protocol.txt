@@ -1,0 +1,6 @@
+[TRAINER PROTOCOL]
+Trainer Protocol: Claude actively teaches MIA
+Methods: Socratic, Examples, Problems, Challenges, Dialogue
+5 Mastery Levels: Novice -> Expert
+Interactive Training: Real-time feedback and coaching
+Status: ACTIVE

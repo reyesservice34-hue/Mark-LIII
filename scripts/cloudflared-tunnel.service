@@ -1,0 +1,52 @@
+# scripts/cloudflared-tunnel.service — expose the JARVIS dashboard on a
+# permanent, stable hostname via a named Cloudflare Tunnel — no inbound
+# firewall port needed, and unlike a quick tunnel the address never changes
+# or expires.
+#
+# One-time setup (needs a free Cloudflare account with the domain added —
+# jarvis-reyes.de's nameservers point at Cloudflare):
+#
+#   curl -L --output /tmp/cloudflared.deb \
+#     https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+#   sudo dpkg -i /tmp/cloudflared.deb
+#
+#   cloudflared tunnel login                        # opens a URL — approve the domain in your browser
+#   cloudflared tunnel create jarvis-dashboard       # prints a tunnel ID + writes /root/.cloudflared/<id>.json
+#
+#   mkdir -p /root/.cloudflared
+#   cat > /root/.cloudflared/config.yml << 'CFG'
+#   tunnel: <TUNNEL-ID>
+#   credentials-file: /root/.cloudflared/<TUNNEL-ID>.json
+#
+#   ingress:
+#     - hostname: dashboard.jarvis-reyes.de
+#       service: https://localhost:8000
+#       originRequest:
+#         noTLSVerify: true   # local hop only — the self-signed dashboard cert. The
+#                             # public hop (visitor -> Cloudflare) always gets a real one.
+#     - service: http_status:404
+#   CFG
+#
+#   cloudflared tunnel route dns jarvis-dashboard dashboard.jarvis-reyes.de
+#
+#   sudo cp scripts/cloudflared-tunnel.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now cloudflared-tunnel
+#
+# Logs:      journalctl -u cloudflared-tunnel -f
+# Restart:   sudo systemctl restart cloudflared-tunnel
+
+[Unit]
+Description=Cloudflare Tunnel for the JARVIS dashboard (named, fixed hostname)
+After=network-online.target mark-liii.service
+Wants=network-online.target
+BindsTo=mark-liii.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel run jarvis-dashboard
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="assistant-name" content="__ASSISTANT__">
+  <title>__ASSISTANT__ Command Center</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#000000">
+  <link rel="icon" href="static/icons/icon-192.png">
+  <link rel="stylesheet" href="static/mia.css">
+  <link rel="stylesheet" href="static/mia-desktop.css">
+  <link rel="stylesheet" href="static/mia-glass.css">
+  <script src="static/crypto.js"></script>
+</head>
+<body class="cc glass-ui" data-layout="control-center-glass">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12Z"/></symbol>
+    <symbol id="i-tasks" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m8 12.2 2.8 2.8L16.2 9.5"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3.5"/><path d="M8 3v4M16 3v4M3.5 10h17"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h3.5l2 2.5H18A2.5 2.5 0 0 1 20.5 10v7.5A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5Z"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M6 3.5h9l3.5 3.5v13H6Z"/><path d="M14.5 3.5V7.5h4M9 12h6M9 15.5h6"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 1 0-13 0c0 5.4 6.5 11 6.5 11Z"/><circle cx="12" cy="10" r="2.3"/></symbol>
+    <symbol id="i-devices" viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="9" rx="2"/><path d="M7 18h5M9.5 14v4"/><rect x="17.5" y="9" width="3.5" height="9" rx="1.2"/></symbol>
+    <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 5 12 2.5-6H21"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path d="m20 11.5-8 8a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9.7 17.2a1.7 1.7 0 0 1-2.4-2.4l7.6-7.6"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 10.5v3"/></symbol>
+    <symbol id="i-think" viewBox="0 0 24 24"><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/><circle cx="12" cy="12" r="2.6"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="2.8"/><path d="M4.5 6v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V6M4.5 12v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4.2 4.2 0 0 1-.5 8.5Z"/><path d="m9.5 13.5 2 2 3.5-3.6"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5.5c0 4.2 2.8 7.6 7 9 4.2-1.4 7-4.8 7-9V6Z"/><path d="m8.8 12 2.4 2.4 4-4.2"/></symbol>
+    <symbol id="i-ready" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.2"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m4 12 16-8-5.5 16-3-6.5Z"/><path d="m11.5 13.5 3-3.5"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7.5 11 12 15.5 16.5 11M5 19.5h14"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="M14 14h2.5v2.5M20.5 14v.01M14 20.5v.01M17 20.5h3.5V17.5"/></symbol>
+  </svg>
+
+  <a class="skip" href="#stage">Zum Inhalt springen</a>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="notice-stack" aria-label="Meldungen"></div>
+
+  <div id="callBanner" role="alertdialog" aria-label="Eingehender Anruf">
+    <div class="cb-txt">__ASSISTANT__ ruft an<small>Eingehender Anruf</small></div>
+    <div class="cb-btns">
+      <button type="button" class="cb-answer" id="cb-answer">Annehmen</button>
+      <button type="button" class="cb-decline" id="cb-decline">Ablehnen</button>
+    </div>
+  </div>
+  <div id="confirmBanner" role="alertdialog" aria-labelledby="cf-title">
+    <div class="cf-lbl">Bestätigung nötig</div>
+    <div class="cf-title" id="cf-title"></div>
+    <div class="cf-detail" id="cf-detail"></div>
+    <div class="cf-btns">
+      <button type="button" class="cf-approve" id="cf-approve">Bestätigen</button>
+      <button type="button" class="cf-reject" id="cf-reject">Ablehnen</button>
+    </div>
+  </div>
+
+  <div id="palette-overlay" role="dialog" aria-modal="true" aria-label="Befehlszeile">
+    <div id="palette-box">
+      <input id="palette-input" placeholder="Befehl an __ASSISTANT__ … (Enter zum Senden, Esc zum Schließen)" autocomplete="off" aria-label="Befehl an __ASSISTANT__">
+      <div class="palette-actions" id="palette-actions">
+        <div class="palette-group">Aktionen</div>
+        <button type="button" class="palette-action" data-cmd="__wake">Wecken</button>
+        <button type="button" class="palette-action" data-cmd="__companion-toggle-location">Live-Standort umschalten</button>
+        <button type="button" class="palette-action" data-cmd="Was steht heute noch an?">Was steht heute noch an?</button>
+        <div class="palette-group">Gehe zu</div>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="g-bg" aria-hidden="true"><i class="g-bg-towers"></i><i class="g-bg-floor"></i></div>
+
+  <div class="g-app">
+    <header class="g-top">
+      <div class="g-brand">
+        <canvas id="rail-core" width="52" height="46" aria-hidden="true"></canvas>
+        <div class="g-brand-text"><div class="g-brand-name">__ASSISTANT__</div><div class="g-brand-sub">Command Center</div></div>
+      </div>
+      <div class="g-clock" aria-label="Datum und Uhrzeit">
+        <div class="g-date" id="g-date"></div>
+        <div class="g-time" id="g-time"></div>
+      </div>
+      <blockquote class="g-quote"><p id="g-quote"></p><small>– __ASSISTANT__</small></blockquote>
+      <div class="g-user">
+        <div class="g-user-txt"><div class="g-hello">Hallo Master</div><div class="g-hello-sub" id="view-title">Übersicht</div></div>
+      </div>
+      <div class="g-tools">
+        <div class="pill" id="pill"><span class="dot"></span><span id="st">Verbinde …</span></div>
+        <div class="enc-badge" id="enc">AES-256</div>
+        <button type="button" class="g-icon-btn g-hint" id="palette-hint" aria-label="Befehlszeile öffnen (Strg+K)" title="Befehlszeile (Strg+K)">Strg K</button>
+        <button type="button" class="g-icon-btn" data-goto="settings" aria-label="Einstellungen" title="Einstellungen"><svg class="ic"><use href="#i-gear"/></svg></button>
+      </div>
+    </header>
+
+    <div class="g-body">
+      <aside class="g-rail">
+        <nav class="g-nav" id="nav" aria-label="Hauptnavigation">
+          <button type="button" class="g-nav-item" data-view="dashboard" aria-label="Übersicht"><svg class="ic"><use href="#i-grid"/></svg><span>Dashboard</span></button>
+          <button type="button" class="g-nav-item" data-view="chat" aria-label="Chat"><svg class="ic"><use href="#i-chat"/></svg><span>Chat</span></button>
+          <button type="button" class="g-nav-item" data-view="tasks" aria-label="Aufgaben"><svg class="ic"><use href="#i-tasks"/></svg><span>Aufgaben</span><i class="badge" id="badge-tasks"></i></button>
+          <button type="button" class="g-nav-item" data-view="calendar" aria-label="Kalender"><svg class="ic"><use href="#i-cal"/></svg><span>Kalender</span></button>
+          <button type="button" class="g-nav-item" data-view="files" aria-label="Dateien"><svg class="ic"><use href="#i-folder"/></svg><span>Dateien</span><i class="badge" id="badge-files"></i></button>
+          <button type="button" class="g-nav-item" data-view="notes" aria-label="Notizen"><svg class="ic"><use href="#i-note"/></svg><span>Notizen</span></button>
+          <button type="button" class="g-nav-item" data-view="location" aria-label="Standort"><svg class="ic"><use href="#i-pin"/></svg><span>Standort</span></button>
+          <button type="button" class="g-nav-item" data-view="devices" aria-label="Geräte"><svg class="ic"><use href="#i-devices"/></svg><span>Geräte</span></button>
+          <button type="button" class="g-nav-item" data-view="status" aria-label="Systemstatus"><svg class="ic"><use href="#i-pulse"/></svg><span>Systemstatus</span></button>
+          <button type="button" class="g-nav-item" data-view="settings" aria-label="Einstellungen"><svg class="ic"><use href="#i-gear"/></svg><span>Einstellungen</span></button>
+        </nav>
+        <section class="g-connect glass" aria-labelledby="g-connect-h">
+          <h2 id="g-connect-h">Gerät verbinden</h2>
+          <div class="g-connect-row"><svg class="ic"><use href="#i-link"/></svg><p>Neue Geräte koppelst du per Kopplungslink oder QR-Code.</p></div>
+          <button type="button" class="btn btn-ghost" data-goto="devices">Kopplung öffnen</button>
+        </section>
+      </aside>
+
+      <main id="stage" tabindex="-1">
+        <!-- ── Übersicht ── -->
+        <section class="view view-glass" id="view-dashboard" data-view="dashboard" aria-label="Übersicht">
+          <div class="g-col g-left">
+            <section class="panel glass" aria-labelledby="p-today">
+              <header><h2 id="p-today"><svg class="ic"><use href="#i-sun"/></svg>Heute</h2><button type="button" class="link" data-goto="calendar">Alle anzeigen ›</button></header>
+              <ul class="rows tl" id="dash-today"><li class="empty">Wird geladen …</li></ul>
+            </section>
+            <section class="panel glass" aria-labelledby="p-tasks">
+              <header><h2 id="p-tasks"><svg class="ic"><use href="#i-tasks"/></svg>Aufgaben</h2><button type="button" class="link" data-goto="tasks">Alle anzeigen ›</button></header>
+              <ul class="rows" id="dash-tasks"><li class="empty">Wird geladen …</li></ul>
+            </section>
+            <section class="panel glass" aria-labelledby="p-files">
+              <header><h2 id="p-files"><svg class="ic"><use href="#i-folder"/></svg>Letzte Dateien</h2><button type="button" class="link" data-goto="files">Alle anzeigen ›</button></header>
+              <ul class="rows" id="dash-files"><li class="empty">Wird geladen …</li></ul>
+            </section>
+          </div>
+
+          <div class="g-col g-hero">
+            <div class="g-hero-head">
+              <h1 class="g-hero-title"><span>__ASSISTANT__</span> <b id="hero-online">ONLINE</b></h1>
+              <p class="g-hero-sub">Deine persönliche Assistentin</p>
+            </div>
+            <div class="g-hero-grid">
+              <div class="g-tiles" role="group" aria-label="Aktivität">
+                <div class="g-tile" data-tile="listening"><svg class="ic"><use href="#i-mic"/></svg><span>Hört zu</span></div>
+                <div class="g-tile" data-tile="thinking"><svg class="ic"><use href="#i-think"/></svg><span>Denkt</span></div>
+                <div class="g-tile" data-tile="speaking"><svg class="ic"><use href="#i-wave"/></svg><span>Spricht</span></div>
+                <div class="g-tile" data-tile="processing_file"><svg class="ic"><use href="#i-layers"/></svg><span>Verarbeitet</span></div>
+              </div>
+              <div class="g-stage-wrap"><div class="core-stage g-stage">
+                <div class="g-orb" aria-hidden="true"><i class="g-orb-ring"></i><i class="g-orb-dash"></i></div>
+                <div class="g-beam" aria-hidden="true"></div>
+                <div class="g-pedestal" aria-hidden="true"><i></i><i></i><i></i></div>
+                <canvas id="core-canvas" aria-label="__ASSISTANT__ Core"></canvas>
+              </div></div>
+              <div class="g-tiles" role="group" aria-label="Systemzustand">
+                <div class="g-tile" data-tile="syncing"><svg class="ic"><use href="#i-cloud"/></svg><span>Synchronisiert</span></div>
+                <div class="g-tile" data-tile="ok"><svg class="ic"><use href="#i-shield"/></svg><span>Alle Systeme OK</span></div>
+                <div class="g-tile" data-tile="devices"><svg class="ic"><use href="#i-devices"/></svg><span>Geräte verbunden</span></div>
+                <div class="g-tile" data-tile="standby"><svg class="ic"><use href="#i-ready"/></svg><span>Bereit</span></div>
+              </div>
+            </div>
+            <div class="g-core-status"><div id="core-label">Bereit</div><p id="core-caption"></p></div>
+            <div id="dock-composer">
+              <form class="composer glass" id="composer" onsubmit="return false">
+                <input id="inp" class="field" placeholder="Sag etwas zu __ASSISTANT__ oder schreib ihr …" autocomplete="off" aria-label="Nachricht an __ASSISTANT__">
+                <button type="button" class="btn icon-btn" id="attach-btn" aria-label="Datei senden" title="Datei senden"><svg class="ic"><use href="#i-clip"/></svg></button>
+                <input type="file" id="file-inp" multiple accept="*/*" style="display:none" aria-hidden="true" tabindex="-1">
+                <button id="mic-btn" type="button" class="btn" onclick="doMic()" title="Dialog-Sitzung starten">Dialog starten</button>
+                <button class="btn btn-wake" id="wake" type="button" onclick="doWake()">Wecken</button>
+                <button class="btn btn-primary g-send" type="button" onclick="doSend()" aria-label="Senden"><svg class="ic"><use href="#i-send"/></svg></button>
+              </form>
+            </div>
+          </div>
+
+          <div class="g-col g-right">
+            <section class="panel glass" aria-labelledby="p-next">
+              <header><h2 id="p-next"><svg class="ic"><use href="#i-pin"/></svg>Nächster Termin</h2><button type="button" class="link" data-goto="location">Standort ›</button></header>
+              <div id="next-box"><div class="empty">Wird geladen …</div></div>
+            </section>
+            <section class="panel glass" aria-labelledby="p-cal">
+              <header><h2 id="p-cal"><svg class="ic"><use href="#i-cal"/></svg>Kalender</h2><button type="button" class="link" data-goto="calendar">Alle anzeigen ›</button></header>
+              <div class="g-mini" id="g-mini" aria-label="Wochenübersicht"></div>
+              <ul class="rows tl" id="dash-cal"><li class="empty">Wird geladen …</li></ul>
+            </section>
+            <section class="panel glass" aria-labelledby="p-dev">
+              <header><h2 id="p-dev"><svg class="ic"><use href="#i-devices"/></svg>Geräte</h2><button type="button" class="link" data-goto="devices">Alle anzeigen ›</button></header>
+              <ul class="rows dev" id="dash-dev"><li class="empty">Wird geladen …</li></ul>
+            </section>
+          </div>
+
+          <nav class="g-shortcuts" aria-label="Schnellzugriff">
+            <button type="button" class="g-short glass" data-goto="chat"><svg class="ic"><use href="#i-chat"/></svg><span>Chat</span></button>
+            <button type="button" class="g-short glass" data-quick="ask-today"><svg class="ic"><use href="#i-sun"/></svg><span>Was steht heute an?</span></button>
+            <button type="button" class="g-short glass" data-quick="new-task"><svg class="ic"><use href="#i-plus"/></svg><span>Aufgabe hinzufügen</span></button>
+            <button type="button" class="g-short glass" data-goto="calendar"><svg class="ic"><use href="#i-cal"/></svg><span>Kalender</span></button>
+            <button type="button" class="g-short glass" data-goto="files"><svg class="ic"><use href="#i-folder"/></svg><span>Dateien</span></button>
+            <button type="button" class="g-short glass" data-quick="send-file"><svg class="ic"><use href="#i-clip"/></svg><span>Datei senden</span></button>
+            <button type="button" class="g-short glass" data-goto="notes"><svg class="ic"><use href="#i-note"/></svg><span>Notizen</span></button>
+            <button type="button" class="g-short glass" data-goto="location"><svg class="ic"><use href="#i-pin"/></svg><span>Standort</span></button>
+            <button type="button" class="g-short glass" data-goto="status"><svg class="ic"><use href="#i-pulse"/></svg><span>Systemstatus</span></button>
+          </nav>
+
+          <footer class="g-statusbar glass" aria-label="Systemstatus">
+            <div class="g-sb-title">Systemstatus</div>
+            <div class="g-sb-metrics" id="sys-bar"><span class="empty">Lädt …</span></div>
+            <div class="g-sb-note" id="quick-status" aria-live="polite"></div>
+          </footer>
+        </section>
+
+        <!-- ── Chat ── -->
+        <section class="view view-chat" id="view-chat" data-view="chat" aria-label="Chat" hidden>
+          <div id="feed" class="feed" role="log" aria-live="polite" aria-label="Gespräch"></div>
+          <div id="chat-composer-slot"></div>
+        </section>
+
+        <!-- ── Aufgaben ── -->
+        <section class="view" id="view-tasks" data-view="tasks" aria-label="Aufgaben" hidden>
+          <div class="page glass">
+            <h2>Aufgaben</h2>
+            <div class="add-row"><input class="field" id="mvp-task-input" placeholder="Neue Aufgabe" aria-label="Neue Aufgabe" autocomplete="off"><button type="button" class="btn btn-primary" data-add="task">Hinzufügen</button></div>
+            <ul class="rows" id="list-tasks"><li class="empty">Wird geladen …</li></ul>
+          </div>
+        </section>
+
+        <!-- ── Kalender ── -->
+        <section class="view" id="view-calendar" data-view="calendar" aria-label="Kalender" hidden>
+          <div class="split">
+            <div class="page glass">
+              <div class="add-row" style="justify-content:space-between;align-items:center"><h2>Google-Kalender</h2><button type="button" class="btn btn-ghost" id="cal-refresh">Aktualisieren</button></div>
+              <p class="hint" id="gcal-status" role="status">Wird geladen …</p>
+              <ul class="rows" id="list-gcal"></ul>
+            </div>
+            <div class="page glass">
+              <h2>Eigene Termine &amp; Erinnerungen</h2>
+              <div class="add-row"><input class="field" id="mvp-event-input" placeholder="Termin oder Erinnerung" aria-label="Neuer Termin" autocomplete="off"><button type="button" class="btn btn-primary" data-add="event">Hinzufügen</button></div>
+              <ul class="rows" id="list-events"><li class="empty">Wird geladen …</li></ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Dateien ── -->
+        <section class="view" id="view-files" data-view="files" aria-label="Dateien" hidden>
+          <div class="split">
+            <div class="page glass">
+              <div class="add-row" style="justify-content:space-between;align-items:center"><h2>Hochgeladene Dateien</h2><button type="button" class="btn btn-primary" data-quick="send-file">Datei senden</button></div>
+              <div class="dropzone" id="dropzone">Dateien hierher ziehen, um sie hochzuladen</div>
+              <ul class="rows" id="list-files"><li class="empty">Wird geladen …</li></ul>
+            </div>
+            <div class="page glass file-preview" id="file-preview" aria-live="polite"><h2>Vorschau</h2><p class="empty">Datei auswählen, um Details oder eine Vorschau zu sehen.</p></div>
+          </div>
+        </section>
+
+        <!-- ── Notizen ── -->
+        <section class="view" id="view-notes" data-view="notes" aria-label="Notizen" hidden>
+          <div class="page glass">
+            <h2>Notizen</h2>
+            <div class="add-row"><input class="field" id="mvp-note-input" placeholder="Notiz für __ASSISTANT__" aria-label="Neue Notiz" autocomplete="off"><button type="button" class="btn btn-primary" data-add="note">Hinzufügen</button></div>
+            <ul class="rows" id="list-notes"><li class="empty">Wird geladen …</li></ul>
+          </div>
+        </section>
+
+        <!-- ── Standort ── -->
+        <section class="view" id="view-location" data-view="location" aria-label="Standort" hidden>
+          <div class="page glass">
+            <h2>Abfahrt &amp; Standort</h2>
+            <div class="companion" id="companion">
+              <div class="companion-row"><span class="companion-title" id="companion-title"></span><span class="companion-when" id="companion-when"></span></div>
+              <div class="companion-eta" id="companion-eta"></div>
+              <div class="companion-loc" id="companion-loc-status">Standort aus.</div>
+              <button class="companion-share" id="companion-location-toggle" type="button" onclick="companionToggleLocation()">Live-Standort einschalten</button>
+            </div>
+            <p class="hint companion-empty">Kein anstehender Termin aus dem Kalender. Sobald einer ansteht, erscheint hier die Fahrzeitprüfung.</p>
+            <p class="hint">Der Standort wird nur nach deiner Freigabe erfasst und automatisch pausiert, sobald dieses Fenster in den Hintergrund geht. Für die Fahrzeit werden Adresse und Koordinaten an OSM-Dienste (Nominatim, OSRM) übermittelt.</p>
+          </div>
+        </section>
+
+        <!-- ── Geräte ── -->
+        <section class="view" id="view-devices" data-view="devices" aria-label="Geräte" hidden>
+          <div class="page glass">
+            <h2>Geräte &amp; Kopplung</h2>
+            <dl class="kv" id="dev-kv"><dt>Status</dt><dd>Wird geladen …</dd></dl>
+            <p class="hint">Neue Geräte koppelst du über <b>Remote Control</b> im Desktop-Programm (QR-Code / Kopplungslink) oder über den Kopplungslink im Server-Protokoll. Gekoppelte Geräte melden sich beim nächsten Öffnen automatisch wieder an.</p>
+            <div class="setting"><div><b>Gespeicherte Kopplungen widerrufen</b><p class="hint">Geräte müssen danach neu gekoppelt werden. Bereits laufende Sitzungen bleiben bis zum nächsten Neustart des Servers bestehen.</p></div><button type="button" class="btn btn-danger" id="revoke-btn">Widerrufen</button></div>
+          </div>
+        </section>
+
+        <!-- ── Systemstatus ── -->
+        <section class="view" id="view-status" data-view="status" aria-label="Systemstatus" hidden>
+          <div class="split">
+            <div class="page glass">
+              <h2>Verbindung</h2>
+              <dl class="kv" id="status-kv"><dt>Status</dt><dd>Wird geladen …</dd></dl>
+              <h2>Rechner</h2>
+              <div id="sys-metrics-full"><div class="empty">Lädt …</div></div>
+            </div>
+            <div class="page glass">
+              <h2>Aktivitätsprotokoll</h2>
+              <p class="hint">Was die Oberfläche in dieser Sitzung getan hat — inklusive fehlgeschlagener Aktionen.</p>
+              <div class="log-list" id="log-list" role="log"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Einstellungen ── -->
+        <section class="view" id="view-settings" data-view="settings" aria-label="Einstellungen" hidden>
+          <div class="page glass">
+            <h2>Darstellung</h2>
+            <div class="setting"><div><b>Animation des Cores</b><p class="hint">„Automatisch“ folgt der Systemeinstellung „Bewegung reduzieren“. „Reduziert“ zeigt nur Standbilder, die bei Zustandswechseln aktualisiert werden.</p></div>
+              <div class="seg" role="group" aria-label="Animation"><button type="button" data-motion="auto" aria-pressed="true">Automatisch</button><button type="button" data-motion="reduced" aria-pressed="false">Reduziert</button></div></div>
+            <h2>Ton</h2>
+            <div class="setting"><div><b>Sprachausgabe in diesem Browser</b><p class="hint">Wiedergabe von __ASSISTANT__s Stimme auf diesem Gerät.</p></div>
+              <div class="seg" role="group" aria-label="Sprachausgabe"><button type="button" data-sound="on" aria-pressed="true">An</button><button type="button" data-sound="off" aria-pressed="false">Aus</button></div></div>
+            <h2>Sitzung</h2>
+            <div class="setting"><div><b>Neu verbinden</b><p class="hint">Lädt die Oberfläche neu und meldet dieses Gerät mit der gespeicherten Kopplung wieder an.</p></div><button type="button" class="btn" id="reconnect-btn">Neu verbinden</button></div>
+            <div class="setting"><div><b>Auf diesem Gerät abmelden</b><p class="hint">Entfernt Sitzung und gespeicherte Kopplung aus diesem Browser.</p></div><button type="button" class="btn btn-danger" id="logout-btn">Abmelden</button></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="static/mia-core.js"></script>
+  <script src="static/mia-ui.js"></script>
+  <script src="static/shared.js"></script>
+  <script src="static/mia-glass.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+
+# MIA APPROVAL LOG
+# Jede Genehmigung wird hier getracked
+
+[
+  {
+    "id": "approval_20260922_001",
+    "timestamp": "2026-09-22T10:30:00Z",
+    "type": "skill_learning",
+    "skill_name": "Rust Programming",
+    "autonomy_level": 2,
+    "mia_proposal": "Ich könnte Rust lernen um performante Systeme zu bauen",
+    "user_decision": "APPROVED",
+    "user_reason": "Ja, das passt zu unseren Zielen",
+    "sources_approved": [
+      "https://www.rust-lang.org/learn",
+      "https://doc.rust-lang.org/",
+      "Rust By Example"
+    ],
+    "status": "LEARNING_ACTIVE",
+    "completion_target": "2026-10-15"
+  },
+  {
+    "id": "approval_20260922_002",
+    "timestamp": "2026-09-22T11:00:00Z",
+    "type": "code_deployment",
+    "change_description": "Performance optimization for vector search",
+    "autonomy_level": 3,
+    "mia_proposal": "Soll ich diese Performance-Optimierung deployen?",
+    "user_decision": "APPROVED",
+    "user_reason": "Ja, aber nur nach vollständigen Tests",
+    "conditions": [
+      "All unit tests must pass",
+      "Integration tests required",
+      "Rollback plan prepared"
+    ],
+    "status": "DEPLOYMENT_PENDING_TESTS",
+    "deployment_date": null
+  }
+]
+

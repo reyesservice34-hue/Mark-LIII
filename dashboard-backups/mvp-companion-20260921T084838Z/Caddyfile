@@ -1,0 +1,69 @@
+jarvis-reyes.de {
+	handle /datenschutz* {
+		root * /var/www/legal
+		rewrite /datenschutz /datenschutz.html
+		file_server
+	}
+	handle {
+		reverse_proxy localhost:3000
+	}
+}
+
+jarvis.jarvis-reyes.de {
+    # Jarvis Companion: separate path; keep the existing Command Center.
+    redir /companion /companion/
+    handle_path /companion/* {
+        header {
+            Cache-Control "no-store"
+            Referrer-Policy "no-referrer"
+            X-Content-Type-Options "nosniff"
+        }
+        # Local-only hop to Mark-LIII. Public browser traffic still terminates as HTTPS at Caddy.
+        reverse_proxy https://127.0.0.1:8000 {
+            transport http {
+                tls_insecure_skip_verify
+            }
+        }
+    }
+
+	redir /live /live/
+	handle_path /live/* {
+		forward_auth 127.0.0.1:8080 {
+			uri /api/auth/me
+		}
+		reverse_proxy 127.0.0.1:8006
+	}
+	# Reyes Office (App, gleiches Login wie das Dashboard): statische Dateien, Daten kommen ueber /api/
+	redir /app /app/
+	handle_path /app/* {
+		root * /var/www/reyes-app
+		header {
+			Cache-Control "no-cache"
+			X-Content-Type-Options "nosniff"
+			X-Frame-Options "DENY"
+			Referrer-Policy "same-origin"
+		}
+		@manifest path *.webmanifest
+		header @manifest Content-Type "application/manifest+json"
+		# Adresse mit angehaengten Sternchen (aus fett gesetztem Text kopiert): einfach zur App schicken
+		@stars path_regexp ^/\*+$
+		redir @stars /app/ 302
+		# Unbekannte Seiten ohne Dateiendung zeigen die App statt einer leeren 404 (Safari macht daraus sonst einen Download)
+		@spa {
+			not file
+			not path_regexp \.[A-Za-z0-9]{1,8}$
+		}
+		rewrite @spa /index.html
+		file_server
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+}
+
+live.jarvis-reyes.de {
+	basic_auth {
+		yamil $2a$14$NTCrh1royaosA/0QilSFe.eyMWLGb8RdFaRg/o4DAg2P.Tgq.pZb6
+	}
+	reverse_proxy 127.0.0.1:8006
+}

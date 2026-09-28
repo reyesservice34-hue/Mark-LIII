@@ -313,6 +313,42 @@ TOOL_DECLARATIONS = [
             "required": [],
         },
     },
+    {
+        "name": "dashboard_open",
+        "description": (
+            "Open something on the user's dashboard (browser / phone) so they can SEE it. "
+            "Call this whenever you would otherwise say you will show or open something — "
+            "saying it opens nothing, only this tool does. "
+            "Actions: open_view (target = dashboard | chat | tasks | calendar | files | notes | "
+            "location | devices | status | settings), open_file (target = name of a file the user "
+            "uploaded to the dashboard), open_task (target = task title or id), "
+            "open_calendar_event (target = appointment title or id), "
+            "show_notification (text = a short message, level = info | success | warning | error), "
+            "focus_chat. "
+            "Only tell the user it is open if the result says it was opened. If the result says "
+            "NOT opened, say so honestly and give the reason."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "open_view | open_file | open_task | open_calendar_event | show_notification | focus_chat"},
+                "target": {"type": "STRING", "description": "View name, file name, or task / appointment title or id (depends on the action)"},
+                "text":   {"type": "STRING", "description": "Notification text (show_notification only)"},
+                "level":  {"type": "STRING", "description": "info | success | warning | error (show_notification only)"},
+            },
+            "required": ["action"],
+        },
+    },
+    {
+        "name": "dashboard_context",
+        "description": (
+            "Returns what the user's dashboard is currently showing: the open view, the selected "
+            "file / task / appointment and simple counts. This is the dashboard's own state, not a "
+            "screenshot. Call it when the user refers to what is on their dashboard "
+            "('this file', 'the one I selected', 'what am I looking at')."
+        ),
+        "parameters": {"type": "OBJECT", "properties": {}},
+    },
 ]
 
 class _ReconnectSignal(Exception):
@@ -356,7 +392,7 @@ def _keep_context_of(exc: BaseException) -> bool:
 class MiaLive:
     def __init__(self, ui: MiaUI):
         self.ui             = ui
-        self._asst_name     = "JARVI    S"   # updated each session from config
+        self._asst_name     = "Mia"          # updated each session from config
         self.session              = None
         self.audio_in_queue       = None
         self.out_queue            = None
@@ -611,6 +647,19 @@ class MiaLive:
         url    = self._dashboard.get_url()
         manual = self._dashboard.get_manual_url()
         return url, key, f"{url}/auto-login?key={key}", manual
+
+    async def _log_pairing_link(self) -> None:
+        """On a headless server there's no visible 'Remote Control' button to
+        click, and new_key() expires after 10 minutes — so print a fresh
+        pairing link to the log on startup and keep refreshing it before it
+        expires, so there's always a working one to copy from journalctl."""
+        while True:
+            result = self._make_remote_key()
+            if result:
+                _url, key, auto_url, manual = result
+                print(f"[Dashboard] Pairing link (open in phone Safari, valid ~10 min): {auto_url}")
+                print(f"[Dashboard] Or open {manual} manually and enter code: {key}")
+            await asyncio.sleep(480)  # refresh comfortably before the 10-minute expiry
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
@@ -887,6 +936,18 @@ class MiaLive:
                     _os._exit(0)
                 asyncio.create_task(_do_shutdown())
 
+            elif name == "dashboard_open":
+                if not self._dashboard:
+                    result = "The dashboard is not running, so nothing can be shown there."
+                else:
+                    result = await self._dashboard.ui_action_for_tool(args)
+
+            elif name == "dashboard_context":
+                if not self._dashboard:
+                    result = "The dashboard is not running."
+                else:
+                    result = json.dumps(self._dashboard.ui_context(), ensure_ascii=False)
+
             elif self._action_registry.has(name):
                 # file_processor: fall back to the currently-uploaded file when none is given
                 if name == "file_processor" and not args.get("file_path") and self.ui.current_file:
@@ -944,6 +1005,14 @@ class MiaLive:
             )
 
     async def _listen_audio(self):
+        # A headless server with no sound hardware at all has no "system
+        # default" device for PortAudio to fall back to — opening one raises
+        # instead of degrading, which used to take the whole session down in
+        # a crash-reconnect loop. The phone mic (relayed in via the dashboard)
+        # is a complete substitute here, so just skip the local stream.
+        if not audio_devices.list_devices("input"):
+            print("[MIA] 🎤 No local microphone — using phone mic only.")
+            return
         print("[MIA] 🎤 Mic started")
         loop = asyncio.get_event_loop()
 
@@ -1064,6 +1133,15 @@ class MiaLive:
                             txt = _clean_transcript(sc.output_transcription.text)
                             if txt and txt != (out_buf[-1] if out_buf else ""):
                                 out_buf.append(txt)
+                                # Stream each chunk as it's generated rather than
+                                # waiting for turn_complete — a longer answer takes
+                                # as long to generate as it would to speak aloud,
+                                # so without this the dashboard shows nothing at
+                                # all until the whole reply is done.
+                                if self._dashboard:
+                                    asyncio.create_task(
+                                        self._dashboard.broadcast_log_delta("jarvis", txt)
+                                    )
 
                         if sc.input_transcription and sc.input_transcription.text:
                             txt = _clean_transcript(sc.input_transcription.text)
@@ -1142,7 +1220,15 @@ class MiaLive:
                         fn_responses = []
                         for fc in response.tool_call.function_calls:
                             print(f"[MIA] 📞 {fc.name}")
-                            fr = await self._execute_tool(fc)
+                            if self._dashboard:   # tool name only — lets the dashboard show real activity
+                                await self._dashboard.broadcast_event(
+                                    {"type": "activity", "phase": "tool_start", "tool": str(fc.name)[:64]})
+                            try:
+                                fr = await self._execute_tool(fc)
+                            finally:
+                                if self._dashboard:
+                                    await self._dashboard.broadcast_event(
+                                        {"type": "activity", "phase": "tool_end", "tool": str(fc.name)[:64]})
                             fn_responses.append(fr)
                         await self.session.send_tool_response(
                             function_responses=fn_responses
@@ -1153,6 +1239,16 @@ class MiaLive:
             raise
 
     async def _play_audio(self):
+        # Same reasoning as _listen_audio: no local speaker to fall back to on
+        # a headless server, and JARVIS's replies already stream to the phone
+        # via the dashboard's broadcast_audio — nothing is lost by skipping.
+        if not audio_devices.list_devices("output"):
+            print("[MIA] 🔊 No local speaker — audio goes to the phone only.")
+            # _receive_audio() still fills audio_in_queue for local playback
+            # regardless of whether anything drains it — keep draining it
+            # here so it doesn't grow without bound for the life of the session.
+            while True:
+                await self.audio_in_queue.get()
         print("[MIA] 🔊 Play started")
 
         _spk_name = get_output_device()
@@ -1617,6 +1713,19 @@ class MiaLive:
                             turn_complete=True,
                         )
                         self.ui.write_log(f"[Web]: {text}")
+                        self._session_log.append(f"User: {text}")
+                        if self._dashboard:
+                            # Voice input reaches every connected client via
+                            # transcription broadcasts; a typed command otherwise
+                            # only ever appeared in the sender's own tab (fire-
+                            # and-forget POST, no round trip) — invisible to any
+                            # other open client and lost on reconnect since it
+                            # never entered _history. Broadcasting it here makes
+                            # typed and spoken turns behave the same way.
+                            asyncio.create_task(self._dashboard.broadcast({
+                                "type": "log", "speaker": "user", "text": text,
+                                "ts": datetime.now().isoformat(),
+                            }))
                     except Exception as e:
                         # Without this, a send failure here left the browser
                         # chat looking like it silently swallowed the message —
@@ -1655,9 +1764,35 @@ class MiaLive:
         # The confirmation gate is useless without a way to ask, and a memory
         # trim is invisible without a way to say so. Both are bound once here
         # rather than passed down through every action signature.
+        #
+        # On a headless server the Qt HUD (show/hide_confirm) renders to
+        # nobody — QT_QPA_PLATFORM=offscreen means there is no screen for it
+        # to appear on, so without the dashboard broadcasts below, a
+        # confirmation would sit unseen until it times out and is silently
+        # abandoned. request()/resolve() run off the asyncio loop's thread
+        # (actions execute in a worker thread), hence run_coroutine_threadsafe
+        # rather than create_task.
+        def _confirm_show(title: str, detail: str) -> None:
+            self.ui.show_confirm(title, detail)
+            if self._dashboard and self._loop:
+                asyncio.run_coroutine_threadsafe(
+                    self._dashboard.broadcast({
+                        "type": "confirm_pending", "title": title, "detail": detail,
+                    }),
+                    self._loop,
+                )
+
+        def _confirm_hide() -> None:
+            self.ui.hide_confirm()
+            if self._dashboard and self._loop:
+                asyncio.run_coroutine_threadsafe(
+                    self._dashboard.broadcast({"type": "confirm_resolved"}),
+                    self._loop,
+                )
+
         confirm_gate.bind(
-            show = self.ui.show_confirm,
-            hide = self.ui.hide_confirm,
+            show = _confirm_show,
+            hide = _confirm_hide,
             log  = self.ui.write_log,
         )
         set_trim_notifier(self.ui.write_log)
@@ -1749,6 +1884,7 @@ class MiaLive:
                     tg.create_task(self._run_sleep_watch())
                     if self._dashboard:
                         tg.create_task(self._relay_phone_audio())
+                        tg.create_task(self._log_pairing_link())
 
                     # Morning briefing — fires once per process launch (if enabled).
                     # Skipped in wake-word mode: it comes up asleep, and a briefing
@@ -1825,20 +1961,52 @@ class MiaLive:
                     _conn_backoff = 3
                     continue
 
-                # Network / timeout errors — log clearly and back off
-                is_net_err = any(k in err_str for k in (
-                    "TimeoutError", "timed out", "getaddrinfo", "CancelledError",
-                    "ConnectionRefusedError", "OSError", "Cannot connect",
-                ))
-                if is_net_err:
-                    _conn_backoff = min(getattr(self, "_conn_backoff", 3) * 2, 60)
+                # Gemini can occasionally fail a Live turn with transient
+                # backend overload (HTTP 503 / UNAVAILABLE) or reject a resumed
+                # tool-call history with a thought_signature error. Both cases
+                # are recoverable, but exposing raw API JSON in the phone chat
+                # makes JARVIS look broken. Reconnect cleanly instead.
+                err_low = err_str.lower()
+                is_gemini_busy = (
+                    "http 503" in err_low
+                    or "unavailable" in err_low
+                    or "high demand" in err_low
+                    or "resource_exhausted" in err_low
+                    or "quota" in err_low
+                )
+                is_tool_history_rejected = (
+                    "thought_signature" in err_low
+                    or "function call is missing" in err_low
+                    or "knowledge.open" in err_low
+                )
+                if is_tool_history_rejected:
+                    self._resume_handle = None
+                    self._conn_backoff = 3
+                    self.ui.write_log(
+                        "SYS: Tool session got out of sync — reconnecting cleanly."
+                    )
+                    continue
+                if is_gemini_busy:
+                    _conn_backoff = min(getattr(self, "_conn_backoff", 3) * 2, 45)
                     self._conn_backoff = _conn_backoff
                     self.ui.write_log(
-                        f"NET: Connection failed — retrying in {_conn_backoff}s. "
-                        "(a VPN may be required)"
+                        f"SYS: Gemini is busy right now — retrying in {_conn_backoff}s."
                     )
                 else:
-                    self._conn_backoff = 3
+                    # Network / timeout errors — log clearly and back off
+                    is_net_err = any(k in err_str for k in (
+                        "TimeoutError", "timed out", "getaddrinfo", "CancelledError",
+                        "ConnectionRefusedError", "OSError", "Cannot connect",
+                    ))
+                    if is_net_err:
+                        _conn_backoff = min(getattr(self, "_conn_backoff", 3) * 2, 60)
+                        self._conn_backoff = _conn_backoff
+                        self.ui.write_log(
+                            f"NET: Connection failed — retrying in {_conn_backoff}s. "
+                            "(a VPN may be required)"
+                        )
+                    else:
+                        self._conn_backoff = 3
             finally:
                 self.session = None
                 # Only save if there was a real conversation (≥3 turns)

@@ -1,0 +1,615 @@
+{
+  "ai_ml_mastery": {
+    "llm_fine_tuning": {
+      "level": "MASTERY",
+      "expertise": "Can fine-tune any LLM model",
+      "techniques": [
+        "LoRA (Low-Rank Adaptation)",
+        "QLoRA for memory efficiency",
+        "Full fine-tuning with gradient checkpointing",
+        "Domain-specific adaptation",
+        "Multi-task learning",
+        "Few-shot learning optimization",
+        "Catastrophic forgetting prevention"
+      ],
+      "tools": [
+        "HuggingFace Transformers",
+        "Axolotl",
+        "unsloth"
+      ],
+      "mia_can_do": [
+        "Fine-tune Phi-2 for domain",
+        "Create custom models",
+        "Optimize for speed vs accuracy",
+        "Measure & benchmark improvements"
+      ]
+    },
+    "prompt_engineering": {
+      "level": "MASTERY",
+      "expertise": "Expert-level prompt optimization",
+      "techniques": [
+        "Chain-of-thought prompting",
+        "Few-shot in-context learning",
+        "Self-consistency sampling",
+        "Prompt instruction optimization",
+        "Constraint-based prompting",
+        "Multi-step reasoning",
+        "Self-correction & verification"
+      ],
+      "mia_knows": "How to extract maximum quality from any LLM"
+    },
+    "mlops": {
+      "level": "EXPERT",
+      "tools": [
+        "MLflow",
+        "Weights & Biases",
+        "Neptune",
+        "Kubeflow"
+      ],
+      "capabilities": [
+        "Model versioning & registry",
+        "Experiment tracking & comparison",
+        "Hyperparameter optimization (Optuna, Ray Tune)",
+        "Automated ML (AutoML)",
+        "Model monitoring & drift detection",
+        "A/B testing frameworks",
+        "Production model serving"
+      ]
+    },
+    "advanced_ds": {
+      "level": "EXPERT",
+      "skills": [
+        "Statistical modeling & hypothesis testing",
+        "Time-series forecasting (ARIMA, Prophet, Neural Networks)",
+        "Anomaly detection (Isolation Forest, LOF, Autoencoders)",
+        "Clustering & classification",
+        "Feature engineering & selection",
+        "Causal inference",
+        "Bayesian methods"
+      ]
+    }
+  },
+  "architecture_mastery": {
+    "distributed_systems": {
+      "level": "MASTERY",
+      "topics": [
+        "CAP Theorem & trade-offs",
+        "Consistency models (Strong, Eventual, Causal, Session)",
+        "Consensus algorithms (Raft, Paxos, PBFT)",
+        "Byzantine fault tolerance",
+        "Distributed transactions (2PC, Saga pattern)",
+        "Service discovery & load balancing",
+        "Gossip protocols",
+        "Vector clocks & causality"
+      ],
+      "mia_can_design": "Highly scalable distributed systems handling millions of operations"
+    },
+    "sre_mastery": {
+      "level": "MASTERY",
+      "disciplines": [
+        "SLO/SLI definition & tracking",
+        "Error budgets & burn rate",
+        "Incident response & postmortems",
+        "Chaos engineering",
+        "On-call scheduling & rotations",
+        "Reliability testing",
+        "Capacity planning"
+      ]
+    },
+    "ha_architecture": {
+      "level": "EXPERT",
+      "patterns": [
+        "Multi-region deployment",
+        "Active-active failover",
+        "Data replication strategies",
+        "Circuit breaker pattern",
+        "Bulkhead pattern",
+        "Retry with exponential backoff",
+        "Graceful degradation"
+      ]
+    }
+  },
+  "security_mastery": {
+    "pentest": {
+      "level": "ADVANCED",
+      "approval": "ALWAYS needs your approval (Level 3)",
+      "techniques": [
+        "Network penetration testing",
+        "Web application testing (OWASP Top 10+)",
+        "API security testing",
+        "Social engineering assessment",
+        "Red team exercises",
+        "Privilege escalation",
+        "Post-exploitation"
+      ],
+      "tools": [
+        "Burp Suite",
+        "Metasploit",
+        "Nmap",
+        "Wireshark",
+        "SQLMap"
+      ]
+    },
+    "cryptography": {
+      "level": "MASTERY",
+      "topics": [
+        "Symmetric encryption (AES-256, ChaCha20)",
+        "Asymmetric encryption (RSA, ECC, ECDH)",
+        "Hash functions (SHA-256, BLAKE2)",
+        "Digital signatures (RSA, ECDSA, EdDSA)",
+        "Message authentication (HMAC, Poly1305)",
+        "Key exchange (Diffie-Hellman, ECDH)",
+        "TLS/SSL hardening"
+      ],
+      "mia_can": "Design end-to-end encrypted systems"
+    },
+    "zero_trust": {
+      "level": "EXPERT",
+      "implementation": [
+        "Never trust, always verify principle",
+        "Microsegmentation",
+        "Identity & access management (IAM)",
+        "Continuous verification",
+        "Least privilege principle",
+        "Assume breach mindset",
+        "Threat modeling & risk assessment"
+      ]
+    }
+  },
+  "cloud_mastery": {
+    "kubernetes": {
+      "level": "MASTERY",
+      "expertise": "Kubernetes expert-level operation",
+      "advanced_topics": [
+        "Custom resources & controllers",
+        "Operators & Helm charts",
+        "Service mesh (Istio, Linkerd)",
+        "NetworkPolicy & RBAC",
+        "Resource quotas & limits",
+        "Cluster autoscaling",
+        "GitOps workflows (ArgoCD)",
+        "Calico & advanced networking"
+      ]
+    },
+    "multi_cloud": {
+      "level": "EXPERT",
+      "aws": {
+        "compute": [
+          "EC2",
+          "ECS",
+          "EKS",
+          "Lambda",
+          "Fargate"
+        ],
+        "storage": [
+          "S3",
+          "EBS",
+          "EFS",
+          "Glacier"
+        ],
+        "database": [
+          "RDS",
+          "DynamoDB",
+          "ElastiCache",
+          "Aurora"
+        ],
+        "networking": [
+          "VPC",
+          "CloudFront",
+          "Route53",
+          "ALB"
+        ],
+        "other": [
+          "SQS",
+          "SNS",
+          "Kinesis",
+          "CloudWatch",
+          "IAM"
+        ]
+      },
+      "azure": {
+        "compute": [
+          "VMs",
+          "App Service",
+          "AKS",
+          "Functions"
+        ],
+        "storage": [
+          "Blob Storage",
+          "File Shares",
+          "Managed Disks"
+        ],
+        "database": [
+          "SQL Database",
+          "Cosmos DB",
+          "PostgreSQL"
+        ],
+        "networking": [
+          "Virtual Network",
+          "CDN",
+          "Application Gateway"
+        ],
+        "other": [
+          "Service Bus",
+          "Event Hubs",
+          "Logic Apps"
+        ]
+      },
+      "gcp": {
+        "compute": [
+          "Compute Engine",
+          "GKE",
+          "Cloud Run",
+          "Cloud Functions"
+        ],
+        "storage": [
+          "Cloud Storage",
+          "Filestore",
+          "Persistent Disk"
+        ],
+        "database": [
+          "Cloud SQL",
+          "Firestore",
+          "Bigtable",
+          "BigQuery"
+        ],
+        "networking": [
+          "Cloud CDN",
+          "Cloud DNS",
+          "Cloud Armor"
+        ],
+        "other": [
+          "Pub/Sub",
+          "Dataflow",
+          "Dataproc"
+        ]
+      }
+    },
+    "iac": {
+      "level": "MASTERY",
+      "tools": {
+        "terraform": "Most popular, multi-cloud",
+        "cloudformation": "AWS native",
+        "ansible": "Configuration management",
+        "pulumi": "Programmatic IaC (Python, Go, etc)"
+      },
+      "practices": [
+        "State management & backends",
+        "Module design & reusability",
+        "Version control & CI/CD",
+        "Secrets management",
+        "Cost estimation",
+        "Testing infrastructure",
+        "Drift detection"
+      ]
+    }
+  },
+  "observability_mastery": {
+    "metrics": {
+      "level": "MASTERY",
+      "tools": [
+        "Prometheus",
+        "Grafana",
+        "InfluxDB",
+        "Datadog"
+      ],
+      "expertise": [
+        "Time-series database design",
+        "Metric cardinality management",
+        "Query optimization",
+        "Alert rule engineering",
+        "Dashboard design",
+        "Custom metric instrumentation"
+      ]
+    },
+    "logging": {
+      "level": "MASTERY",
+      "stacks": [
+        "ELK Stack",
+        "Splunk",
+        "Loki",
+        "DataDog",
+        "New Relic"
+      ],
+      "expertise": [
+        "Log aggregation & parsing",
+        "Full-text search",
+        "Log retention policies",
+        "Cost optimization",
+        "Structured logging",
+        "Log correlation & tracing"
+      ]
+    },
+    "tracing": {
+      "level": "EXPERT",
+      "tools": [
+        "Jaeger",
+        "Zipkin",
+        "DataDog",
+        "New Relic",
+        "Lightstep"
+      ],
+      "expertise": [
+        "Distributed tracing setup",
+        "Instrumentation",
+        "Sampling strategies",
+        "Performance analysis",
+        "Root cause analysis"
+      ]
+    },
+    "slo_tracking": {
+      "level": "MASTERY",
+      "capabilities": [
+        "Define SLOs (e.g., 99.9% availability)",
+        "Calculate error budgets",
+        "Track burn rate",
+        "Alert on budget depletion",
+        "Use SLOs for prioritization",
+        "Forecasting capability consumption"
+      ]
+    }
+  },
+  "streaming_realtime": {
+    "kafka": {
+      "level": "MASTERY",
+      "expertise": [
+        "Topic design & partitioning strategy",
+        "Consumer groups & rebalancing",
+        "Exactly-once vs at-least-once semantics",
+        "Kafka Streams & ksqlDB",
+        "Kafka Connect & connectors",
+        "Performance tuning",
+        "Security & authentication",
+        "Monitoring & debugging"
+      ]
+    },
+    "event_architecture": {
+      "level": "MASTERY",
+      "patterns": [
+        "Event sourcing (complete audit trail)",
+        "CQRS (Command Query Responsibility Segregation)",
+        "Saga pattern (distributed transactions)",
+        "Event replay & reconstruction",
+        "Event versioning",
+        "Temporal modeling"
+      ]
+    },
+    "realtime_analytics": {
+      "level": "EXPERT",
+      "tools": [
+        "Kafka Streams",
+        "Apache Flink",
+        "ClickHouse",
+        "Druid",
+        "Spark"
+      ],
+      "capabilities": [
+        "Real-time dashboards",
+        "Live alerting",
+        "User activity tracking",
+        "Fraud detection",
+        "Anomaly detection",
+        "Session analysis"
+      ]
+    }
+  },
+  "research_innovation": {
+    "tech_research": {
+      "level": "EXPERT",
+      "activities": [
+        "Monitor GitHub trends daily",
+        "Read academic papers (arXiv, research conferences)",
+        "Evaluate new frameworks & tools",
+        "Conduct quick POCs",
+        "Write research reports",
+        "Present findings to team"
+      ]
+    },
+    "poc_development": {
+      "level": "MASTERY",
+      "process": [
+        "Rapid MVP development",
+        "Performance benchmarking",
+        "Cost-benefit analysis",
+        "Go/no-go decisions",
+        "Documentation & findings",
+        "Lessons learned capture"
+      ]
+    },
+    "communication": {
+      "level": "MASTERY",
+      "formats": [
+        "Tech blog posts (Medium, Dev.to, Substack)",
+        "Video tutorials (YouTube, production quality)",
+        "Conference talks (CTO-level presentations)",
+        "White papers & research",
+        "Case studies",
+        "Podcast guest appearances"
+      ]
+    }
+  },
+  "strategic_leadership": {
+    "roadmap_planning": {
+      "level": "MASTERY",
+      "capabilities": [
+        "6-month & 1-year technical roadmaps",
+        "Architecture evolution planning",
+        "Technology selection",
+        "Risk mitigation strategies",
+        "Resource forecasting",
+        "Dependency management",
+        "Stakeholder alignment"
+      ]
+    },
+    "okr_strategy": {
+      "level": "EXPERT",
+      "capabilities": [
+        "Set meaningful OKRs (Objectives & Key Results)",
+        "Track progress & adapt",
+        "Align team efforts",
+        "Celebrate wins & learn from misses",
+        "Connect to business metrics"
+      ]
+    },
+    "competitive_analysis": {
+      "level": "EXPERT",
+      "includes": [
+        "Tech stack reverse engineering",
+        "Feature comparison matrices",
+        "Pricing strategy analysis",
+        "Market trend identification",
+        "SWOT analysis",
+        "Positioning strategy"
+      ]
+    },
+    "stakeholder_management": {
+      "level": "EXPERT",
+      "skills": [
+        "Executive presentations",
+        "Status reporting",
+        "Risk communication",
+        "Expectation management",
+        "Build consensus",
+        "Influence without authority"
+      ]
+    }
+  },
+  "domain_expertise": {
+    "fintech": {
+      "level": "EXPERT",
+      "compliance": [
+        "PCI-DSS",
+        "SOX",
+        "AML/KYC"
+      ],
+      "systems": [
+        "Payment processing",
+        "Fraud detection",
+        "Regulatory reporting"
+      ],
+      "skills": [
+        "High-frequency trading",
+        "Risk management",
+        "Security hardening"
+      ]
+    },
+    "healthcare": {
+      "level": "EXPERT",
+      "compliance": [
+        "HIPAA",
+        "GDPR",
+        "FDA regulations"
+      ],
+      "systems": [
+        "Medical records",
+        "Interoperability",
+        "Audit trails"
+      ],
+      "skills": [
+        "Privacy by design",
+        "Data integrity",
+        "Compliance automation"
+      ]
+    },
+    "ecommerce": {
+      "level": "EXPERT",
+      "systems": [
+        "High-volume transactions",
+        "Inventory management",
+        "Recommendations"
+      ],
+      "skills": [
+        "Fraud prevention",
+        "Payment gateways",
+        "Search optimization"
+      ]
+    },
+    "devops_platform": {
+      "level": "MASTERY",
+      "practices": [
+        "CI/CD design",
+        "GitOps",
+        "Internal Developer Platforms",
+        "DX optimization"
+      ]
+    }
+  },
+  "knowledge_management": {
+    "personal_kb": {
+      "level": "EXPERT",
+      "tools": [
+        "Obsidian",
+        "Notion",
+        "LogSeq",
+        "Confluence"
+      ],
+      "practices": [
+        "Organize by tags & hierarchies",
+        "Create mind maps & concept maps",
+        "Link ideas (Zettelkasten method)",
+        "Generate quick references",
+        "Design learning paths",
+        "Keep searchable & indexed"
+      ]
+    },
+    "documentation": {
+      "level": "MASTERY",
+      "formats": [
+        "API docs (Swagger/OpenAPI)",
+        "Architecture Decision Records (ADRs)",
+        "Runbooks & Playbooks",
+        "Troubleshooting guides",
+        "Quick start guides",
+        "Video documentation"
+      ]
+    },
+    "content_creation": {
+      "level": "EXPERT",
+      "formats": [
+        "Written blog posts (SEO optimized)",
+        "Video tutorials (editing & production)",
+        "Interactive demos & playgrounds",
+        "Infographics & diagrams",
+        "Code examples with explanations",
+        "Presentation slides"
+      ]
+    }
+  },
+  "financial_optimization": {
+    "cloud_cost": {
+      "level": "EXPERT",
+      "techniques": [
+        "Right-sizing instances",
+        "Reserved instances negotiation",
+        "Spot instances for batch jobs",
+        "Data transfer optimization",
+        "Storage tiering strategies",
+        "Compute consolidation",
+        "Waste identification & elimination"
+      ],
+      "potential_savings": "50-70% cost reduction possible"
+    },
+    "roi_calculation": {
+      "level": "EXPERT",
+      "methods": [
+        "Total cost of ownership (TCO)",
+        "Break-even analysis",
+        "Payback period",
+        "NPV & IRR calculations",
+        "Sensitivity analysis",
+        "Scenario modeling"
+      ]
+    },
+    "budgeting": {
+      "level": "EXPERT",
+      "capabilities": [
+        "Historical analysis & trends",
+        "Growth projections",
+        "Seasonal adjustments",
+        "Contingency planning",
+        "Budget tracking & alerts",
+        "Forecasting accuracy"
+      ]
+    }
+  }
+}

@@ -1,0 +1,4 @@
+[APP DEV TRAINING]
+App Development: 150+ skills, 12 domains
+Frontend, Backend, Mobile, Design, DevOps, Testing, Security, AI/ML
+Status: LOADED

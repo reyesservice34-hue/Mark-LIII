@@ -11,11 +11,15 @@ Install deps:  pip install fastapi "uvicorn[standard]" cryptography
 import asyncio
 import base64
 import hashlib
+import json
+import logging
+import os
 import re
 import secrets
 import socket
 import string
 import time
+import uuid
 from pathlib import Path
 
 _DEPS_OK = False
@@ -58,6 +62,54 @@ def _make_uploads_dir() -> Path:
 
 
 UPLOADS_DIR = _make_uploads_dir()
+
+# ── structured logging ────────────────────────────────────────────────────────
+# One JSON object per line, prefixed "[Dashboard]" like the module's other output.
+# Only ever pass event names, view names, reasons and counts — never tokens,
+# session keys, API keys, message text or file contents.
+_log = logging.getLogger("mia.dashboard")
+if not _log.handlers:
+    _log_handler = logging.StreamHandler()
+    _log_handler.setFormatter(logging.Formatter("%(message)s"))
+    _log.addHandler(_log_handler)
+    _log.setLevel(logging.INFO)
+    _log.propagate = False
+
+
+def _log_event(level: str, event: str, **fields) -> None:
+    safe = {k: (v if isinstance(v, (int, float, bool)) else re.sub(r"[\x00-\x1f]", " ", str(v))[:160])
+            for k, v in fields.items() if v is not None}
+    getattr(_log, level)("[Dashboard] " + json.dumps({"event": event, **safe}, ensure_ascii=False))
+
+
+# ── assistant name ────────────────────────────────────────────────────────────
+# Same config key main.py reads for the voice persona ("assistant_name"), so the
+# dashboard and the spoken assistant can never disagree about what she is called.
+DEFAULT_ASSISTANT_NAME = "Mia"
+
+
+def _assistant_name() -> str:
+    try:
+        cfg = json.loads((BASE_DIR / "config" / "api_keys.json").read_text(encoding="utf-8"))
+        name = str(cfg.get("assistant_name") or "")
+    except Exception:
+        name = ""
+    name = re.sub(r"[^\w .\-]", "", name).strip()[:24]      # safe to embed in HTML/JS
+    return name or DEFAULT_ASSISTANT_NAME
+
+
+# ── UI actions Mia may trigger on the dashboard (strict whitelist) ────────────
+# Nothing here ever evaluates code or runs a command: an action names a view,
+# or a *known* uploaded file / task / calendar entry, and the client opens it.
+UI_VIEWS = ("dashboard", "chat", "tasks", "calendar", "files", "notes",
+            "location", "devices", "status", "settings")
+UI_ACTIONS = ("open_view", "open_file", "open_task", "open_calendar_event",
+              "show_notification", "focus_chat")
+UI_UNSUPPORTED = {
+    "open_project": "Dieses Dashboard hat keine Projekte-Ansicht.",
+    "open_device":  "Geräte haben keine öffnbaren Einzelansichten; nutze open_view mit target=devices.",
+}
+UI_LEVELS = ("info", "success", "warning", "error")
 
 def _get_gemini_key() -> str | None:
     try:
@@ -372,6 +424,46 @@ def _read(name: str) -> str:
     return (STATIC_DIR / name).read_text(encoding="utf-8")
 
 
+def _safe_next(next_path: str) -> str:
+    """Validate a post-login redirect target before it's embedded in an
+    HTML response. Whitelisting the character set (rather than trying to
+    block '//', ':', etc.) rules out an open-redirect or script-injection
+    vector entirely, since nothing but a local path can ever match."""
+    if next_path and re.fullmatch(r"/[A-Za-z0-9/_-]*", next_path):
+        return next_path
+    return "/"
+
+
+# ── device pairing persistence ─────────────────────────────────────────────
+# device_token → {"session_key": ...} used to be in-memory only, so every
+# restart of the process (a crash, a reconnect, or — during active
+# development — a `git pull` + restart to pick up a fix) silently forgot
+# every paired device and forced a fresh PIN on the next visit. The session
+# key doubles as AES key material, same trust level as the Gemini key
+# already sitting in config/api_keys.json, so it lives next to it.
+DEVICE_SESSIONS_PATH = BASE_DIR / "config" / "device_sessions.json"
+
+
+def _load_device_sessions() -> dict:
+    try:
+        data = json.loads(DEVICE_SESSIONS_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_device_sessions(sessions: dict) -> None:
+    try:
+        DEVICE_SESSIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DEVICE_SESSIONS_PATH.write_text(json.dumps(sessions), encoding="utf-8")
+        try:
+            os.chmod(DEVICE_SESSIONS_PATH, 0o600)      # holds AES key material
+        except OSError:
+            pass
+    except Exception as e:
+        print(f"[Dashboard] Could not persist device sessions: {e}")
+
+
 # ── DashboardServer ───────────────────────────────────────────────────────────
 
 class DashboardServer:
@@ -387,12 +479,27 @@ class DashboardServer:
         self._wake_callback               = None
         self._connect_callback            = None
         self._pending_keys: dict[str, float] = {}
-        self._device_sessions: dict[str, dict] = {}  # device_token → {session_key}
+        self._device_sessions: dict[str, dict] = _load_device_sessions()  # device_token → {session_key}
         self._phone_audio_queue: asyncio.Queue    = asyncio.Queue(maxsize=200)
         self._uploads_dir                 = UPLOADS_DIR
         self._login_html                  = _read("login.html")
         self._app_html                    = _read("app.html")
+        self._desktop_html                = _read("desktop.html")
+        # What the dashboard itself reports about what it is showing (never a
+        # screen capture) and the acknowledgements Mia waits for after an action.
+        self._ui_state: dict              = {}
+        self._ui_acks: dict[str, asyncio.Future] = {}
+        try:
+            if DEVICE_SESSIONS_PATH.exists():
+                os.chmod(DEVICE_SESSIONS_PATH, 0o600)
+        except OSError:
+            pass
         self.app                          = self._build_app()
+
+    def _page(self, html: str) -> str:
+        return (html.replace("__IP__", self._ip)
+                    .replace("__PORT__", str(PORT))
+                    .replace("__ASSISTANT__", _assistant_name()))
 
     # ── one-time key management ───────────────────────────────────────────
 
@@ -486,6 +593,22 @@ class DashboardServer:
                 dead.add(ws)
         self._clients -= dead
 
+    async def broadcast_log_delta(self, speaker: str, text: str) -> None:
+        """Stream one partial-transcript chunk to currently connected clients
+        only. Deliberately skips _history — unlike broadcast(), storing every
+        chunk there would flood the 300-entry reconnect replay with word
+        fragments instead of the final assembled message."""
+        if not self._clients:
+            return
+        msg = {"type": "log_delta", "speaker": speaker, "text": text}
+        dead: set[WebSocket] = set()
+        for ws in list(self._clients):
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                dead.add(ws)
+        self._clients -= dead
+
     async def broadcast_call(self) -> None:
         """Ring connected clients — MIA wants to speak on its own initiative
         (a monitor alert, a proactive check-in) and there's nobody on the line
@@ -514,6 +637,159 @@ class DashboardServer:
                 dead.add(ws)
         self._clients -= dead
 
+    async def broadcast_event(self, msg: dict) -> int:
+        """Send a transient event to connected clients. Deliberately not stored
+        in _history: replaying "open the calendar" or "tool started" to a client
+        that connects later would be wrong. Returns how many clients got it."""
+        sent, dead = 0, set()
+        for ws in list(self._clients):
+            try:
+                await ws.send_json(msg)
+                sent += 1
+            except Exception:
+                dead.add(ws)
+                _log_event("warning", "ws_send_failed", type=msg.get("type"))
+        self._clients -= dead
+        return sent
+
+    # ── UI actions (Mia → dashboard) ─────────────────────────────────────
+
+    def _resolve_upload(self, name: str) -> Path | None:
+        """Map a bare file name to a real file *inside* the uploads folder, or None.
+        Rejects path separators, dot names, symlinks and anything that resolves
+        outside the folder — the single gate for download and open_file."""
+        if not name or len(name) > 255 or name in (".", "..") or re.search(r"[/\\\x00]", name):
+            return None
+        base = self._uploads_dir.resolve()
+        path = self._uploads_dir / name
+        try:
+            if path.is_symlink():
+                return None
+            real = path.resolve(strict=True)
+        except OSError:
+            return None
+        return real if real.parent == base and real.is_file() else None
+
+    def _find_upload(self, query: str) -> Path | None:
+        """Exact name first, then a unique case-insensitive / substring match."""
+        exact = self._resolve_upload(query)
+        if exact:
+            return exact
+        q = query.casefold()
+        try:
+            names = [p.name for p in self._uploads_dir.iterdir() if p.is_file()]
+        except OSError:
+            return None
+        for hit in ([n for n in names if n.casefold() == q], [n for n in names if q and q in n.casefold()]):
+            if len(hit) == 1:
+                return self._resolve_upload(hit[0])
+        return None
+
+    async def send_ui_action(self, action, target="", text="", level="info",
+                             timeout: float = 4.0) -> dict:
+        """Validate a UI action against the whitelist, send it to the connected
+        dashboards and wait briefly for the client's acknowledgement. Always
+        returns {"ok": bool, "reason": str, ...} — a failure is never silent."""
+        action = str(action or "").strip()
+        target = re.sub(r"[\x00-\x1f]", " ", str(target or "")).strip()[:255]
+
+        def fail(reason: str, detail: str = "") -> dict:
+            _log_event("warning", "ui_action_failed", action=action, target=target, reason=reason)
+            return {"ok": False, "reason": reason, "detail": detail}
+
+        if action in UI_UNSUPPORTED:
+            return fail("unsupported_action", UI_UNSUPPORTED[action])
+        if action not in UI_ACTIONS:
+            return fail("unknown_action", f"Erlaubt: {', '.join(UI_ACTIONS)}")
+        msg = {"type": "ui_action", "id": uuid.uuid4().hex[:12], "action": action}
+        if action == "open_view":
+            if target not in UI_VIEWS:
+                return fail("unknown_view", f"Erlaubt: {', '.join(UI_VIEWS)}")
+            msg["target"] = target
+        elif action == "open_file":
+            found = self._find_upload(target) if target else None
+            if found is None:
+                return fail("file_not_found", "Nur Dateien aus dem Upload-Ordner des Dashboards können geöffnet werden.")
+            st = found.stat()
+            msg["target"] = found.name
+            msg["meta"] = {"name": found.name, "size": st.st_size, "mtime": int(st.st_mtime)}
+        elif action in ("open_task", "open_calendar_event"):
+            if not target or len(target) > 120:
+                return fail("missing_target", "target = Titel oder ID des Eintrags")
+            msg["target"] = target
+        elif action == "show_notification":
+            body = re.sub(r"[\x00-\x1f]", " ", str(text or target or "")).strip()[:240]
+            if not body:
+                return fail("missing_text")
+            msg["text"], msg["level"] = body, (level if level in UI_LEVELS else "info")
+        if not self._clients:
+            return fail("no_dashboard_connected", "Es ist gerade kein Dashboard geöffnet.")
+
+        fut = asyncio.get_running_loop().create_future()
+        self._ui_acks[msg["id"]] = fut
+        try:
+            sent = await self.broadcast_event(msg)
+            if not sent:
+                return fail("no_dashboard_connected")
+            try:
+                ack = await asyncio.wait_for(fut, timeout)
+            except asyncio.TimeoutError:
+                return fail("no_confirmation", "Das Dashboard hat die Aktion nicht bestätigt.")
+        finally:
+            self._ui_acks.pop(msg["id"], None)
+        if not ack.get("ok"):
+            return fail(str(ack.get("reason") or "client_error")[:60], str(ack.get("detail") or "")[:160])
+        _log_event("info", "ui_action_ok", action=action, target=msg.get("target"))
+        return {"ok": True, "action": action, "target": msg.get("target")}
+
+    async def ui_action_for_tool(self, args: dict) -> str:
+        """Same as send_ui_action, phrased for the model so it reports the truth."""
+        res = await self.send_ui_action(args.get("action"), args.get("target"),
+                                        text=args.get("text"), level=args.get("level") or "info")
+        if res["ok"]:
+            return f"Opened on the dashboard: {res['action']} {res.get('target') or ''}".strip()
+        return (f"NOT opened ({res['reason']}). {res.get('detail', '')} "
+                "Tell the user it did not open; do not claim that it did.").strip()
+
+    def ui_context(self) -> dict:
+        """What the dashboard last reported about itself (view, selection, counts).
+        This is the dashboard's own state, not a screen capture."""
+        st = dict(self._ui_state)
+        age = int(time.time() - st.pop("received", 0)) if st else None
+        return {"connected_dashboards": len(self._clients),
+                "available_views": list(UI_VIEWS),
+                "reported": bool(st), "seconds_since_report": age, **st}
+
+    def _on_ui_state(self, data: dict) -> None:
+        views = data.get("views")
+        sel = data.get("selected")
+        vis = data.get("visible")
+        state = {
+            "view": str(data.get("view") or "")[:24] if data.get("view") in UI_VIEWS else None,
+            "selected": ({"kind": str(sel.get("kind") or "")[:24], "name": str(sel.get("name") or "")[:120]}
+                         if isinstance(sel, dict) else None),
+            "visible": {str(k)[:24]: v for k, v in list(vis.items())[:12]
+                        if isinstance(v, (int, float, bool))} if isinstance(vis, dict) else {},
+            "tab_hidden": bool(data.get("hidden")),
+            "received": time.time(),
+        }
+        if isinstance(views, list) and all(v in UI_VIEWS for v in views):
+            state["views"] = views
+        self._ui_state = state
+
+    def _on_ui_ack(self, data: dict) -> None:
+        fut = self._ui_acks.get(str(data.get("id") or ""))
+        if fut is not None and not fut.done():
+            fut.set_result({"ok": bool(data.get("ok")), "reason": data.get("reason"),
+                            "detail": data.get("detail")})
+
+    @staticmethod
+    def _on_ui_report(data: dict) -> None:
+        """Failures the browser detected itself (navigation, missing target, a
+        rejected action). Logged, never trusted for anything else."""
+        _log_event("warning", "ui_client_report", kind=data.get("kind"), view=data.get("view"),
+                   action=data.get("action"), reason=data.get("reason"))
+
     # ── FastAPI app ───────────────────────────────────────────────────────
 
     def _build_app(self) -> "FastAPI":
@@ -538,19 +814,98 @@ class DashboardServer:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(_CRYPTOJS_CDN)
 
+        # ── PWA assets — installable "Add to Home Screen" on iOS/Android ───────
+        @app.get("/manifest.json")
+        async def pwa_manifest():
+            try:
+                data = json.loads((STATIC_DIR / "manifest.json").read_text(encoding="utf-8"))
+                name = _assistant_name()
+                data.update(name=name, short_name=name, description=f"{name} Remote Dashboard")
+                return JSONResponse(data, media_type="application/manifest+json")
+            except Exception:
+                return FileResponse(str(STATIC_DIR / "manifest.json"),
+                                    media_type="application/manifest+json")
+
+        @app.get("/sw.js")
+        async def pwa_service_worker():
+            return FileResponse(str(STATIC_DIR / "sw.js"),
+                                media_type="application/javascript")
+
+        @app.get("/static/icons/{name}")
+        async def pwa_icon(name: str):
+            if not re.fullmatch(r"icon-(180|192|512)\.png", name):
+                return JSONResponse({"error": "Not found"}, status_code=404)
+            return FileResponse(str(STATIC_DIR / "icons" / name), media_type="image/png")
+
+        # Shared client logic behind both app.html (phone) and desktop.html —
+        # one script so a fix lands on both surfaces instead of drifting
+        # between near-duplicate copies (see shared.js's own header comment).
+        @app.get("/static/shared.js")
+        async def dashboard_shared_js():
+            return FileResponse(str(STATIC_DIR / "shared.js"),
+                                media_type="application/javascript")
+
+        # mia.css / mia-*.css / mia-*.js (design system, core + state model, views, UI actions):
+        # whitelisted by pattern so this can never serve anything else.
+        @app.get("/static/{name}")
+        async def dashboard_static(name: str):
+            if not re.fullmatch(r"mia(-[a-z0-9-]+)?\.(js|css)", name) or not (STATIC_DIR / name).is_file():
+                return JSONResponse({"error": "Not found"}, status_code=404)
+            return FileResponse(str(STATIC_DIR / name), headers={"Cache-Control": "no-cache"},
+                                media_type="application/javascript" if name.endswith(".js") else "text/css")
+
         @app.get("/login", response_class=HTMLResponse)
         async def login_page():
-            return HTMLResponse(self._login_html)
+            return HTMLResponse(self._page(self._login_html))
 
         @app.get("/", response_class=HTMLResponse)
         async def index():
             # Auth is handled client-side via sessionStorage bearer token.
             # Server-side header auth can't work here because browser navigations
             # don't send custom headers (location.href doesn't carry Authorization).
-            html = (self._app_html
-                    .replace("__IP__", self._ip)
-                    .replace("__PORT__", str(PORT)))
-            return HTMLResponse(html)
+            return HTMLResponse(self._page(self._app_html))
+
+        @app.get("/desktop", response_class=HTMLResponse)
+        async def desktop_index():
+            # Same backend, same session, same auth flow as "/" — just a
+            # wider layout with a system-monitor sidebar and command palette
+            # for a PC screen. See shared.js for the logic both pages share.
+            return HTMLResponse(self._page(self._desktop_html))
+
+        @app.get("/api/system/status")
+        async def system_status(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                from actions.system_monitor import get_system_status
+                data = await asyncio.to_thread(get_system_status)
+            except Exception:
+                return JSONResponse({"error": "System-Metriken nicht verfügbar"},
+                                     status_code=503)
+            return JSONResponse(data, headers={"Cache-Control": "no-store"})
+
+        @app.get("/api/status")
+        async def api_status(req: Request):
+            """Honest, secret-free server facts for the Systemstatus/Geräte views."""
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            count = total = 0
+            try:
+                for p in self._uploads_dir.iterdir():
+                    if p.is_file():
+                        count += 1
+                        total += p.stat().st_size
+            except OSError:
+                pass
+            return JSONResponse({
+                "assistant": _assistant_name(),
+                "connected_clients": len(self._clients),
+                "active_sessions": len(self._tokens),
+                "paired_devices": len(self._device_sessions),
+                "encryption": "AES-256-CBC",
+                "tls": self._ssl_enabled(),
+                "uploads": {"count": count, "bytes": total, "max_mb": MAX_UPLOAD_MB},
+            }, headers={"Cache-Control": "no-store"})
 
         @app.post("/login")
         async def login(req: Request):
@@ -560,22 +915,29 @@ class DashboardServer:
             if entered in self._pending_keys and self._pending_keys[entered] > now:
                 del self._pending_keys[entered]          # one-time use
                 tok = secrets.token_urlsafe(32)
+                dev_tok = secrets.token_urlsafe(32)
                 self._tokens.add(tok)
                 self._token_keys[tok] = entered
                 self._aes_key(entered)                   # pre-derive & cache
+                self._device_sessions[dev_tok] = {"session_key": entered}
+                _save_device_sessions(self._device_sessions)
                 if self._connect_callback:
                     self._connect_callback()
                 asyncio.create_task(self.broadcast(
                     {"type": "sys", "text": "Remote connection established."}
                 ))
                 # Bearer token in response body — no cookies needed (works on any browser/HTTP)
-                return JSONResponse({"ok": True, "token": tok})
+                # device_token lets the phone skip re-entering a PIN next time —
+                # same pairing this login page already does for the QR/auto-login path.
+                return JSONResponse({"ok": True, "token": tok, "device_token": dev_tok})
+            _log_event("warning", "auth_failed", where="login", reason="invalid_or_expired_key")
             return JSONResponse({"ok": False, "error": "Invalid or expired key"},
                                 status_code=401)
 
         @app.get("/auto-login")
-        async def auto_login(key: str = ""):
+        async def auto_login(key: str = "", next: str = "/"):
             """QR code target — validates one-time key, creates session, redirects phone."""
+            dest = _safe_next(next)
             now = time.time()
             if not key or key not in self._pending_keys or self._pending_keys[key] <= now:
                 return HTMLResponse("""<!DOCTYPE html>
@@ -596,6 +958,7 @@ class DashboardServer:
             self._token_keys[tok] = key
             self._aes_key(key)
             self._device_sessions[dev_tok] = {"session_key": key}
+            _save_device_sessions(self._device_sessions)
 
             if self._connect_callback:
                 self._connect_callback()
@@ -616,9 +979,55 @@ class DashboardServer:
   sessionStorage.setItem('mia_key','{key}');
   localStorage.setItem('mia_device_token','{dev_tok}');
   localStorage.removeItem('jarvis_device_token');
-  setTimeout(function(){{location.replace('/')}},400);
+  setTimeout(function(){{location.replace('{dest}')}},400);
 </script>
-<p>Connecting to MIA…</p>
+<p>Connecting to {_assistant_name()}…</p>
+</body></html>""")
+
+        @app.get("/auto-device-login")
+        async def auto_device_login(device_token: str = "", next: str = "/"):
+            """Home-screen relaunch target — reuses a previously paired device
+            token to get a fresh session without re-scanning the QR code."""
+            dest = _safe_next(next)
+            session = self._device_sessions.get(device_token)
+            if not device_token or not session:
+                return HTMLResponse("""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width">
+<style>
+  body{background:#07090f;color:#dde3ed;font-family:sans-serif;
+       display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}
+  h2{color:#f87171;margin-bottom:12px}p{color:#5e6a7e;font-size:14px}
+</style></head>
+<body><div><h2>Device Not Paired</h2>
+<p>Press <strong style="color:#dde3ed">Remote Control</strong> in MIA to get a new QR code.</p>
+</div></body></html>""")
+
+            key = session["session_key"]
+            tok = secrets.token_urlsafe(32)
+            self._tokens.add(tok)
+            self._token_keys[tok] = key
+            self._aes_key(key)
+
+            if self._connect_callback:
+                self._connect_callback()
+            asyncio.create_task(self.broadcast(
+                {"type": "sys", "text": "Known device reconnected automatically."}
+            ))
+
+            return HTMLResponse(f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width">
+<style>
+  body{{background:#07090f;color:#dde3ed;font-family:sans-serif;
+       display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}}
+  p{{color:#5e6a7e;font-size:14px}}
+</style></head>
+<body>
+<script>
+  sessionStorage.setItem('mia_token','{tok}');
+  sessionStorage.setItem('mia_key','{key}');
+  setTimeout(function(){{location.replace('{dest}')}},400);
+</script>
+<p>Connecting to {_assistant_name()}…</p>
 </body></html>""")
 
         @app.post("/api/device-login")
@@ -630,6 +1039,7 @@ class DashboardServer:
                 return JSONResponse({"ok": False}, status_code=400)
             dev_tok = (body.get("device_token") or "").strip()
             if not dev_tok or dev_tok not in self._device_sessions:
+                _log_event("warning", "auth_failed", where="device_login", reason="unknown_device_token")
                 return JSONResponse({"ok": False}, status_code=401)
             session_key = self._device_sessions[dev_tok]["session_key"]
             tok = secrets.token_urlsafe(32)
@@ -650,6 +1060,7 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             count = len(self._device_sessions)
             self._device_sessions.clear()
+            _save_device_sessions(self._device_sessions)
             return JSONResponse({"ok": True, "revoked": count})
 
         @app.get("/api/system-status")
@@ -686,6 +1097,43 @@ class DashboardServer:
                 if self._wake_callback:
                     self._wake_callback()
             return JSONResponse({"ok": True})
+
+        @app.post("/api/local-chat")
+        async def local_chat(req: Request):
+            # 100% lokaler Text-Chat-Pfad: Verstehens-Schicht + Ollama + Tools,
+            # komplett getrennt von der Gemini-Command-Queue oben. Fuer Tests
+            # und Automatisierungs-Anfragen, die nicht durch die Cloud sollen.
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            body = await req.json()
+            token = req.headers.get("authorization", "").removeprefix("Bearer ").strip()
+            enc = body.get("enc", "")
+            if enc:
+                text = self._decrypt(token, enc)
+                if text is None:
+                    return JSONResponse({"error": "Decryption failed"}, status_code=400)
+            else:
+                text = (body.get("text") or "").strip()
+            if not text:
+                return JSONResponse({"error": "empty text"}, status_code=400)
+            try:
+                import sys as _sys
+                from pathlib import Path as _Path
+                _base = _Path(__file__).resolve().parent.parent
+                if str(_base) not in _sys.path:
+                    _sys.path.insert(0, str(_base))
+                from core.understanding import clarify as _clarify
+                from core.local_brain import chat as _local_chat
+
+                def _run():
+                    clear_text = _clarify(text)
+                    answer, _ = _local_chat(clear_text, skip_clarify=True)
+                    return clear_text, answer
+
+                clear_text, answer = await asyncio.to_thread(_run)
+            except Exception as e:
+                return JSONResponse({"error": f"local-chat failed: {e}"}, status_code=500)
+            return JSONResponse({"ok": True, "understood_as": clear_text, "answer": answer})
 
         @app.post("/api/wake")
         async def wake_ep(req: Request):
@@ -796,7 +1244,8 @@ class DashboardServer:
                     key=lambda p: p.stat().st_mtime,
                     reverse=True,
                 ):
-                    files.append({"name": f.name, "size": f.stat().st_size})
+                    st = f.stat()
+                    files.append({"name": f.name, "size": st.st_size, "mtime": int(st.st_mtime)})
             except Exception:
                 pass
             return JSONResponse({"files": files})
@@ -806,17 +1255,19 @@ class DashboardServer:
             # Auth via query param — browser <a download> can't send custom headers
             tok = token.strip()
             if not tok or tok not in self._tokens:
+                _log_event("warning", "auth_failed", where="download", reason="invalid_token")
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
-            safe = re.sub(r'[/\\]', '', filename)
-            path = self._uploads_dir / safe
-            if not path.exists() or not path.is_file():
+            path = self._resolve_upload(filename)
+            if path is None:
+                _log_event("warning", "file_open_failed", where="download", reason="not_found_or_unsafe")
                 return JSONResponse({"error": "Not found"}, status_code=404)
-            return FileResponse(str(path), filename=safe)
+            return FileResponse(str(path), filename=path.name)
 
         @app.websocket("/ws")
         async def ws_ep(websocket: WebSocket, token: str = ""):
             tok = token.strip()
             if not tok or tok not in self._tokens:
+                _log_event("warning", "auth_failed", where="ws", reason="invalid_token")
                 await websocket.close(code=4001)
                 return
             await websocket.accept()
@@ -828,19 +1279,57 @@ class DashboardServer:
                     break
             try:
                 while True:
-                    data = await websocket.receive_json()
-                    if data.get("type") == "command":
+                    try:
+                        data = await websocket.receive_json()
+                    except ValueError:
+                        _log_event("warning", "ws_bad_message", reason="invalid_json")
+                        continue
+                    if not isinstance(data, dict):
+                        continue
+                    kind = data.get("type")
+                    if kind == "command":
                         enc = data.get("enc", "")
                         t   = self._decrypt(tok, enc) if enc else (data.get("text") or "").strip()
                         if t:
                             await self._command_queue.put(t)
                             if self._wake_callback:
                                 self._wake_callback()
+                    elif kind in ("ui_ack", "ui_state", "ui_report"):
+                        if len(json.dumps(data, default=str)) > 4096:
+                            _log_event("warning", "ws_bad_message", reason="too_large", type=kind)
+                        elif kind == "ui_ack":
+                            self._on_ui_ack(data)
+                        elif kind == "ui_state":
+                            self._on_ui_state(data)
+                        else:
+                            self._on_ui_report(data)
             except WebSocketDisconnect:
                 pass
             finally:
                 self._clients.discard(websocket)
 
+        # Optional: calendar + ETA companion. Silently absent until
+        # config/companion-calendar.json exists — nothing else here depends
+        # on it, and there's no cost or external call unless that file is
+        # actually configured with a real bridge.
+        try:
+            from dashboard.companion import install_companion
+            install_companion(app, _auth, BASE_DIR)
+        except Exception as e:
+            print(f"[Companion] Disabled: {e}")
+
+        try:
+            from dashboard.confirm_api import install_confirm
+            install_confirm(app, _auth)
+        except Exception as e:
+            print(f"[Confirm] Disabled: {e}")
+
+
+        try:
+            from dashboard.app_state import install_app_state
+            install_app_state(app, _auth, BASE_DIR)
+        except Exception as e:
+            print(f"[CompanionApp] Disabled: {e}")
         return app
 
     # ── serve ─────────────────────────────────────────────────────────────

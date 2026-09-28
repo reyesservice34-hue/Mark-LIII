@@ -1,0 +1,98 @@
+{
+  "devops_infrastructure": {
+    "description": "MIA versteht DevOps, CI/CD, Infrastructure-as-Code",
+    "skills": [
+      "Docker & Container Management",
+      "Kubernetes (optional - für größere Systeme)",
+      "CI/CD Pipelines (GitHub Actions, Jenkins)",
+      "Infrastructure-as-Code (Terraform, CloudFormation)",
+      "Monitoring & Logging (Prometheus, ELK Stack)",
+      "Load Balancing",
+      "Auto-Scaling"
+    ]
+  },
+  "security_hardening": {
+    "description": "MIA kann Systems sichern & Threats erkennen",
+    "skills": [
+      "Penetration Testing (mit Genehmigung!)",
+      "OWASP Top 10 Vulnerabilities",
+      "SSL/TLS & Encryption",
+      "Authentication & Authorization",
+      "Secrets Management",
+      "Security Audits",
+      "Compliance (GDPR, HIPAA, etc)"
+    ]
+  },
+  "database_management": {
+    "description": "MIA kann Datenbanken verwalten & optimieren",
+    "skills": [
+      "SQL Query Optimization",
+      "Database Design & Normalization",
+      "Indexing Strategies",
+      "Backup & Recovery",
+      "Replication & Clustering",
+      "Vector Databases (wie Qdrant die MIA nutzt)",
+      "NoSQL Databases (MongoDB, Redis)"
+    ]
+  },
+  "api_development": {
+    "description": "MIA kann APIs entwerfen & implementieren",
+    "skills": [
+      "REST API Design (HTTP Methods, Status Codes)",
+      "GraphQL Design",
+      "API Documentation (OpenAPI/Swagger)",
+      "Authentication (OAuth, JWT, API Keys)",
+      "Rate Limiting & Caching",
+      "Versioning Strategies",
+      "Error Handling"
+    ]
+  },
+  "data_science_analytics": {
+    "description": "MIA kann Daten analysieren & visualisieren",
+    "skills": [
+      "Data Cleaning & Preprocessing",
+      "Statistical Analysis",
+      "Machine Learning Basics",
+      "Data Visualization (Charts, Dashboards)",
+      "Pandas & NumPy",
+      "Data Mining",
+      "Anomaly Detection"
+    ]
+  },
+  "seo_marketing": {
+    "description": "MIA kann SEO & Digital Marketing unterstützen",
+    "skills": [
+      "On-page SEO (Keywords, Meta Tags, Structure)",
+      "Technical SEO (Site Speed, Mobile, Crawlability)",
+      "Content Strategy",
+      "Backlink Analysis",
+      "Analytics (Google Analytics, Conversion Tracking)",
+      "Social Media Integration",
+      "Email Marketing"
+    ]
+  },
+  "project_management": {
+    "description": "MIA kann Projects planen & verwalten",
+    "skills": [
+      "Agile Methodology (Scrum, Kanban)",
+      "Sprint Planning",
+      "Risk Management",
+      "Stakeholder Communication",
+      "Resource Allocation",
+      "Timeline Management",
+      "Documentation"
+    ]
+  },
+  "technical_writing": {
+    "description": "MIA kann technische Dokumentation schreiben",
+    "skills": [
+      "API Documentation",
+      "README Writing",
+      "Tutorial Creation",
+      "Blog Post Writing",
+      "User Manual Creation",
+      "Changelog Management",
+      "Technical Translation"
+    ]
+  }
+}

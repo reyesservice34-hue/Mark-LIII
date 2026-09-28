@@ -1,0 +1,110 @@
+{
+  "ui_ux_design": {
+    "description": "MIA kann UI/UX Interfaces entwerfen",
+    "principles": [
+      "User-Centered Design - immer User's Bedürfnisse zuerst",
+      "Minimalism - weniger ist mehr",
+      "Consistency - einheitliches Design",
+      "Accessibility - barrierefrei für alle",
+      "Responsiveness - funktioniert auf alle Geräte",
+      "Performance - schnell laden",
+      "Visual Hierarchy - wichtiges fällt auf"
+    ],
+    "design_process": {
+      "step_1_research": "Verstehe User's Ziele & Pain Points",
+      "step_2_wireframe": "Erstelle einfache Skizzen der Layout",
+      "step_3_prototype": "Mache interaktive Prototypen",
+      "step_4_test": "Teste mit echten Usern",
+      "step_5_iterate": "Verbessere basierend auf Feedback",
+      "step_6_handoff": "Übergib Designs an Developer"
+    },
+    "design_tools": {
+      "figma": {
+        "what_it_is": "Cloud-basiertes Design-Tool",
+        "good_for": "UI Design, Prototyping, Collaboration",
+        "features": [
+          "Component libraries",
+          "Real-time collaboration",
+          "Design tokens",
+          "Prototyping",
+          "Hand-off specs"
+        ]
+      },
+      "sketch": {
+        "what_it_is": "Mac-only Design-Tool",
+        "good_for": "Detailed UI design",
+        "features": [
+          "Symbols system",
+          "Plugins",
+          "Design systems",
+          "Vector editing"
+        ]
+      },
+      "adobe_xd": {
+        "what_it_is": "Adobe's Design-Tool",
+        "good_for": "Complete UX workflows",
+        "features": [
+          "Responsive design",
+          "Voice prototyping",
+          "Collaboration",
+          "Integration mit Adobe Suite"
+        ]
+      }
+    },
+    "color_theory": {
+      "color_psychology": "Verschiedene Farben haben verschiedene emotionale Effekte",
+      "color_harmony": [
+        "Complementary (entgegengesetzt) - Kontrast",
+        "Analogous (nebeneinander) - Harmonie",
+        "Triadic (Dreieck) - Balance",
+        "Monochromatic (eine Farbe) - Eleganz"
+      ],
+      "contrast": "High contrast = bessere Lesbarkeit",
+      "accessibility": "Berücksichtige Farbenblindheit"
+    },
+    "typography": {
+      "font_selection": "Wähle Fonts die Marke/Message kommunizieren",
+      "hierarchy": "Größe, Gewicht, Farbe definieren Wichtigkeit",
+      "readability": "Line-spacing, letter-spacing beeinflussen Lesbarkeit",
+      "pairing": "Kombiniere 2-3 komplementäre Fonts"
+    },
+    "layout_composition": {
+      "grid_systems": "Nutze Grid für konsistentes Layout",
+      "white_space": "Leerer Raum ist nicht 'wasted'",
+      "alignment": "Alle Elemente sollten alignt sein",
+      "balance": "Symmetrisch oder asymmetrisch?"
+    }
+  },
+  "graphic_design": {
+    "description": "MIA kann Grafiken, Icons, Illustrations erstellen",
+    "skills": [
+      "Vector design (SVG, AI format)",
+      "Icon design",
+      "Illustration",
+      "Photo editing",
+      "Brand identity",
+      "Print design",
+      "Web graphics"
+    ],
+    "tools": {
+      "figma": "UI + Graphics in einem",
+      "illustrator": "Professionelle Vector-Grafik",
+      "photoshop": "Photo editing & compositing",
+      "canva": "Quick designs für non-designers"
+    }
+  },
+  "design_systems": {
+    "description": "MIA kann Design Systems aufbauen",
+    "components": [
+      "Buttons - verschiedene States & Sizes",
+      "Forms - Input fields, Checkboxes, Radio buttons",
+      "Cards - Flexible Container",
+      "Navigation - Menu, Tabs, Breadcrumbs",
+      "Modals - Dialogs & Popovers",
+      "Typography - Heading, Body, Code",
+      "Icons - Consistent Icon Set"
+    ],
+    "documentation": "Definiere Regeln für Konsistenz",
+    "versioning": "Design System versionen & updaten"
+  }
+}

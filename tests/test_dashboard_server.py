@@ -27,6 +27,8 @@ def _encrypt_cbc(aes_key: bytes, plaintext: str) -> str:
 
 @pytest.fixture
 def server(tmp_path, monkeypatch):
+    # Paired devices are persisted to disk — keep tests off the real file.
+    monkeypatch.setattr(srv, "DEVICE_SESSIONS_PATH", tmp_path / "device_sessions.json")
     monkeypatch.setattr(srv.DashboardServer, "_cert_paths",
                          staticmethod(lambda: (tmp_path / "none.key", tmp_path / "none.crt")))
     s = srv.DashboardServer()
@@ -168,7 +170,8 @@ def test_revoke_devices_clears_all_sessions(server, client):
     token, _ = _login(server, client)
     resp = client.post("/api/revoke-devices", headers=auth(token))
     assert resp.status_code == 200
-    assert resp.json()["revoked"] == 1
+    # QR auto-login and the manual login both register a paired device.
+    assert resp.json()["revoked"] == 2
     assert server._device_sessions == {}
 
 

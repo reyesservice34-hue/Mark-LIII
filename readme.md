@@ -7,6 +7,67 @@ A real-time voice AI that can hear, see, understand, and control your computer �
 
 ---
 
+## Reyes/Jarvis Arbeitsauftrag: Dashboard-Code sicher bearbeiten
+
+Stand: 21.09.2026.
+
+Du arbeitest auf dem echten Mark-LIII/JARVIS-Server. Das Companion-/Remote-Dashboard liegt unter `/root/Mark-LIII/dashboard`. Du darfst Dashboard-Code dort kontrolliert bearbeiten, wenn die Änderung zum Auftrag gehört. Arbeite konservativ und nachvollziehbar.
+
+### Ziel
+
+- Dashboard und Companion unter `/companion/` bleiben erreichbar.
+- Der Dienst `mark-liii.service` bleibt stabil.
+- Codeänderungen am Dashboard sind erlaubt, aber nur nach Sicherung.
+- Rechte werden gezielt auf den Dashboard-Bereich gesetzt; keine pauschalen Systemfreigaben.
+- Secrets, Tokens, PINs, Zertifikate, API-Keys, `.env`-Dateien, OAuth-Dateien und private Keys bleiben geschützt und werden nicht ausgegeben.
+
+### Vorgehen vor jeder Änderung
+
+1. Prüfe zuerst den aktuellen Dienst- und Dateistand.
+2. Lege eine Sicherung mit Zeitstempel unter `/root/Mark-LIII/dashboard-backups/` an.
+3. Ändere nur die konkret nötigen Dateien in `/root/Mark-LIII/dashboard` oder dessen `static`-Unterordner.
+4. Kein Refactor, keine neuen Ports, keine Firewall-Änderung, keine Kosten, keine n8n-Änderung ohne ausdrückliche Freigabe.
+5. Nach der Änderung: Syntax prüfen, Dienststatus prüfen und Companion-/Dashboard-Erreichbarkeit testen.
+
+### Empfohlene Sicherung
+
+```bash
+TS="$(date +%Y%m%dT%H%M%SZ)"
+BACKUP="/root/Mark-LIII/dashboard-backups/edit-$TS"
+mkdir -p "$BACKUP"
+cp -a /root/Mark-LIII/dashboard "$BACKUP/dashboard"
+find /root/Mark-LIII/dashboard -maxdepth 3 -printf '%M %u:%g %p
+' | sort > "$BACKUP/permissions-before.txt"
+echo "backup=$BACKUP"
+```
+
+### Erlaubter Änderungsbereich
+
+- `/root/Mark-LIII/dashboard/server.py`
+- `/root/Mark-LIII/dashboard/companion.py`
+- `/root/Mark-LIII/dashboard/companion_routing.py`
+- `/root/Mark-LIII/dashboard/static/app.html`
+- `/root/Mark-LIII/dashboard/static/login.html`
+- `/root/Mark-LIII/dashboard/static/desktop.html`
+- `/root/Mark-LIII/dashboard/static/shared.js`
+- `/root/Mark-LIII/dashboard/static/manifest.json`
+- `/root/Mark-LIII/dashboard/static/sw.js`
+
+Nicht ohne neue Freigabe ändern: Konfigurationen mit Secrets, `.env`, Zertifikate, private Keys, Datenbanken, n8n-Workflows, Caddy außerhalb einer belegten Companion-Routen-Korrektur und Dateien außerhalb von `/root/Mark-LIII/dashboard`.
+
+### Tests nach Änderung
+
+```bash
+python3 -m py_compile /root/Mark-LIII/dashboard/server.py /root/Mark-LIII/dashboard/companion.py /root/Mark-LIII/dashboard/companion_routing.py
+systemctl status mark-liii.service --no-pager
+curl -k -sS --max-time 8 -o /tmp/jarvis-backend-test.html -w "backend_status=%{http_code} size=%{size_download}\n" https://127.0.0.1:8000/
+curl -sS --max-time 15 -o /tmp/jarvis-public-companion-test.html -w "public_status=%{http_code} size=%{size_download}\n" https://jarvis.jarvis-reyes.de/companion/ || true
+```
+
+Hinweis: Caddy nutzt `handle_path /companion/*`; ein direkter Backend-Test auf `https://127.0.0.1:8000/companion/` kann deshalb 404 liefern, obwohl der öffentliche Companion-Pfad korrekt auf die Dashboard-Startseite umgeschrieben wird.
+
+Wenn ein Test fehlschlägt, nicht weiterbauen. Melde den Fehler, den Backup-Pfad und den letzten sicheren Zustand. Sage nur `fertig`, wenn Änderung, Rechte und Tests erfolgreich sind; sonst `teilweise fertig` mit konkretem Blocker.
+
 ## ✨ Overview
 
 **MARK LIII is the hands-free & scalable release.** Say the wake phrase and MIA wakes; stay quiet and it slips back to sleep on its own — while asleep, your microphone never leaves the machine, so an off-hand *"I'll be right there"* to someone in the room no longer sets it off. Under the hood it now runs on the faster **Gemini 3.1 Flash Live** engine, and the moment you ask for something that takes a beat — analysing a file, searching the web — it answers instantly *("On it — going through that now…")* so you never wonder whether it heard you.

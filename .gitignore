@@ -54,6 +54,18 @@ tasks/queue/*.json
 tasks/done/*.json
 tasks/.worker.lock
 
+# ── JARVIS Runtime State (generated at runtime, not source code) ────────────────
+jarvis_instruction_log.json
+jarvis_voice_history.json
+whatsapp_message_history.json
+jarvis_voice_cache/
+optimized_prompts_history.json
+qdrant_collections_init_results.json
+
+# Laufzeit-Geheimnisse (nie einchecken)
+config/device_sessions.json
+config/certs/
+
 # MIA desktop import
 memory/calendar/
 brain/memory/
