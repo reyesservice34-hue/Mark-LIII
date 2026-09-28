@@ -177,6 +177,16 @@ def save_wake_word_enabled(enabled: bool) -> None:
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
 
 
+def get_autonomous_mode() -> bool:
+    """Whether MIA may run irreversible actions (messages, shutdown/restart/
+    wifi) without an on-screen human confirmation. Off by default — opt-in."""
+    return load_api_keys().get("autonomous_mode", False)
+
+
+def save_autonomous_mode(enabled: bool) -> None:
+    _patch_config(autonomous_mode=bool(enabled))
+
+
 # ── Personality mode ─────────────────────────────────────────────────────────
 # A small set of tone presets the user can switch between by voice. Each entry
 # is the fragment injected into the system prompt (see main.py._build_config)

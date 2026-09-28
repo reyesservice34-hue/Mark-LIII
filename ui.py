@@ -4544,7 +4544,9 @@ class MainWindow(QMainWindow):
         if not API_FILE.exists(): return False
         try:
             d = json.loads(API_FILE.read_text(encoding="utf-8"))
-            return bool(d.get("gemini_api_key")) and bool(d.get("os_system"))
+            has_gemini_live = bool(d.get("gemini_api_key")) and bool(d.get("os_system"))
+            has_anthropic   = bool(d.get("anthropic_api_key")) and bool(d.get("llm_provider"))
+            return has_gemini_live or has_anthropic
         except Exception:
             return False
 

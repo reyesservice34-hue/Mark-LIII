@@ -56,6 +56,27 @@ def _parse_ts(ts: str):
         return None
 
 
+def _notify_owner_async(key: str, value: float, count: int) -> None:
+    """A recurring alert is a real pattern, not a blip — worth reaching the
+    owner even if nobody's watching the HUD or the phone dashboard right now.
+    Runs off the calling thread, never raises, and is a no-op unless
+    owner_whatsapp_contact is configured (see actions.send_message.notify_owner)
+    — no Twilio, no per-call cost, just the owner's own WhatsApp."""
+    import threading
+
+    def _work():
+        try:
+            from actions.send_message import notify_owner
+            notify_owner(
+                f"MIA: {key.upper()} ist wiederholt kritisch ({value:.0f}) — "
+                f"{count}. Mal in {_RECUR_WINDOW_DAYS} Tagen."
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_work, daemon=True).start()
+
+
 def _record_and_check_recurrence(key: str) -> int:
     """Logs this alert firing and returns how many times this same alert type
     has fired in the last _RECUR_WINDOW_DAYS days (including now).
@@ -217,6 +238,7 @@ class SystemMonitor:
         count = _record_and_check_recurrence(key)
         self._record(key)
         if count >= _RECUR_THRESHOLD:
+            _notify_owner_async(key, value, count)
             return recurring_tpl.format(value=value, count=count, window=_RECUR_WINDOW_DAYS)
         return first_time_tpl.format(value=value)
 
