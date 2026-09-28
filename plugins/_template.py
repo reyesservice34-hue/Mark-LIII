@@ -1,8 +1,8 @@
 """
-Drop-in MIA plugin template.
+Drop-in JARVIS plugin template.
 
 Copy this file, rename it (no leading underscore), fill in PLUGIN and run().
-No other file needs to change — MIA discovers this automatically at startup.
+No other file needs to change — JARVIS discovers this automatically at startup.
 """
 
 PLUGIN = {
@@ -25,7 +25,7 @@ PLUGIN = {
 def run(parameters: dict, player=None, session_memory=None) -> str:
     """
     parameters: dict of the args Gemini extracted, matching PLUGIN['parameters'].
-    player: the MiaUI instance — use player.write_log(f"MIA: ...") to log,
+    player: the JarvisUI instance — use player.write_log(f"JARVIS: ...") to log,
             same as actions/*.py. May be None.
     session_memory: reserved, usually None today (core tools mostly pass None too).
     Return a short natural-language string — this is spoken back to the user.
@@ -36,10 +36,10 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
     try:
         result_text = f"Did the thing with {example_arg}."
     except Exception as e:
-        return f"Sir, my_plugin failed: {e}"
+        return f"my_plugin failed: {e}"
     if player:
         try:
-            player.write_log(f"MIA: {result_text}")
+            player.write_log(f"JARVIS: {result_text}")
         except Exception:
             pass
     return result_text

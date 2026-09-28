@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-09-27T03:50:00+02:00",
+  "local_brain": {
+    "episodic_recall_after_pop": true,
+    "semantic_recall": true,
+    "autolearn_explicit_memory": true,
+    "normal_chat_episdodic_only": true,
+    "secret_filter": true,
+    "fts5_retrieval": true,
+    "selftest": "pass",
+    "current_semantic_records": 0,
+    "current_episodic_records": 0
+  },
+  "server": {
+    "memory_endpoint": "auth_rejected",
+    "status": "not_verified",
+    "note": "Local gateway token is configured but rejected by the current server memory endpoint. No secret was read or exposed."
+  }
+}

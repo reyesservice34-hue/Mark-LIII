@@ -1,0 +1,35 @@
+﻿{
+  "name": "MIA Brain",
+  "version": "1.0.0",
+  "modules": {
+    "architecture": "Systemaufbau und technische Zusammenhänge",
+    "knowledge": "Validiertes Langzeitwissen",
+    "skills": "Ausführbare Fähigkeiten und Skill-Beschreibungen",
+    "procedures": "Abläufe und Arbeitsanweisungen",
+    "errors": "Bekannte und gelöste Fehler",
+    "memory": {
+      "working": "Aktiver Sitzungskontext",
+      "episodic": "Ereignisse und abgeschlossene Sitzungen",
+      "semantic": "Dauerhafte Fakten und Zusammenhänge",
+      "preferences": "Erlaubte dauerhafte Arbeitspräferenzen"
+    },
+    "ingestion": {
+      "inbox": "Neue noch ungeprüfte Lerninhalte",
+      "validated": "Geprüfte Lerninhalte",
+      "rejected": "Abgelehnte oder ungeeignete Inhalte"
+    },
+    "indexes": "Such- und Retrieval-Indizes",
+    "policies": "Regeln für Lernen, Speicherung und Sicherheit",
+    "tests": "Gedächtnis- und Retrievaltests",
+    "quarantine": "Unbekannte oder unsichere Inhalte"
+  },
+  "learning_pipeline": [
+    "ingestion",
+    "validation",
+    "classification",
+    "knowledge_store",
+    "indexing",
+    "retrieval_test",
+    "persistence_test"
+  ]
+}

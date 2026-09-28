@@ -1,7 +1,7 @@
 """
 Plugin discovery, validation, collision detection, and dispatch.
 
-Discovery runs once (MiaLive.__init__ calls discover_plugins()); the resulting
+Discovery runs once (JarvisLive.__init__ calls discover_plugins()); the resulting
 PluginRegistry is cached for the process lifetime. Enable/disable state is re-read
 from config on every call to get_tool_declarations() / run() / list_for_ui(), so
 toggling a plugin does not require restarting the app or re-importing anything.
@@ -68,7 +68,7 @@ class PluginRegistry:
         except Exception as e:
             self._logger(f"Plugin '{name}' crashed during run(): {e}")
             traceback.print_exc()
-            return f"Sir, the '{name}' plugin failed: {e}"
+            return f"The '{name}' plugin failed: {e}"
 
     # -- called by ui.py's settings tab to render per-plugin config forms --
     def settings_schemas(self) -> list[dict]:

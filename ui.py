@@ -51,22 +51,13 @@ BASE_DIR   = _base_dir()
 CONFIG_DIR = BASE_DIR / "config"
 API_FILE   = CONFIG_DIR / "api_keys.json"
 
-from memory.config_manager import DEFAULT_ASSISTANT_NAME, normalize_assistant_name
-
 
 def _read_full_config() -> dict:
-    """Read api_keys.json config dict. Returns {} on any error.
-
-    'assistant_name' is always normalised (empty or the legacy name → MIA), so
-    no screen can ever show the old identity from a stale config file."""
+    """Read api_keys.json config dict. Returns {} on any error."""
     try:
-        data = json.loads(API_FILE.read_text(encoding="utf-8"))
+        return json.loads(API_FILE.read_text(encoding="utf-8"))
     except Exception:
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
-    data["assistant_name"] = normalize_assistant_name(data.get("assistant_name"))
-    return data
+        return {}
 
 
 _DEFAULT_W, _DEFAULT_H = 980, 700
@@ -387,7 +378,7 @@ class _SysMetrics:
 _metrics = _SysMetrics()
 
 class HudCanvas(QWidget):
-    def __init__(self, face_path: str, assistant_name: str = DEFAULT_ASSISTANT_NAME, parent=None):
+    def __init__(self, face_path: str, assistant_name: str = "J.A.R.V.I.S", parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
         self.setMinimumSize(300, 300)
@@ -846,7 +837,7 @@ class LogWidget(QTextEdit):
         self._text    = ""
         self._pos     = 0
         self._tag     = "sys"
-        self._ai_name_lc = DEFAULT_ASSISTANT_NAME.lower()   # updated when assistant name changes
+        self._ai_name_lc = "jarvis"   # updated when assistant name changes
         self._tmr = QTimer(self)
         self._tmr.timeout.connect(self._step)
         self._sig.connect(self._enqueue)
@@ -869,7 +860,7 @@ class LogWidget(QTextEdit):
         tl = self._text.lower()
         _ai_pfx = f"{self._ai_name_lc}:"
         if   tl.startswith("you:"):                              self._tag = "you"
-        elif tl.startswith(_ai_pfx) or tl.startswith("mia:"):    self._tag = "ai"
+        elif tl.startswith(_ai_pfx) or tl.startswith("jarvis:"): self._tag = "ai"
         elif tl.startswith("file:"):                             self._tag = "file"
         elif "err" in tl:                                        self._tag = "err"
         else:                                                    self._tag = "sys"
@@ -1227,7 +1218,7 @@ class SetupOverlay(QWidget):
             return w
 
         layout.addWidget(_lbl("◈  INITIALISATION REQUIRED", 13, True))
-        layout.addWidget(_lbl(f"Configure {DEFAULT_ASSISTANT_NAME} before first boot.", 9, color=C.PRI_DIM))
+        layout.addWidget(_lbl("Configure J.A.R.V.I.S. before first boot.", 9, color=C.PRI_DIM))
         layout.addSpacing(6)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
@@ -1423,7 +1414,7 @@ class CustomizeOverlay(QWidget):
     saved = pyqtSignal(str, str, str, str)   # assistant_name, user_name, ui_color, voice
     _OW, _OH = 400, 588
 
-    def __init__(self, assistant_name=DEFAULT_ASSISTANT_NAME, user_name="",
+    def __init__(self, assistant_name="MIA", user_name="",
                  ui_color=DEFAULT_UI_COLOR, voice="", parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -1463,14 +1454,29 @@ class CustomizeOverlay(QWidget):
         lay.addWidget(self._name_input)
 
         lay.addSpacing(4)
-        lay.addWidget(_lbl("YOUR NAME  (leave blank for default sir / efendim)", 8,
+        lay.addWidget(_lbl("YOUR NAME  (optional — used to make a line more personal)", 8,
                             color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
         self._user_input = QLineEdit(user_name)
-        self._user_input.setPlaceholderText("e.g.  Alex   (leave blank for auto)")
+        self._user_input.setPlaceholderText("e.g.  Tony   (leave blank for auto)")
         self._user_input.setFont(QFont("Courier New", 10))
         self._user_input.setFixedHeight(32)
         self._user_input.setStyleSheet(_fs)
         lay.addWidget(self._user_input)
+
+        # ── How MIA addresses you ─────────────────────────────────────────
+        # Its own field because it is its own decision: the name is who you are,
+        # the address is how you want to be spoken to. Takes effect on the next
+        # session, which _apply_name_update triggers when this changes.
+        from memory.config_manager import get_user_address
+        lay.addSpacing(4)
+        lay.addWidget(_lbl("FORM OF ADDRESS  (how MIA calls you)", 8,
+                            color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
+        self._address_input = QLineEdit(get_user_address())
+        self._address_input.setPlaceholderText("e.g.  mein Herr")
+        self._address_input.setFont(QFont("Courier New", 10))
+        self._address_input.setFixedHeight(32)
+        self._address_input.setStyleSheet(_fs)
+        lay.addWidget(self._address_input)
 
         # ── Assistant voice — Gemini prebuilt voices ─────────────────────────
         # Names are language-neutral proper nouns, so the row reads the same in
@@ -1629,8 +1635,9 @@ class CustomizeOverlay(QWidget):
         self.hide()
 
     def _save(self):
-        name = normalize_assistant_name(self._name_input.text())
+        name = self._name_input.text().strip() or "MIA"
         user = self._user_input.text().strip()
+        self._address_value = self._address_input.text().strip()
         self.saved.emit(name, user, self._sel_color or DEFAULT_UI_COLOR, self._sel_voice)
         self.hide()
 
@@ -2070,34 +2077,7 @@ class MemoryOverlay(_HudOverlay):
         before = self.geometry()
         self._clear_layout()
 
-        from memory.memory_manager import all_entries_for_ui, recent_sessions_for_ui
-
-        sessions = recent_sessions_for_ui()
-        if sessions:
-            shdr = QLabel("🗓  LAST SESSION")
-            shdr.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
-            shdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
-            self._lay.addWidget(shdr)
-
-            last = sessions[0]
-            line = QLabel(f"<b>{last.get('date', '—')}</b> "
-                          f"<span style='color:{C.TEXT_MED}'>— {last.get('summary', '')}</span>")
-            line.setWordWrap(True)
-            line.setFont(QFont("Courier New", 8))
-            line.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
-            self._lay.addWidget(line)
-
-            for prev in sessions[1:]:
-                pline = QLabel(f"{prev.get('date', '—')} "
-                               f"<span style='color:{C.TEXT_DIM}'>— {prev.get('summary', '')}</span>")
-                pline.setWordWrap(True)
-                pline.setFont(QFont("Courier New", 7))
-                pline.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
-                self._lay.addWidget(pline)
-
-            ssep = QFrame(); ssep.setFrameShape(QFrame.Shape.HLine)
-            ssep.setStyleSheet(f"color: {C.BORDER}; margin: 6px 0 2px 0;")
-            self._lay.addWidget(ssep)
+        from memory.memory_manager import all_entries_for_ui
 
         hdr = QLabel("🧠  WHAT MIA REMEMBERS")
         hdr.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
@@ -2733,7 +2713,7 @@ class RemoteKeyOverlay(QWidget):
         self._qr_label.setStyleSheet(
             "color: #00ff88; background: #001a0d; border-radius: 10px;"
         )
-        self._timer_lbl.setText(f"Phone connected — {self._assistant_name} ready")
+        self._timer_lbl.setText("Phone connected — MIA ready")
         self._timer_lbl.setStyleSheet(f"color: {C.GREEN}; background: transparent;")
 
     def _refresh_key(self):
@@ -2789,7 +2769,7 @@ class MainWindow(QMainWindow):
 
         # Load customization from config
         _cfg = _read_full_config()
-        self._assistant_name: str = normalize_assistant_name(_cfg.get("assistant_name"))
+        self._assistant_name: str = (_cfg.get("assistant_name") or "MIA").strip()
         _display = self._assistant_name.upper()
 
         # Apply the saved UI colour BEFORE panels/stylesheets are built
@@ -2813,9 +2793,9 @@ class MainWindow(QMainWindow):
         self.on_voice_change   = None   # callable: () -> None — rebuild session with new voice
         self.on_audio_device_change = None  # callable: () -> None — reopen audio streams
         self._confirm_overlay  = None   # live ConfirmBanner, if one is on screen
-        self.get_plugins       = None   # callable: () -> list[dict], set by MiaLive
-        self.get_plugin_settings = None # callable: () -> list[dict] settings schemas, set by MiaLive
-        self.on_wake_toggle    = None   # callable: (enable: bool) -> str, set by MiaLive
+        self.get_plugins       = None   # callable: () -> list[dict], set by MIALive
+        self.get_plugin_settings = None # callable: () -> list[dict] settings schemas, set by MIALive
+        self.on_wake_toggle    = None   # callable: (enable: bool) -> str, set by MIALive
         self.on_wake_manual    = None   # callable: () -> None — manual sleep/wake
         self.wake_get_state    = None   # callable: () -> dict {enabled, awake, ready}
         self._muted            = False
@@ -3035,9 +3015,9 @@ class MainWindow(QMainWindow):
     # Icon generation — arc-reactor style, rendered with Pillow
     # ------------------------------------------------------------------
     @staticmethod
-    def _build_app_icon(out_path: Path) -> bool:
+    def _build_jarvis_icon(out_path: Path) -> bool:
         """
-        Render the MIA arc-reactor icon at 4× resolution and downsample
+        Render a MIA arc-reactor icon at 4× resolution and downsample
         for crisp results at all sizes. Saves a multi-res .ico to out_path.
         Returns True on success.
         """
@@ -3150,7 +3130,7 @@ class MainWindow(QMainWindow):
             sc.TargetPath       = target
             sc.Arguments        = f'"{args}"'
             sc.WorkingDirectory = work_dir
-            sc.Description      = "MIA AI Assistant"
+            sc.Description      = "J.A.R.V.I.S AI Assistant"
             sc.IconLocation     = icon_loc
             sc.save()
             return
@@ -3165,7 +3145,7 @@ class MainWindow(QMainWindow):
             f'sc.TargetPath = "{target}"',
             f'sc.Arguments = Chr(34) & "{args}" & Chr(34)',
             f'sc.WorkingDirectory = "{work_dir}"',
-            'sc.Description = "MIA AI Assistant"',
+            'sc.Description = "J.A.R.V.I.S AI Assistant"',
             f'sc.IconLocation = "{icon_loc}"',
             'sc.Save',
         ])
@@ -3277,9 +3257,9 @@ class MainWindow(QMainWindow):
         desktop = self._get_desktop_dir()
 
         # Arc-reactor icon (.ico — also exported as .png for Linux/macOS)
-        ico_path = Path(__file__).resolve().parent / "config" / "mia.ico"
+        ico_path = Path(__file__).resolve().parent / "config" / "jarvis.ico"
         if not ico_path.exists():
-            self._build_app_icon(ico_path)
+            self._build_jarvis_icon(ico_path)
 
         try:
             _os = platform.system()
@@ -3288,19 +3268,14 @@ class MainWindow(QMainWindow):
             if _os == "Windows":
                 pythonw  = python.parent / "pythonw.exe"
                 target   = str(pythonw if pythonw.exists() else python)
-                lnk      = str(desktop / "MIA.lnk")
-                (desktop / "J.A.R.V.I.S.lnk").unlink(missing_ok=True)   # legacy shortcut
+                lnk      = str(desktop / "J.A.R.V.I.S.lnk")
                 icon_loc = str(ico_path) if ico_path.exists() else f"{target},0"
                 self._create_lnk_windows(lnk, target, str(script),
                                          str(script.parent), icon_loc)
 
             # ── macOS — proper .app bundle (no Terminal window) ───────────────
             elif _os == "Darwin":
-                app     = desktop / "MIA.app"
-                _legacy_app = desktop / "J.A.R.V.I.S.app"               # legacy bundle
-                if _legacy_app.is_dir():
-                    import shutil as _shutil
-                    _shutil.rmtree(_legacy_app, ignore_errors=True)
+                app     = desktop / "J.A.R.V.I.S.app"
                 mac_dir = app / "Contents" / "MacOS"
                 res_dir = app / "Contents" / "Resources"
                 mac_dir.mkdir(parents=True, exist_ok=True)
@@ -3325,8 +3300,8 @@ class MainWindow(QMainWindow):
                     '<plist version="1.0"><dict>\n'
                     '  <key>CFBundleExecutable</key><string>MIA</string>\n'
                     '  <key>CFBundleIdentifier</key>'
-                    '<string>com.mia.assistant</string>\n'
-                    '  <key>CFBundleName</key><string>MIA</string>\n'
+                    '<string>com.jarvis.assistant</string>\n'
+                    '  <key>CFBundleName</key><string>J.A.R.V.I.S</string>\n'
                     '  <key>CFBundlePackageType</key><string>APPL</string>\n'
                     '  <key>CFBundleVersion</key><string>1.0</string>\n'
                     '</dict></plist>\n'
@@ -3364,11 +3339,10 @@ class MainWindow(QMainWindow):
                         png_path = ico_path  # fallback to .ico
 
                 icon_line = f"Icon={png_path}\n" if png_path.exists() else ""
-                desk = desktop / "MIA.desktop"
-                (desktop / "J.A.R.V.I.S.desktop").unlink(missing_ok=True)   # legacy shortcut
+                desk = desktop / "J.A.R.V.I.S.desktop"
                 desk.write_text(
                     "[Desktop Entry]\n"
-                    "Name=MIA\n"
+                    "Name=J.A.R.V.I.S\n"
                     f"Exec={python} {script}\n"
                     f"Path={script.parent}\n"
                     "Type=Application\n"
@@ -3518,7 +3492,9 @@ class MainWindow(QMainWindow):
         self._title_lbl.setFont(QFont("Courier New", 17, QFont.Weight.Bold))
         self._title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         mid.addWidget(self._title_lbl)
-        _sub_text = "Personal AI Assistant"
+        _sub_text = ("Just A Rather Very Intelligent System"
+                     if _disp in ("MIA", "J.A.R.V.I.S")
+                     else "Personal AI Assistant")
         self._sub_lbl = QLabel(_sub_text)
         self._sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub_lbl.setFont(QFont("Courier New", 7))
@@ -4048,45 +4024,25 @@ class MainWindow(QMainWindow):
 
     # ── Auto-start ──────────────────────────────────────────────────────────────
 
-    # Auto-start entry names. The _LEGACY_* entries are what older installs
-    # registered under the previous assistant name; they are only ever read to
-    # migrate or remove them, never written again.
-    _AUTOSTART_WIN_VALUE        = "MIA_AI"
-    _AUTOSTART_MAC_LABEL        = "com.mia.assistant"
-    _AUTOSTART_LINUX_FILE       = "mia.desktop"
-    _LEGACY_AUTOSTART_WIN_VALUE  = "JARVIS_AI"
-    _LEGACY_AUTOSTART_MAC_LABEL  = "com.jarvis.assistant"
-    _LEGACY_AUTOSTART_LINUX_FILE = "jarvis.desktop"
-
-    def _autostart_paths(self) -> tuple[Path, Path]:
-        """(current, legacy) auto-start file for macOS / Linux."""
-        if _OS == "Darwin":
-            d = Path.home() / "Library" / "LaunchAgents"
-            return (d / f"{self._AUTOSTART_MAC_LABEL}.plist",
-                    d / f"{self._LEGACY_AUTOSTART_MAC_LABEL}.plist")
-        d = Path.home() / ".config" / "autostart"
-        return d / self._AUTOSTART_LINUX_FILE, d / self._LEGACY_AUTOSTART_LINUX_FILE
-
     def _check_autostart(self) -> bool:
-        """Returns True if auto-start is currently registered on this OS.
-        A legacy entry counts as registered (it is migrated on next toggle)."""
+        """Returns True if auto-start is currently registered on this OS."""
         try:
             if _OS == "Windows":
                 import winreg
                 key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                     r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
                 try:
-                    for name in (self._AUTOSTART_WIN_VALUE, self._LEGACY_AUTOSTART_WIN_VALUE):
-                        try:
-                            winreg.QueryValueEx(key, name)
-                            return True
-                        except FileNotFoundError:
-                            continue
+                    winreg.QueryValueEx(key, "MIA_AI")
+                    return True
+                except FileNotFoundError:
                     return False
                 finally:
                     winreg.CloseKey(key)
-            current, legacy = self._autostart_paths()
-            return current.exists() or legacy.exists()
+            elif _OS == "Darwin":
+                return (Path.home() / "Library" / "LaunchAgents"
+                        / "com.jarvis.assistant.plist").exists()
+            else:
+                return (Path.home() / ".config" / "autostart" / "jarvis.desktop").exists()
         except Exception:
             return False
 
@@ -4098,23 +4054,18 @@ class MainWindow(QMainWindow):
                 import winreg
                 reg = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                     r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_ALL_ACCESS)
-                # Both enabling and disabling drop the legacy entry.
-                for name in (self._LEGACY_AUTOSTART_WIN_VALUE,
-                             *((self._AUTOSTART_WIN_VALUE,) if currently_on else ())):
-                    try:
-                        winreg.DeleteValue(reg, name)
-                    except FileNotFoundError:
-                        pass
-                if not currently_on:
+                if currently_on:
+                    winreg.DeleteValue(reg, "MIA_AI")
+                else:
                     pythonw = Path(sys.executable).parent / "pythonw.exe"
                     exe = str(pythonw if pythonw.exists() else sys.executable)
-                    winreg.SetValueEx(reg, self._AUTOSTART_WIN_VALUE, 0, winreg.REG_SZ,
+                    winreg.SetValueEx(reg, "MIA_AI", 0, winreg.REG_SZ,
                                       f'"{exe}" "{script}"')
                 winreg.CloseKey(reg)
             elif _OS == "Darwin":
-                plist, legacy = self._autostart_paths()
-                plist.parent.mkdir(parents=True, exist_ok=True)
-                legacy.unlink(missing_ok=True)
+                plist_dir = Path.home() / "Library" / "LaunchAgents"
+                plist_dir.mkdir(parents=True, exist_ok=True)
+                plist = plist_dir / "com.jarvis.assistant.plist"
                 if currently_on:
                     plist.unlink(missing_ok=True)
                 else:
@@ -4123,7 +4074,7 @@ class MainWindow(QMainWindow):
                         '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
                         '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
                         '<plist version="1.0"><dict>\n'
-                        f'  <key>Label</key><string>{self._AUTOSTART_MAC_LABEL}</string>\n'
+                        '  <key>Label</key><string>com.jarvis.assistant</string>\n'
                         '  <key>ProgramArguments</key><array>\n'
                         f'    <string>{sys.executable}</string>\n'
                         f'    <string>{script}</string>\n'
@@ -4132,9 +4083,9 @@ class MainWindow(QMainWindow):
                         '</dict></plist>\n'
                     )
             else:
-                desk, legacy = self._autostart_paths()
-                desk.parent.mkdir(parents=True, exist_ok=True)
-                legacy.unlink(missing_ok=True)
+                desk_dir = Path.home() / ".config" / "autostart"
+                desk_dir.mkdir(parents=True, exist_ok=True)
+                desk = desk_dir / "jarvis.desktop"
                 if currently_on:
                     desk.unlink(missing_ok=True)
                 else:
@@ -4194,7 +4145,7 @@ class MainWindow(QMainWindow):
                         "awake": bool(s.get("awake"))}
             except Exception:
                 pass
-        # Before MiaLive has wired its callback (drawer built at startup).
+        # Before MIALive has wired its callback (drawer built at startup).
         ready, enabled = False, False
         try:
             from core.wake_word import is_ready
@@ -4255,7 +4206,7 @@ class MainWindow(QMainWindow):
                 self._wake_dl_sig.emit(ok, msg)
             threading.Thread(target=_work, daemon=True).start()
             return
-        # Already downloaded → just flip enabled/disabled through MiaLive.
+        # Already downloaded → just flip enabled/disabled through MIALive.
         if self.on_wake_toggle:
             try:
                 self.on_wake_toggle(not st["enabled"])
@@ -4307,7 +4258,7 @@ class MainWindow(QMainWindow):
             self._customize_overlay.hide()
         cw = self.centralWidget()
         ov = CustomizeOverlay(
-            cfg["assistant_name"],
+            cfg.get("assistant_name", "MIA") or "MIA",
             cfg.get("user_name", ""),
             cfg.get("ui_color", "") or DEFAULT_UI_COLOR,
             cfg.get("voice_name", ""),
@@ -4334,11 +4285,14 @@ class MainWindow(QMainWindow):
     def _apply_name_update(self, name: str, user_name: str, ui_color: str = "",
                            voice: str = ""):
         """Update all name/theme-dependent UI elements and persist to config."""
-        self._assistant_name = normalize_assistant_name(name)
+        self._assistant_name = name.strip() or "MIA"
         display = self._assistant_name.upper()
         self.setWindowTitle(f"{display} — {APP_VERSION}")
         self._title_lbl.setText(display)
-        self._sub_lbl.setText("Personal AI Assistant")
+        if display in ("MIA", "J.A.R.V.I.S"):
+            self._sub_lbl.setText("Just A Rather Very Intelligent System")
+        else:
+            self._sub_lbl.setText("Personal AI Assistant")
         self._log._ai_name_lc = self._assistant_name.lower()
         self.hud._assistant_name = display
 
@@ -4359,10 +4313,19 @@ class MainWindow(QMainWindow):
                 save_voice(voice)
                 voice_changed = True
 
+        address_changed = False
+        new_address = getattr(self._customize_overlay, "_address_value", None)
+        if new_address is not None:
+            from memory.config_manager import get_user_address
+            if new_address != get_user_address():
+                address_changed = True
+
         try:
             data = _read_full_config()
             data["assistant_name"] = self._assistant_name
             data["user_name"] = user_name.strip()
+            if new_address is not None:
+                data["user_address"] = new_address
             if ui_color:
                 data["ui_color"] = ui_color.strip().lower()
             API_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
@@ -4371,10 +4334,15 @@ class MainWindow(QMainWindow):
                 self._log.append_log(f"SYS: UI colour applied — {ui_color}")
             if voice_changed:
                 self._log.append_log(f"SYS: Voice set — {voice}")
+            if address_changed:
+                from memory.config_manager import get_user_address
+                self._log.append_log(f"SYS: Address set — {get_user_address()}")
         except Exception as e:
             self._log.append_log(f"ERR: Config save failed — {e}")
 
-        if voice_changed and self.on_voice_change:
+        # Both the voice and the address are fixed when the session connects, so
+        # either one changing needs the same rebuild to take effect.
+        if (voice_changed or address_changed) and self.on_voice_change:
             self.on_voice_change()
 
     def _centre_overlay(self, ov) -> None:
@@ -4572,7 +4540,7 @@ class MainWindow(QMainWindow):
             self._overlay.hide()
             self._overlay = None
         self._apply_state("LISTENING")
-        self._assistant_name = _read_full_config()["assistant_name"]
+        self._assistant_name = _read_full_config().get("assistant_name", "MIA") or "MIA"
         self._log.append_log(f"SYS: Initialised. OS={os_name.upper()}. {self._assistant_name} online.")
 
 
@@ -4585,7 +4553,7 @@ class _RootShim:
         pass
 
 
-class MiaUI:
+class MIAUI:
     def __init__(self, face_path: str, size=None):
         self._app = QApplication.instance() or QApplication(sys.argv)
         self._app.setStyle("Fusion")

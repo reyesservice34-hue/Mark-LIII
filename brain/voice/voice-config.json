@@ -1,0 +1,27 @@
+﻿{
+  "voice_system": {
+    "enabled": true,
+    "architecture": {
+      "input": "microphone",
+      "stt": "voice/stt",
+      "conversation": "MIA core",
+      "tts": "voice/tts",
+      "output": "speaker"
+    },
+    "realtime": {
+      "enabled": true,
+      "interruptible": true,
+      "streaming": true
+    },
+    "profile": {
+      "language": "de-DE",
+      "style": "natural",
+      "tone": "calm",
+      "speed": 1.0
+    },
+    "fallback": {
+      "enabled": true,
+      "use_secondary_tts_if_primary_fails": true
+    }
+  }
+}

@@ -2,11 +2,8 @@ import subprocess
 import sys
 import json
 import re
-import threading
 import time
 from pathlib import Path
-
-from core.knowledge_client import procedure_add, procedure_find
 
 
 def get_base_dir():
@@ -27,15 +24,6 @@ def _get_api_key() -> str:
 
 
 def _get_gemini(model: str = GEMINI_MODEL):
-    from core.llm_client import get_llm_provider, call_llm_text
-
-    if get_llm_provider() == "anthropic":
-        class _Claude:
-            def generate_content(self, contents):
-                text = call_llm_text(contents, timeout=180)
-                return type("Response", (), {"text": text})()
-        return _Claude()
-
     from google import genai
     _c = genai.Client(api_key=_get_api_key())
 
@@ -67,7 +55,7 @@ def _resolve_save_path(output_path: str, language: str) -> Path:
         p = Path(output_path)
         return p if p.is_absolute() else DESKTOP / p
     ext = ext_map.get((language or "python").lower(), ".py")
-    return DESKTOP / f"mia_code{ext}"
+    return DESKTOP / f"jarvis_code{ext}"
 
 
 def _read_file(file_path: str) -> tuple[str, str]:
@@ -107,7 +95,7 @@ def _has_error(output: str) -> bool:
 def _take_screenshot() -> Path | None:
     try:
         import pyautogui
-        screenshot_path = Path.home() / "Desktop" / f"mia_debug_{int(time.time())}.png"
+        screenshot_path = Path.home() / "Desktop" / f"jarvis_debug_{int(time.time())}.png"
         screenshot = pyautogui.screenshot()
         screenshot.save(str(screenshot_path))
         print(f"[Code] 📸 Screenshot: {screenshot_path}")
@@ -197,16 +185,6 @@ Code:"""
 
 def _fix_code(code: str, error_output: str, description: str) -> str:
     model  = _get_gemini()
-
-    past_fixes = procedure_find(error_output[:200])[:2]
-    past_hint = ""
-    if past_fixes:
-        examples = "\n\n".join(
-            f"Problem: {p['problem'][:300]}\nFix that worked:\n{p['solution'][:1500]}"
-            for p in past_fixes
-        )
-        past_hint = f"\n\nSimilar problems fixed before (for reference only, adapt as needed):\n{examples}"
-
     prompt = f"""You are an expert debugger.
 The code below failed with the following error. Fix it.
 Return ONLY the corrected code — no explanation, no markdown, no backticks.
@@ -218,7 +196,6 @@ Error:
 
 Broken code:
 {code}
-{past_hint}
 
 Fixed code:"""
 
@@ -264,7 +241,7 @@ def _run_file(path: Path, args: list, timeout: int) -> str:
 
 def _build(description, language, output_path, args, timeout, speak=None, player=None) -> str:
     if not description:
-        return "Please describe what you want me to build, sir."
+        return "Please describe what you want me to build."
 
     if player:
         player.write_log("[Code] Build started...")
@@ -279,8 +256,7 @@ def _build(description, language, output_path, args, timeout, speak=None, player
         if speak: speak(msg)
         return msg
 
-    last_output     = ""
-    last_fix_record = None  # (problem_text, solution_code) from the fix that made the next run succeed
+    last_output = ""
     for attempt in range(1, MAX_BUILD_ATTEMPTS + 1):
         print(f"[Code] 🔄 Attempt {attempt}/{MAX_BUILD_ATTEMPTS}")
         if player:
@@ -289,11 +265,8 @@ def _build(description, language, output_path, args, timeout, speak=None, player
         last_output = _run_file(path, args, timeout)
 
         if not _has_error(last_output):
-            if last_fix_record:
-                problem, solution = last_fix_record
-                threading.Thread(target=procedure_add, args=(problem, solution), daemon=True).start()
             msg = (
-                f"Build complete, sir. "
+                f"Build complete. "
                 f"The code is working after {attempt} attempt{'s' if attempt > 1 else ''}. "
                 f"Saved to {path}."
             )
@@ -307,14 +280,13 @@ def _build(description, language, output_path, args, timeout, speak=None, player
         try:
             code = _fix_code(code, last_output, description)
             _save_file(path, code)
-            last_fix_record = (last_output[:500], code)
         except Exception as e:
             msg = f"Could not fix code on attempt {attempt}: {e}"
             if speak: speak(msg)
             return msg
 
     msg = (
-        f"I was unable to build a working version after {MAX_BUILD_ATTEMPTS} attempts, sir. "
+        f"I was unable to build a working version after {MAX_BUILD_ATTEMPTS} attempts. "
         f"The last error was: {last_output[:200]}"
     )
     if speak: speak(msg)
@@ -322,7 +294,7 @@ def _build(description, language, output_path, args, timeout, speak=None, player
 
 def _write_action(description, language, output_path, player) -> str:
     if not description:
-        return "Please describe what you want me to write, sir."
+        return "Please describe what you want me to write."
     if player:
         player.write_log("[Code] Writing code...")
     try:
@@ -335,9 +307,9 @@ def _write_action(description, language, output_path, player) -> str:
 
 def _edit_action(file_path, instruction, player) -> str:
     if not file_path:
-        return "Please provide a file path to edit, sir."
+        return "Please provide a file path to edit."
     if not instruction:
-        return "Please describe what change to make, sir."
+        return "Please describe what change to make."
 
     content, err = _read_file(file_path)
     if err:
@@ -375,7 +347,7 @@ def _explain_action(file_path, code, player) -> str:
         if err:
             return err
     if not code:
-        return "Please provide code or a file path to explain, sir."
+        return "Please provide code or a file path to explain."
 
     if player:
         player.write_log("[Code] Analyzing code...")
@@ -399,7 +371,7 @@ Explanation:"""
 
 def _run_action(file_path, args, timeout, player) -> str:
     if not file_path:
-        return "Please provide a file path to run, sir."
+        return "Please provide a file path to run."
     p = Path(file_path)
     if not p.exists():
         return f"File not found: {file_path}"
@@ -415,7 +387,7 @@ def _optimize_action(file_path, code, language, output_path, player) -> str:
         if err:
             return err
     if not code:
-        return "Please provide code or a file path to optimize, sir."
+        return "Please provide code or a file path to optimize."
 
     if player:
         player.write_log("[Code] Optimizing code...")
@@ -474,7 +446,7 @@ def _screen_debug_action(description, file_path, player, speak=None) -> str:
 
     screenshot_path = _take_screenshot()
     if not screenshot_path:
-        return "Could not take screenshot, sir. Please make sure PyAutoGUI is installed."
+        return "Could not take screenshot. Please make sure PyAutoGUI is installed."
 
 
     file_content = ""
