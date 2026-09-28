@@ -2,11 +2,8 @@ import subprocess
 import sys
 import json
 import re
-import threading
 import time
 from pathlib import Path
-
-from core.knowledge_client import procedure_add, procedure_find
 
 
 def get_base_dir():
@@ -17,7 +14,7 @@ def get_base_dir():
 
 BASE_DIR         = get_base_dir()
 API_CONFIG_PATH  = BASE_DIR / "config" / "api_keys.json"
-PROJECTS_DIR     = Path.home() / "Desktop" / "MiaProjects"
+PROJECTS_DIR     = Path.home() / "Desktop" / "JarvisProjects"
 MAX_FIX_ATTEMPTS = 5
 MODEL_PLANNER    = "gemini-flash-latest"
 MODEL_WRITER     = "gemini-flash-latest"
@@ -28,15 +25,6 @@ def _get_api_key() -> str:
 
 
 def _get_model(model_name: str):
-    from core.llm_client import get_llm_provider, call_llm_text
-
-    if get_llm_provider() == "anthropic":
-        class _Claude:
-            def generate_content(self, contents):
-                text = call_llm_text(contents, timeout=180)
-                return type("Response", (), {"text": text})()
-        return _Claude()
-
     from google import genai
     _c = genai.Client(api_key=_get_api_key())
 
@@ -400,15 +388,6 @@ def _fix_files(
             error_line and fix_path == error_file
         ) else ""
 
-        past_fixes = procedure_find(error_type)[:2]
-        past_hint = ""
-        if past_fixes:
-            examples = "\n\n".join(
-                f"Problem: {p['problem'][:300]}\nFix that worked:\n{p['solution'][:1500]}"
-                for p in past_fixes
-            )
-            past_hint = f"\n\nSimilar problems fixed before (for reference only, adapt as needed):\n{examples}"
-
         prompt = f"""You are an expert {language} debugger. Fix the broken file below.
 
 Project goal: {project_description}
@@ -427,7 +406,6 @@ Error output:
 
 Current (broken) code:
 {current_code}
-{past_hint}
 
 Rules:
 - Output ONLY the complete fixed code. No explanation, no markdown, no backticks.
@@ -474,7 +452,7 @@ def _build_project(
     try:
         plan = _plan_project(description, language)
     except RateLimitError:
-        msg = "Rate limit reached, sir. Please try again in a moment."
+        msg = "Rate limit reached. Please try again in a moment."
         if speak: speak(msg)
         return msg
     except ValueError as e:
@@ -482,7 +460,7 @@ def _build_project(
         if speak: speak(msg)
         return msg
 
-    proj_name    = project_name or plan.get("project_name", "mia_project")
+    proj_name    = project_name or plan.get("project_name", "jarvis_project")
     proj_name    = re.sub(r"[^\w\-]", "_", proj_name)
     project_dir  = PROJECTS_DIR / proj_name
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -531,7 +509,7 @@ def _build_project(
                 break
 
     if not file_codes:
-        msg = "I could not write any project files, sir."
+        msg = "I could not write any project files."
         if speak: speak(msg)
         return msg
 
@@ -541,9 +519,8 @@ def _build_project(
 
     _open_vscode(project_dir)
 
-    last_output    = ""
-    auto_installs  = 0
-    last_fix_record = None  # (problem_text, solution_code) from the fix that made the next run succeed
+    last_output   = ""
+    auto_installs = 0  
 
     for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
         log(f"Running project (attempt {attempt}/{MAX_FIX_ATTEMPTS})...")
@@ -551,11 +528,8 @@ def _build_project(
         log(f"Output preview: {last_output[:150]}")
 
         if not _has_error(last_output, run_command):
-            if last_fix_record:
-                problem, solution = last_fix_record
-                threading.Thread(target=procedure_add, args=(problem, solution), daemon=True).start()
             msg = (
-                f"Project '{proj_name}' is working, sir. "
+                f"Project '{proj_name}' is working. "
                 f"Built in {attempt} attempt{'s' if attempt > 1 else ''}. "
                 f"Saved to: {project_dir}"
             )
@@ -586,9 +560,6 @@ def _build_project(
                 entry_point=entry_point,
             )
             file_codes.update(updated)
-            if updated:
-                fixed_path, fixed_code = next(iter(updated.items()))
-                last_fix_record = (f"{error_type}: {last_output[:500]}", fixed_code)
             time.sleep(1)
         except RateLimitError:
             msg = "Rate limit reached during fix. Project saved, check it manually in VSCode."
@@ -598,7 +569,7 @@ def _build_project(
             log(f"Fix step failed: {e}")
 
     msg = (
-        f"I couldn't fully fix '{proj_name}' after {MAX_FIX_ATTEMPTS} attempts, sir. "
+        f"I couldn't fully fix '{proj_name}' after {MAX_FIX_ATTEMPTS} attempts. "
         f"Project is saved at {project_dir} — open it in VSCode and check manually."
     )
     if speak: speak(msg)
@@ -619,7 +590,7 @@ def dev_agent(
     timeout      = int(p.get("timeout", 30))
 
     if not description:
-        return "Please describe the project you want me to build, sir."
+        return "Please describe the project you want me to build."
 
     return _build_project(
         description  = description,

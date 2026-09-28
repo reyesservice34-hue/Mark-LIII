@@ -23,7 +23,7 @@ def save_api_keys(gemini_api_key: str) -> None:
     data: dict = {}
     if CONFIG_FILE.exists():
         try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
         except Exception:
             data = {}
 
@@ -38,9 +38,9 @@ def load_api_keys() -> dict:
     if not CONFIG_FILE.exists():
         return {}
     try:
-        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        return json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
     except Exception as e:
-        print(f"❌ Failed to load api_keys.json: {e}")
+        print(f"[Config] Failed to load api_keys.json: {e}")
         return {}
 
 def get_gemini_key() -> str | None:
@@ -51,61 +51,41 @@ def is_configured() -> bool:
     return bool(key and len(key) > 15)
 
 
-# ── Assistant identity ───────────────────────────────────────────────────────
-# MIA is the one and only assistant identity. Older installs stored the
-# previous name ("JARVIS") in api_keys.json; those values are treated as unset
-# so they can never reach the system prompt, the HUD or the dashboard again.
-DEFAULT_ASSISTANT_NAME = "MIA"
-_LEGACY_ASSISTANT_NAMES = {"jarvis", "j.a.r.v.i.s", "j.a.r.v.i.s."}
-
-
-def normalize_assistant_name(name) -> str:
-    """Return a usable assistant name: empty or legacy names become MIA."""
-    n = (name or "").strip() if isinstance(name, str) else ""
-    if not n or n.lower() in _LEGACY_ASSISTANT_NAMES:
-        return DEFAULT_ASSISTANT_NAME
-    return n
-
-
-def migrate_assistant_identity() -> bool:
-    """One-time migration of a legacy assistant name stored in api_keys.json.
-
-    Rewrites only the 'assistant_name' field, keeps every other key (API keys,
-    plugin credentials) untouched, and leaves a one-off backup of the original
-    file next to it. Returns True when the file was changed."""
-    if not CONFIG_FILE.exists():
-        return False
-    try:
-        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return False
-    if not isinstance(data, dict) or "assistant_name" not in data:
-        return False
-    current = data.get("assistant_name")
-    fixed = normalize_assistant_name(current)
-    if current == fixed:
-        return False
-    backup = CONFIG_FILE.with_name(CONFIG_FILE.name + ".pre-mia.bak")
-    try:
-        if not backup.exists():
-            backup.write_text(CONFIG_FILE.read_text(encoding="utf-8"), encoding="utf-8")
-    except Exception as e:
-        print(f"[Config] ⚠️ Could not back up api_keys.json before migration: {e}")
-        return False
-    data["assistant_name"] = fixed
-    CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
-    print(f"[Config] Assistant identity migrated to {fixed}")
-    return True
-
-
 def get_assistant_name() -> str:
     """Return the configured assistant name, or 'MIA' if not set."""
-    return normalize_assistant_name(load_api_keys().get("assistant_name"))
+    return load_api_keys().get("assistant_name", "MIA") or "MIA"
 
 
 def get_user_name() -> str:
     """Return the configured user name for addressing."""
     return load_api_keys().get("user_name", "")
+
+
+# ── How the assistant addresses the user ─────────────────────────────────────
+# Stored, not hardcoded: the vocative belongs to the person, not to the code.
+# Tool result strings carry NO vocative at all — they are data the model
+# rephrases, and a fixed English "sir" inside them was leaking into German
+# sentences. The one rule below is the only place the address is decided.
+DEFAULT_ADDRESS = "mein Herr"
+
+
+def get_user_address() -> str:
+    """The form of address to use, e.g. 'mein Herr'. Never empty."""
+    v = (load_api_keys().get("user_address") or "").strip()
+    return v or DEFAULT_ADDRESS
+
+
+def save_user_address(address: str) -> None:
+    """Persist the form of address. An empty value restores the default."""
+    ensure_config_dir()
+    data: dict = {}
+    if CONFIG_FILE.exists():
+        try:
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
+        except Exception:
+            data = {}
+    data["user_address"] = (address or "").strip() or DEFAULT_ADDRESS
+    CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
 
 
 def save_assistant_config(assistant_name: str, user_name: str) -> None:
@@ -114,28 +94,19 @@ def save_assistant_config(assistant_name: str, user_name: str) -> None:
     data: dict = {}
     if CONFIG_FILE.exists():
         try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
         except Exception:
             data = {}
-    data["assistant_name"] = normalize_assistant_name(assistant_name)
+    data["assistant_name"] = assistant_name.strip() or "MIA"
     data["user_name"] = user_name.strip()
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
-
-
-def save_user_name(user_name: str) -> str:
-    """Persist only the user's preferred name/nickname, leaving every other
-    field (assistant name, API keys, ...) untouched. Returns the stripped
-    value that was stored."""
-    name = (user_name or "").strip()
-    _patch_config(user_name=name)
-    return name
 
 
 # ── Assistant voice ──────────────────────────────────────────────────────────
 # Gemini Live prebuilt voices. Names are proper nouns — identical in every
 # language, so this list is safe to show verbatim in any locale.
 AVAILABLE_VOICES = ["Charon", "Puck", "Kore", "Fenrir", "Aoede"]
-DEFAULT_VOICE    = "Kore"
+DEFAULT_VOICE    = "Charon"
 
 
 def get_voice() -> str:
@@ -152,7 +123,7 @@ def save_voice(voice_name: str) -> None:
     data: dict = {}
     if CONFIG_FILE.exists():
         try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
         except Exception:
             data = {}
     v = (voice_name or "").strip()
@@ -161,7 +132,7 @@ def save_voice(voice_name: str) -> None:
 
 
 def get_wake_word_enabled() -> bool:
-    """Whether local wake-word gating is on (assistant sleeps until the wake phrase)."""
+    """Whether local wake-word gating is on (assistant sleeps until 'Hey Jarvis')."""
     return load_api_keys().get("wake_word_enabled", False)
 
 
@@ -170,52 +141,11 @@ def save_wake_word_enabled(enabled: bool) -> None:
     data: dict = {}
     if CONFIG_FILE.exists():
         try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
         except Exception:
             data = {}
     data["wake_word_enabled"] = bool(enabled)
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
-
-
-# ── Personality mode ─────────────────────────────────────────────────────────
-# A small set of tone presets the user can switch between by voice. Each entry
-# is the fragment injected into the system prompt (see main.py._build_config)
-# so the persisted choice survives a restart, not just the current session.
-PERSONALITY_MODES = {
-    "professional": (
-        "Professional, efficient, direct. No fluff, no jokes unless the user "
-        "makes one first. Keep responses tight and businesslike."
-    ),
-    "casual": (
-        "Relaxed and casual, like a sharp friend. Light humor and banter are "
-        "welcome. Still get things done — casual in tone, not in accuracy."
-    ),
-    "concise": (
-        "As few words as possible. One short sentence when one will do. No "
-        "small talk, no pleasantries, straight to the answer or the result."
-    ),
-    "warm": (
-        "Warm, encouraging, and personable. Show genuine interest in the "
-        "user's day and projects. Still efficient — warmth, not verbosity."
-    ),
-}
-DEFAULT_PERSONALITY_MODE = "professional"
-
-
-def get_personality_mode() -> str:
-    """Return the configured personality mode, or the default if unset or
-    unrecognised."""
-    mode = load_api_keys().get("personality_mode", DEFAULT_PERSONALITY_MODE)
-    return mode if mode in PERSONALITY_MODES else DEFAULT_PERSONALITY_MODE
-
-
-def save_personality_mode(mode: str) -> str:
-    """Persist the chosen personality mode. An unknown mode collapses to the
-    default so a bad value can never reach the system prompt. Returns the
-    mode that was actually stored."""
-    resolved = mode if mode in PERSONALITY_MODES else DEFAULT_PERSONALITY_MODE
-    _patch_config(personality_mode=resolved)
-    return resolved
 
 
 def get_brief_enabled() -> bool:
@@ -227,7 +157,7 @@ def save_brief_enabled(enabled: bool) -> None:
     data: dict = {}
     if CONFIG_FILE.exists():
         try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
         except Exception:
             data = {}
     data["morning_brief_enabled"] = enabled
@@ -251,7 +181,7 @@ def _patch_config(**fields) -> None:
     data: dict = {}
     if CONFIG_FILE.exists():
         try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
         except Exception:
             data = {}
     data.update(fields)
@@ -306,7 +236,7 @@ def save_plugin_config(namespace: str, values: dict) -> None:
     data: dict = {}
     if CONFIG_FILE.exists():
         try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
         except Exception:
             data = {}
     pc = data.get("plugin_config")
@@ -326,7 +256,7 @@ def save_plugin_enabled(plugin_name: str, enabled: bool) -> None:
     data: dict = {}
     if CONFIG_FILE.exists():
         try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
         except Exception:
             data = {}
     plugins_cfg = data.get("plugins_enabled")
