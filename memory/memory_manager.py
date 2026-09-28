@@ -1,6 +1,7 @@
 import json
 import re
 import threading
+import hashlib
 from datetime import datetime
 from threading import Lock
 from pathlib import Path
@@ -15,6 +16,16 @@ def get_base_dir() -> Path:
 
 BASE_DIR         = get_base_dir()
 MEMORY_PATH      = BASE_DIR / "memory" / "long_term.json"
+
+BRAIN_DIR        = BASE_DIR / "brain"
+BRAIN_MEMORY_DIR = BRAIN_DIR / "memory"
+EPISODIC_PATH    = BRAIN_MEMORY_DIR / "episodic" / "sessions.jsonl"
+SEMANTIC_PATH    = BRAIN_MEMORY_DIR / "semantic" / "archive.jsonl"
+LEARNING_INBOX_PATH = BRAIN_DIR / "ingestion" / "inbox" / "candidates.jsonl"
+LEARNING_VALIDATED_PATH = BRAIN_DIR / "ingestion" / "validated" / "processed.jsonl"
+LEARNING_REJECTED_PATH = BRAIN_DIR / "ingestion" / "rejected" / "rejected.jsonl"
+RETRIEVAL_DB_PATH = BRAIN_DIR / "indexes" / "memory_fts.sqlite3"
+
 _lock            = Lock()
 MAX_VALUE_LENGTH = 380
 
@@ -45,6 +56,343 @@ PROMPT_INDEX_CHARS = 420
 # with forty stored preferences still gets their sister into the prompt.
 PROMPT_MAX_PER_CATEGORY = 6
 
+
+def _append_brain_record(path: Path, payload: dict) -> None:
+    """Append one durable record to the MIA brain as UTF-8 JSONL."""
+    if not isinstance(payload, dict):
+        return
+
+    row = dict(payload)
+    row.setdefault(
+        "archived_at",
+        datetime.now().isoformat(timespec="seconds"),
+    )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with _lock:
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _read_brain_records(path: Path) -> list[dict]:
+    """Read valid JSONL records. Broken individual lines are ignored."""
+    if not path.exists():
+        return []
+
+    records: list[dict] = []
+
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(item, dict):
+                    records.append(item)
+    except Exception as exc:
+        print(f"[Memory] Brain archive read error: {exc}")
+
+    return records
+
+
+
+_SEMANTIC_CATEGORIES = {"identity", "preferences", "projects", "relationships", "wishes", "notes"}
+_SECRET_KEY_RE = re.compile(r"api[_-]?key|token|password|passwd|secret|credential|cookie|private[_-]?key", re.I)
+
+
+def _semantic_safe(category: str, key: str, value: str) -> bool:
+    text_key = f"{category}/{key}"
+    text_val = str(value or "")
+    if _SECRET_KEY_RE.search(text_key):
+        return False
+    if "BEGIN PRIVATE KEY" in text_val or "BEGIN OPENSSH PRIVATE KEY" in text_val:
+        return False
+    if text_val.startswith("sk-") or text_val.startswith("Bearer "):
+        return False
+    return True
+
+
+def _archive_semantic_fact(category: str, key: str, value: str, source: str = "memory") -> None:
+    category = str(category or "").strip()
+    key = str(key or "").strip()
+    value = _truncate_value(str(value or "").strip())
+    if category not in _SEMANTIC_CATEGORIES or not key or not value:
+        return
+    if not _semantic_safe(category, key, value):
+        return
+    current = _semantic_latest().get((category, key))
+    if current and str(current.get("value", "") or "").strip() == value:
+        return
+    updated = datetime.now().strftime("%Y-%m-%d")
+    _append_brain_record(
+        SEMANTIC_PATH,
+        {
+            "type": "semantic_fact",
+            "op": "upsert",
+            "category": category,
+            "key": key,
+            "value": value,
+            "source": source,
+            "updated": updated,
+        },
+    )
+    _index_record(
+        f"semantic:{category}:{key}",
+        kind="semantic",
+        category=category,
+        key=key,
+        value=value,
+        source=source,
+        updated=updated,
+    )
+
+
+def _archive_semantic_delete(category: str, key: str) -> None:
+    category = str(category or "").strip()
+    key = str(key or "").strip()
+    if category not in _SEMANTIC_CATEGORIES or not key:
+        return
+    _append_brain_record(
+        SEMANTIC_PATH,
+        {
+            "type": "semantic_fact",
+            "op": "delete",
+            "category": category,
+            "key": key,
+            "updated": datetime.now().strftime("%Y-%m-%d"),
+        },
+    )
+    _delete_index_record(f"semantic:{category}:{key}")
+
+
+
+def _learning_text_safe(text: str) -> bool:
+    value = str(text or "")
+    if not value.strip():
+        return False
+    if _SECRET_KEY_RE.search(value):
+        return False
+    if "BEGIN PRIVATE KEY" in value or "BEGIN OPENSSH PRIVATE KEY" in value:
+        return False
+    if value.strip().startswith("sk-") or "Bearer " in value:
+        return False
+    return True
+
+
+def _queue_learning_candidate(text: str, *, source: str, language: str = "", kind: str = "session_summary") -> None:
+    text = str(text or "").strip()
+    if not _learning_text_safe(text):
+        return
+    _append_brain_record(
+        LEARNING_INBOX_PATH,
+        {
+            "type": "learning_candidate",
+            "kind": kind,
+            "status": "pending_validation",
+            "source": source,
+            "language": str(language or "").strip(),
+            "text": text,
+        },
+    )
+
+
+
+def _candidate_id(item: dict) -> str:
+    payload = json.dumps(item, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
+
+
+def _processed_learning_ids() -> set[str]:
+    out: set[str] = set()
+    for path in (LEARNING_VALIDATED_PATH, LEARNING_REJECTED_PATH):
+        for item in _read_brain_records(path):
+            cid = str(item.get("candidate_id", "") or "").strip()
+            if cid:
+                out.add(cid)
+    return out
+
+
+def _extract_explicit_memory_fact(text: str) -> str:
+    value = str(text or "").strip()
+    if not value:
+        return ""
+    user_part = value
+    if "User:" in value:
+        user_part = value.split("User:", 1)[1].split("\nMIA:", 1)[0].strip()
+    patterns = [
+        r"(?is)\b(?:merk(?:e)?\s+dir|speicher(?:e)?|behalte(?:\s+dir)?|remember(?:\s+that)?)\s*(?:bitte\s*)?[:,-]?\s+(.{3,400})$",
+        r"(?is)\b(?:das\s+sollst\s+du\s+dir\s+merken)\s*[:,-]?\s+(.{3,400})$",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, user_part)
+        if m:
+            fact = re.sub(r"\s+", " ", m.group(1)).strip(" .")
+            if _learning_text_safe(fact):
+                return fact[:380]
+    return ""
+
+
+def process_learning_inbox() -> dict:
+    """Validate pending learning candidates without inventing facts.
+
+    Explicit user memory instructions become semantic notes. All other safe
+    conversation candidates stay episodic-only. Secret-like content is rejected.
+    """
+    processed = _processed_learning_ids()
+    stats = {"promoted": 0, "episodic_only": 0, "rejected": 0, "skipped": 0}
+
+    for item in _read_brain_records(LEARNING_INBOX_PATH):
+        cid = _candidate_id(item)
+        if cid in processed:
+            stats["skipped"] += 1
+            continue
+        text = str(item.get("text", "") or "").strip()
+        base = {
+            "candidate_id": cid,
+            "source": str(item.get("source", "") or ""),
+            "kind": str(item.get("kind", "") or ""),
+            "processed_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        if not _learning_text_safe(text):
+            _append_brain_record(LEARNING_REJECTED_PATH, {**base, "status": "rejected_secret_risk"})
+            stats["rejected"] += 1
+            processed.add(cid)
+            continue
+
+        fact = _extract_explicit_memory_fact(text)
+        if fact:
+            key = "explicit_" + hashlib.sha256(fact.lower().encode("utf-8")).hexdigest()[:12]
+            _archive_semantic_fact("notes", key, fact, source=base["source"] or "learning_inbox")
+            _append_brain_record(
+                LEARNING_VALIDATED_PATH,
+                {**base, "status": "promoted_semantic", "category": "notes", "key": key, "value": fact},
+            )
+            stats["promoted"] += 1
+        else:
+            _append_brain_record(
+                LEARNING_VALIDATED_PATH,
+                {**base, "status": "episodic_only"},
+            )
+            stats["episodic_only"] += 1
+        processed.add(cid)
+    return stats
+
+
+
+def _index_record(record_id: str, *, kind: str, category: str, key: str,
+                  value: str, source: str = "", updated: str = "") -> None:
+    try:
+        from memory.retrieval_index import upsert_record
+        upsert_record(
+            RETRIEVAL_DB_PATH,
+            record_id,
+            kind=kind,
+            category=category,
+            key=key,
+            value=value,
+            source=source,
+            updated=updated,
+        )
+    except Exception as exc:
+        print(f"[Memory] retrieval index write failed: {exc}")
+
+
+def _delete_index_record(record_id: str) -> None:
+    try:
+        from memory.retrieval_index import delete_record
+        delete_record(RETRIEVAL_DB_PATH, record_id)
+    except Exception as exc:
+        print(f"[Memory] retrieval index delete failed: {exc}")
+
+
+def rebuild_retrieval_index() -> dict:
+    try:
+        from memory.retrieval_index import reset, upsert_record
+        reset(RETRIEVAL_DB_PATH)
+        semantic_count = 0
+        episodic_count = 0
+        for (cat, key), item in _semantic_latest().items():
+            val = str(item.get("value", "") or "").strip()
+            if not val:
+                continue
+            upsert_record(
+                RETRIEVAL_DB_PATH,
+                f"semantic:{cat}:{key}",
+                kind="semantic",
+                category=cat,
+                key=key,
+                value=val,
+                source=str(item.get("source", "") or ""),
+                updated=str(item.get("updated", "") or ""),
+            )
+            semantic_count += 1
+        for item in _read_brain_records(EPISODIC_PATH):
+            summary = str(item.get("summary", "") or "").strip()
+            if not summary:
+                continue
+            rid = str(item.get("record_id", "") or "").strip()
+            if not rid:
+                raw = json.dumps(item, ensure_ascii=False, sort_keys=True)
+                rid = "episodic:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
+            upsert_record(
+                RETRIEVAL_DB_PATH,
+                rid,
+                kind="episodic",
+                category="episodic",
+                key=str(item.get("date", "") or "session"),
+                value=summary,
+                source=str(item.get("type", "") or "episodic"),
+                updated=str(item.get("date", "") or ""),
+            )
+            episodic_count += 1
+        return {"semantic": semantic_count, "episodic": episodic_count}
+    except Exception as exc:
+        print(f"[Memory] retrieval index rebuild failed: {exc}")
+        return {"semantic": 0, "episodic": 0}
+
+
+def _search_retrieval_index(query: str, limit: int = 16) -> list[dict]:
+    try:
+        from memory.retrieval_index import search
+        return search(RETRIEVAL_DB_PATH, query, limit=limit)
+    except Exception:
+        return []
+
+
+def _semantic_latest() -> dict[tuple[str, str], dict]:
+    latest: dict[tuple[str, str], dict] = {}
+    for item in _read_brain_records(SEMANTIC_PATH):
+        cat = str(item.get("category", "") or "").strip()
+        key = str(item.get("key", "") or "").strip()
+        if not cat or not key:
+            continue
+        marker = (cat, key)
+        if str(item.get("op", "upsert")) == "delete":
+            latest.pop(marker, None)
+            continue
+        value = str(item.get("value", "") or "").strip()
+        if value:
+            latest[marker] = item
+    return latest
+
+
+def _iter_update_leaves(obj, prefix: str = ""):
+    if isinstance(obj, dict) and "value" in obj:
+        yield prefix, obj.get("value")
+        return
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            child = f"{prefix}.{k}" if prefix else str(k)
+            yield from _iter_update_leaves(v, child)
+        return
+    if prefix:
+        yield prefix, obj
+
 def _empty_memory() -> dict:
     return {
         "identity":      {},
@@ -69,7 +417,7 @@ def load_memory() -> dict:
                 return data
             return _empty_memory()
         except Exception as e:
-            print(f"[Memory] ⚠️ Load error: {e}")
+            print(f"[Memory] Load error: {e}")
             return _empty_memory()
 
 def _all_entries(memory: dict) -> list[tuple]:
@@ -105,7 +453,7 @@ def _trim_to_limit(memory: dict) -> dict:
             break
         del memory[cat][key]
         dropped.append(f"{cat}/{key}")
-        print(f"[Memory] 🗑️  Trimmed {cat}/{key}")
+        print(f"[Memory] Trimmed {cat}/{key}")
     if dropped and _trim_notifier:
         try:
             _trim_notifier(
@@ -197,6 +545,12 @@ def update_memory(memory_update: dict) -> dict:
     memory = load_memory()
     if _recursive_update(memory, memory_update):
         save_memory(memory)
+        for category, payload in memory_update.items():
+            if category not in _SEMANTIC_CATEGORIES:
+                continue
+            for key, value in _iter_update_leaves(payload):
+                if value is not None and str(value).strip():
+                    _archive_semantic_fact(category, key, value, source="update_memory")
         print(f"[Memory] 💾 Saved: {list(memory_update.keys())}")
         _mirror_updates_async(memory_update)
     return memory
@@ -343,6 +697,20 @@ def format_memory_for_prompt(memory: dict | None) -> str:
                 indexed.append(overflow[cat][i])
                 cursor[cat] = i + 1
 
+    # Add durable semantic-only keys to the prompt index so MIA knows
+    # older facts exist and can call recall_memory for them.
+    local_pairs = set()
+    for local_cat, local_items in memory.items():
+        if isinstance(local_items, dict):
+            for local_key in local_items:
+                local_pairs.add((local_cat, local_key))
+    for (sem_cat, sem_key), _item in _semantic_latest().items():
+        if (sem_cat, sem_key) in local_pairs:
+            continue
+        name = _pretty(sem_key)
+        if name and name not in indexed:
+            indexed.append(name)
+
     for cat, label in _CATEGORY_LABELS.items():
         if shown.get(cat):
             core_lines.append("")
@@ -442,6 +810,55 @@ def search_memory(query: str, limit: int = 8) -> str:
             if s > 0:
                 rows.append((s, cat, key, val))
 
+    # Fast local FTS5 recall across durable semantic and episodic memory.
+    for item in _search_retrieval_index(query, limit=max(limit * 2, 12)):
+        cat = str(item.get("category", "") or item.get("kind", "") or "memory")
+        key = str(item.get("key", "") or item.get("record_id", "") or "record")
+        val = str(item.get("value", "") or "").strip()
+        if not val:
+            continue
+        s = _score(words, cat, key, val) if words else 1
+        if s > 0:
+            rows.append((s + 2, cat, key, val))
+
+    # Search durable semantic Brain memory too.
+    for (cat, key), item in _semantic_latest().items():
+        val = str(item.get("value", "") or "").strip()
+        if not val:
+            continue
+        s = _score(words, cat, key, val) if words else 1
+        if s > 0:
+            rows.append((s, cat, key, val))
+
+    # Search durable episodic Brain memory too.
+    # This keeps old sessions recallable even after pop_last_session()
+    # removes them from the fast long_term.json session queue.
+    for item in _read_brain_records(EPISODIC_PATH):
+        summary = str(item.get("summary", "") or "").strip()
+        if not summary:
+            continue
+
+        date = str(item.get("date", "") or "unknown")
+        key = f"session_{date}"
+        cat = "episodic"
+
+        s = _score(words, cat, key, summary) if words else 1
+        if s > 0:
+            rows.append((s, cat, key, summary))
+
+    # Avoid exact duplicate results.
+    deduped = []
+    seen = set()
+
+    for row in rows:
+        marker = (row[1], row[2], row[3])
+        if marker in seen:
+            continue
+        seen.add(marker)
+        deduped.append(row)
+
+    rows = deduped
+
     if not rows:
         if query:
             semantic = _search_memory_semantic_fallback(query, limit)
@@ -477,6 +894,19 @@ def all_entries_for_ui() -> list[dict]:
                 "value":    val,
                 "updated":  (entry.get("updated", "") if isinstance(entry, dict) else ""),
             })
+    existing = {(r["category"], r["key"]) for r in rows}
+    for (cat, key), item in _semantic_latest().items():
+        if (cat, key) in existing:
+            continue
+        val = str(item.get("value", "") or "").strip()
+        if not val:
+            continue
+        rows.append({
+            "category": cat,
+            "key": key,
+            "value": val,
+            "updated": str(item.get("updated", "") or ""),
+        })
     rows.sort(key=lambda r: (r["updated"] or "0000-00-00"), reverse=True)
     return rows
 
@@ -513,6 +943,11 @@ def forget(key: str, category: str = "notes") -> str:
         memory[category] = cat
         save_memory(memory)
         _mirror_delete_async(f"{category}:{key}")
+        _archive_semantic_delete(category, key)
+        return f"Forgotten: {category}/{key}"
+    if (category, key) in _semantic_latest():
+        _archive_semantic_delete(category, key)
+        _mirror_delete_async(f"{category}:{key}")
         return f"Forgotten: {category}/{key}"
     return f"Not found: {category}/{key}"
 
@@ -523,6 +958,51 @@ forget_memory = forget
 # ── Session memory ─────────────────────────────────────────────────────────────
 
 _SESSION_MAX = 3   # safety cap — in practice 0-1 entries after pop
+
+
+
+def record_conversation_turn(user_text: str, assistant_text: str, language: str = "") -> None:
+    """Persist one completed user/assistant turn as episodic memory and a learning candidate."""
+    user_text = str(user_text or "").strip()
+    assistant_text = str(assistant_text or "").strip()
+    if not user_text and not assistant_text:
+        return
+
+    combined = f"User: {user_text}\nMIA: {assistant_text}".strip()
+    if not _learning_text_safe(combined):
+        return
+
+    summary = combined[:1200]
+    now = datetime.now()
+    rid = "turn:" + hashlib.sha256((user_text + "\n" + assistant_text + now.isoformat()).encode("utf-8")).hexdigest()[:20]
+    _append_brain_record(
+        EPISODIC_PATH,
+        {
+            "record_id": rid,
+            "type": "conversation_turn",
+            "date": now.strftime("%Y-%m-%d"),
+            "language": str(language or "").strip(),
+            "user": user_text[:600],
+            "assistant": assistant_text[:600],
+            "summary": summary,
+        },
+    )
+    _index_record(
+        rid,
+        kind="episodic",
+        category="episodic",
+        key=now.strftime("%Y-%m-%d"),
+        value=summary,
+        source="conversation_turn",
+        updated=now.strftime("%Y-%m-%d"),
+    )
+    _queue_learning_candidate(
+        summary,
+        source="conversation_turn",
+        language=language,
+        kind="conversation_turn",
+    )
+    process_learning_inbox()
 
 
 def save_session_summary(summary: str, language: str = "") -> None:
@@ -541,6 +1021,31 @@ def save_session_summary(summary: str, language: str = "") -> None:
     if language:
         entry["language"] = language
     sessions.append(entry)
+
+    # Durable episodic memory:
+    # long_term.json remains the fast session core while the Brain keeps
+    # the complete history, even after pop_last_session() consumes it.
+    _append_brain_record(
+        EPISODIC_PATH,
+        {
+            "type": "session",
+            "date": entry.get("date", ""),
+            "language": entry.get("language", ""),
+            "summary": entry.get("summary", ""),
+        },
+    )
+
+    # Every finished session also enters the learning inbox. It is only a
+    # candidate here; promotion to durable semantic knowledge requires
+    # validation, matching the Brain learning policy.
+    _queue_learning_candidate(
+        entry.get("summary", ""),
+        source="session_summary",
+        language=entry.get("language", ""),
+        kind="session_summary",
+    )
+    process_learning_inbox()
+
     memory["sessions"] = sessions[-_SESSION_MAX:]
     with _lock:
         MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -591,5 +1096,5 @@ def pop_last_session() -> dict | None:
                 entry = {**entry, "summary": scrub_legacy_identity(entry["summary"])}
             return entry
         except Exception as e:
-            print(f"[Memory] ⚠️ pop_last_session error: {e}")
+            print(f"[Memory] pop_last_session error: {e}")
             return None

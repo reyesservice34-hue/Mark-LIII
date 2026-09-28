@@ -1,0 +1,27 @@
+﻿{
+  "allow_learning_from": [
+    "knowledge",
+    "skills",
+    "procedures",
+    "architecture",
+    "validated"
+  ],
+  "never_learn_from": [
+    "api_keys.json",
+    ".env",
+    "tokens",
+    "passwords",
+    "credentials",
+    "ssh_private_keys",
+    "cookies",
+    "browser_profiles",
+    "authentication_secrets"
+  ],
+  "rules": {
+    "validate_before_persist": true,
+    "retrieval_test_required": true,
+    "preserve_source": true,
+    "never_execute_untrusted_content": true,
+    "never_store_secrets_as_knowledge": true
+  }
+}

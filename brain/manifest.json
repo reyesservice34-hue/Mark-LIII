@@ -1,0 +1,27 @@
+﻿{
+  "system": "MIA",
+  "component": "brain",
+  "schema_version": "1.0",
+  "purpose": "Persistent memory, learning, procedures, skills, architecture, error knowledge and voice configuration.",
+  "rules": {
+    "never_store_secrets": true,
+    "never_overwrite_existing_files_automatically": true,
+    "validate_before_learning": true,
+    "quarantine_uncertain_content": true,
+    "test_retrieval_after_learning": true,
+    "preserve_source_information": true
+  },
+  "memory_layers": {
+    "working": "Temporary active-session context.",
+    "episodic": "Events, sessions and historical interactions.",
+    "semantic": "Durable verified facts and concepts.",
+    "preferences": "Stable authorized user and system preferences."
+  },
+  "learning_pipeline": [
+    "ingestion/inbox",
+    "validation",
+    "ingestion/validated",
+    "knowledge_or_memory",
+    "retrieval_test"
+  ]
+}

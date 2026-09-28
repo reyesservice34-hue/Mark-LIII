@@ -88,3 +88,26 @@ def _clean_dynamically_loaded_modules():
     _clean()
     yield
     _clean()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_brain_paths(tmp_path, monkeypatch):
+    """The brain (episodic/semantic archive, learning inbox, FTS index) lives
+    under the repo. Redirect it per test so tests never read or pollute the
+    real memory of a running MIA."""
+    try:
+        import memory.memory_manager as mm
+    except Exception:
+        yield
+        return
+    for attr, rel in (
+        ("EPISODIC_PATH", "brain/memory/episodic/sessions.jsonl"),
+        ("SEMANTIC_PATH", "brain/memory/semantic/archive.jsonl"),
+        ("LEARNING_INBOX_PATH", "brain/ingestion/inbox/candidates.jsonl"),
+        ("LEARNING_VALIDATED_PATH", "brain/ingestion/validated/processed.jsonl"),
+        ("LEARNING_REJECTED_PATH", "brain/ingestion/rejected/rejected.jsonl"),
+        ("RETRIEVAL_DB_PATH", "brain/indexes/memory_fts.sqlite3"),
+    ):
+        if hasattr(mm, attr):
+            monkeypatch.setattr(mm, attr, tmp_path / "mia-brain" / rel)
+    yield

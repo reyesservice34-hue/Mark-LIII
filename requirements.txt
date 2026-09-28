@@ -3,6 +3,7 @@ PyQt6
 sounddevice
 numpy
 google-genai>=2.8.0
+edge-tts                      # free TTS, no API key — voice notes fall back to it
 
 # ── Web search & browser control ──────────────────────────────────────────────
 requests

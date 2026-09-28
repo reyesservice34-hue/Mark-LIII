@@ -1,0 +1,12 @@
+﻿{
+  "test": "persistent_memory",
+  "steps": [
+    "Store a harmless test fact.",
+    "End the active session.",
+    "Start a new independent session.",
+    "Ask MIA for the stored fact.",
+    "Verify source and content.",
+    "Mark the test successful only if retrieval works."
+  ],
+  "status": "not_run"
+}
