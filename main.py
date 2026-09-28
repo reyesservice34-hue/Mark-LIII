@@ -730,7 +730,8 @@ class MiaLive:
 
         # Load customization from config
         try:
-            _cfg = json.loads(open(API_CONFIG_PATH, encoding="utf-8").read())
+            with open(API_CONFIG_PATH, encoding="utf-8") as _fh:
+                _cfg = json.loads(_fh.read())
             self._asst_name = normalize_assistant_name(_cfg.get("assistant_name"))
             _user_name = (_cfg.get("user_name") or "").strip()
         except Exception:
@@ -1824,6 +1825,7 @@ class MiaLive:
                 self.ui.set_state("THINKING")
                 _resumed_with = self._resume_handle is not None
                 config = self._build_config()
+                client = None
 
                 # Fresh client on every reconnect — avoids stale HTTP session state
                 # v1alpha carries proactive audio; if it gets rejected we fall
@@ -2009,6 +2011,14 @@ class MiaLive:
                         self._conn_backoff = 3
             finally:
                 self.session = None
+                if client is not None:
+                    try:
+                        await client.aio.aclose()
+                    except Exception:
+                        try:
+                            client.close()
+                        except Exception:
+                            pass
                 # Only save if there was a real conversation (≥3 turns)
                 if len(self._session_log) >= 3:
                     asyncio.create_task(self._save_session_summary())
