@@ -378,7 +378,7 @@ def test_build_project_succeeds_on_first_run(monkeypatch, tmp_projects_dir):
     monkeypatch.setattr(da, "_open_vscode", lambda project_dir: True)
     monkeypatch.setattr(da, "_run_project", lambda cmd, project_dir, timeout: "1")
     result = da._build_project("say hi", "python", "", 30)
-    assert "is working, sir" in result
+    assert "is working." in result
     assert "Built in 1 attempt" in result
 
 
@@ -407,7 +407,7 @@ def test_build_project_auto_installs_missing_dependency_and_retries(monkeypatch,
     monkeypatch.setattr(da, "_run_project", fake_run_project)
     monkeypatch.setattr(da, "_try_auto_install", lambda output, project_dir: True)
     result = da._build_project("say hi", "python", "", 30)
-    assert "is working, sir" in result
+    assert "is working." in result
     assert calls["n"] == 2
 
 
