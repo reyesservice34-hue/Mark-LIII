@@ -212,7 +212,7 @@ def test_run_catches_exceptions_and_logs(tmp_path):
     lines, log = _logger()
     reg = pl.discover_plugins(tmp_path, core_tool_names=set(), logger=log)
     result = reg.run("boom", {})
-    assert result == "Sir, the 'boom' plugin failed: kaputt"
+    assert result == "The 'boom' plugin failed: kaputt"
     assert any("crashed during run()" in l for l in lines)
 
 
