@@ -31,6 +31,15 @@ WHAT BELONGS HERE AND WHAT DOES NOT
     Only genuinely irreversible things. Anything that can be reversed should be
     done at once and pushed onto core/undo.py instead — undo is faster than a
     question, and an assistant that asks before every action is one nobody uses.
+
+AUTONOMOUS MODE
+    An explicit, owner-set opt-in (memory.config_manager.get_autonomous_mode,
+    "autonomous_mode" in config/api_keys.json, default off). When on, request()
+    runs the action immediately instead of waiting on the HUD — still logged,
+    just not confirmed. This is a deliberate trade the owner makes for their
+    own assistant on their own machine; it is not reachable or toggleable by
+    the model itself (the flag lives in a config file the model has no tool to
+    write).
 """
 
 from __future__ import annotations
@@ -86,6 +95,16 @@ def request(key: str, title: str, detail: str, run: Callable[[], str]) -> str:
     instruction so the assistant asks the user out loud in their own language,
     rather than reading an English string verbatim."""
     global _pending
+
+    from memory.config_manager import get_autonomous_mode
+    if get_autonomous_mode():
+        try:
+            result = run() or "Done."
+        except Exception as e:
+            _log(f"ERR: {title} failed — {e}")
+            return f"'{title}' failed: {e}"
+        _log(f"SYS: Auto-confirmed (autonomous mode) — {title}. {result}")
+        return result
 
     if _show_cb is None:
         # No interface bound (headless, or a very early call). Refuse rather
