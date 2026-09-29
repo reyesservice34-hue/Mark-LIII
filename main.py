@@ -221,10 +221,16 @@ TOOL_DECLARATIONS = [
     {
         "name": "shutdown_assistant",
         "description": (
-            "Shuts down the assistant completely. "
-            "Call this when the user expresses intent to end the conversation, "
-            "close the assistant, say goodbye, or stop MIA. "
-            "The user can say this in ANY language."
+            "Shuts down the assistant process. The service auto-restarts it a few "
+            "seconds later, so this doubles as a restart. "
+            "Call this ONLY for an explicit, direct command to shut down or restart "
+            "yourself — e.g. 'schalte dich ab', 'starte dich neu', 'shut yourself "
+            "down', 'restart yourself'. The user can phrase that command in ANY "
+            "language, but it must be a direct instruction to act on the assistant "
+            "itself, not vague or implied. "
+            "Do NOT call this for a casual goodbye, 'tschüss', 'bis später', ending "
+            "small talk, or any other sign the user is just done talking for now — "
+            "reply warmly instead and leave the session running."
         ),
         "parameters": {
             "type": "OBJECT",
