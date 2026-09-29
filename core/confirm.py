@@ -35,6 +35,7 @@ WHAT BELONGS HERE AND WHAT DOES NOT
 
 from __future__ import annotations
 
+import _thread
 import threading
 import time
 from dataclasses import dataclass
@@ -79,6 +80,35 @@ def _log(msg: str) -> None:
             pass
 
 
+def _push_phone(title: str, detail: str) -> None:
+    """Best-effort ntfy push so a pending confirmation reaches the phone.
+
+    Opt-in: does nothing unless "ntfy_topic" is set in config/api_keys.json
+    (optional "ntfy_server", default https://ntfy.sh). Never raises."""
+    try:
+        import json
+        import urllib.request
+        from pathlib import Path
+
+        cfg_path = Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8-sig"))
+        topic = str(cfg.get("ntfy_topic", "")).strip()
+        if not topic:
+            return
+        server = str(cfg.get("ntfy_server", "https://ntfy.sh")).rstrip("/")
+        req = urllib.request.Request(
+            f"{server}/{topic}",
+            data=(detail or title).encode("utf-8"),
+            headers={"Title": title.encode("ascii", "ignore").decode() or "Bestaetigung",
+                     "Priority": "high", "Tags": "warning"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=8).close()
+        _log(f"SYS: Push gesendet — {title}")
+    except Exception as e:
+        _log(f"ERR: Push fehlgeschlagen — {e}")
+
+
 def request(key: str, title: str, detail: str, run: Callable[[], str]) -> str:
     """Park an irreversible action behind the on-screen gate.
 
@@ -105,6 +135,9 @@ def request(key: str, title: str, detail: str, run: Callable[[], str]) -> str:
         return f"Could not ask for confirmation: {e}. Nothing was done."
 
     _log(f"SYS: Awaiting confirmation — {title}")
+    # Fire-and-forget; raw thread so "confirm-<key>" stays the only Thread object
+    # this module creates.
+    _thread.start_new_thread(_push_phone, (title, detail))
     return (
         f"[CONFIRMATION_PENDING] I have put a confirmation on screen for: {title}. "
         f"Say ONE short sentence in the user's own language telling them you need "
