@@ -45,20 +45,59 @@ def main() -> int:
 
         try:
             from core.local_brain import chat
-            answer, _ = chat(
+            answer, history = chat(
                 "Erledige diese Aufgabe jetzt vollstaendig und eigenstaendig mit deinen Tools. "
                 "Berichte am Ende in 2-4 Saetzen, was du konkret getan hast und was das Ergebnis ist. "
                 "VERBOTEN: Ankuendigungen wie 'ich werde ... versuchen' oder 'ich mache das jetzt' - "
                 "das ist kein Ergebnis. Entweder du lieferst das konkrete Resultat, oder du sagst "
-                "exakt, was nicht ging und warum.\n\nAUFGABE: " + task["goal"]
+                "exakt, was nicht ging und warum.\n\nAUFGABE: " + task["goal"],
+                skip_clarify=True,
+                routing_text=task["goal"],
+                exclude_tools={"background_task"},
             )
             answer = answer.strip()
+
+            # "done" darf nur mit echter Ausfuehrungsevidenz gesetzt werden.
+            tool_results = [
+                str(m.get("content") or "").strip()
+                for m in history
+                if isinstance(m, dict) and m.get("role") == "tool"
+            ]
+
+            def _tool_failed(result: str) -> bool:
+                low = result.lower().strip()
+                return (
+                    low.startswith(("fehler", "error", "fehlgeschlagen"))
+                    or "unbekanntes tool" in low
+                    or "timeout" in low
+                    or "nicht erreichbar" in low
+                )
+
+            successful_tool_results = [r for r in tool_results if r and not _tool_failed(r)]
             _promise = any(p in answer.lower() for p in (
                 "ich werde", "werde ich", "ich versuche es", "versuche ich", "ich mache das jetzt", "gleich"))
             _substance = len(answer) > 40 and not _promise
-            task["status"] = "done" if _substance else "failed"
-            task["result"] = answer if _substance else (
-                "Kein verwertbares Ergebnis - die Antwort war nur eine Ankuendigung oder leer: " + answer[:200])
+            _executed = bool(successful_tool_results)
+
+            task["execution_evidence"] = {
+                "tool_calls": len(tool_results),
+                "successful_tool_calls": len(successful_tool_results),
+            }
+            task["status"] = "done" if (_substance and _executed) else "failed"
+
+            if task["status"] == "done":
+                task["result"] = answer
+            elif not _executed:
+                task["result"] = (
+                    "Nicht erledigt: Es wurde kein erfolgreicher Tool-Aufruf ausgefuehrt. "
+                    "MIA darf reine Absichts- oder Ergebnisbehauptungen nicht als erledigt markieren. "
+                    "Letzte Antwort: " + answer[:200]
+                )
+            else:
+                task["result"] = (
+                    "Nicht erledigt: Die Abschlussantwort war leer oder nur eine Ankuendigung. "
+                    "Letzte Antwort: " + answer[:200]
+                )
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
             print(f"[tasks] Fehler: {err}", flush=True)
