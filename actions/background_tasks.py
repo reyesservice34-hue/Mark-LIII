@@ -1,48 +1,59 @@
 """
-actions/background_tasks.py — echte Aufgaben-Persistenz fuer MIA.
+Persistent background task tool for MIA.
 
-Eine Aufgabe ist NICHT an den Chat gebunden: sie wird als Datei in
-tasks/queue/ abgelegt und von einem eigenen Worker (tasks_worker.py, laeuft
-als systemd-Timer alle 60 s) ueber den lokalen Denk-Pfad abgearbeitet -
-auch wenn der Nutzer den Chat laengst geschlossen hat. Ergebnisse landen in
-tasks/done/ und im Langzeitgedaechtnis, damit MIA sie beim naechsten Kontakt
-von selbst berichten kann.
-
-Tool-Aktionen: create (neue Aufgabe), list (offen/erledigt), result (Ergebnis holen).
+Tasks are stored on disk and executed by the independent mia-tasks.timer worker.
+The authoritative lifecycle is managed by brain.cognition.AutonomousBrain.
 """
 from __future__ import annotations
 
 import json
 import sys
-import time
-import uuid
 from pathlib import Path
 
 _BASE = Path(__file__).resolve().parent.parent
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
+from brain.cognition.autonomous_core import AutonomousBrain
+
 QUEUE = _BASE / "tasks" / "queue"
 DONE = _BASE / "tasks" / "done"
+_BRAIN = AutonomousBrain(_BASE)
 
 
-def _as_text(v) -> str:
-    if isinstance(v, dict):
-        v = " ".join(str(x) for x in v.values())
-    elif isinstance(v, (list, tuple)):
-        v = " ".join(str(x) for x in v)
-    return str(v or "").strip()
+def _as_text(value) -> str:
+    if isinstance(value, dict):
+        value = " ".join(str(x) for x in value.values())
+    elif isinstance(value, (list, tuple)):
+        value = " ".join(str(x) for x in value)
+    return str(value or "").strip()
 
 
 def _load_all(folder: Path) -> list[dict]:
     folder.mkdir(parents=True, exist_ok=True)
-    items = []
-    for p in sorted(folder.glob("*.json")):
+    items: list[dict] = []
+    for path in sorted(folder.glob("*.json")):
         try:
-            items.append(json.loads(p.read_text(encoding="utf-8")))
+            row = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(row, dict):
+                items.append(row)
         except Exception:
             continue
     return items
+
+
+def _state(task: dict) -> str:
+    state = str(task.get("state") or "").upper().strip()
+    if state:
+        return state
+    status = str(task.get("status") or "").lower()
+    return {
+        "pending": "QUEUED",
+        "in_progress": "EXECUTING",
+        "done": "DONE",
+        "failed": "FAILED",
+        "waiting_approval": "WAITING_FOR_APPROVAL",
+    }.get(status, status.upper() or "UNKNOWN")
 
 
 def background_tasks(parameters: dict, player=None, session_memory=None) -> str:
@@ -52,53 +63,164 @@ def background_tasks(parameters: dict, player=None, session_memory=None) -> str:
     if action == "create":
         if not goal:
             return "Ich brauche ein Ziel fuer die Aufgabe (goal)."
-        QUEUE.mkdir(parents=True, exist_ok=True)
-        tid = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
-        task = {"id": tid, "goal": goal, "status": "pending", "created": time.time(),
-                "attempts": 0, "result": None}
-        (QUEUE / f"{tid}.json").write_text(json.dumps(task, ensure_ascii=False, indent=1), encoding="utf-8")
-        return (f"Aufgabe {tid} angelegt und in die Warteschlange gestellt. Sie wird im Hintergrund "
-                f"abgearbeitet - auch wenn dieses Gespraech endet. Frag mich spaeter nach dem Ergebnis.")
+        task = _BRAIN.create_task(
+            goal,
+            source="user",
+            autonomy="auto",
+            reason="direct_background_task",
+        )
+        return (
+            f"Aufgabe {task['id']} angelegt. Status: {task['state']}. "
+            "Der echte Hintergrund-Worker uebernimmt sie unabhaengig vom Chat."
+        )
+
+    if action == "schedule":
+        run_at = _as_text(parameters.get("run_at"))
+        if not goal:
+            return "Ich brauche ein Ziel fuer den Zeit-Trigger (goal)."
+        if not run_at:
+            return "Ich brauche den Ausfuehrungszeitpunkt als ISO-Zeit in run_at."
+        try:
+            trigger = _BRAIN.register_time_trigger(
+                goal,
+                run_at,
+                source="user",
+                autonomy="auto",
+                reason="user_scheduled_followup",
+            )
+        except Exception as exc:
+            return f"Zeit-Trigger konnte nicht angelegt werden: {type(exc).__name__}: {exc}"
+        return (
+            f"Zeit-Trigger {trigger['id']} angelegt fuer {trigger['run_at']}. "
+            "Wenn er faellig wird, erzeugt MIA selbststaendig eine echte Aufgabe."
+        )
+
+    if action == "triggers":
+        rows = _BRAIN.list_triggers(include_finished=False)
+        if not rows:
+            return "Keine offenen Zeit-Trigger."
+        return "\n".join(
+            [f"Offene Zeit-Trigger: {len(rows)}"]
+            + [
+                f"  [{row.get('state')}] {row.get('id')} @ {row.get('run_at')}: "
+                f"{str(row.get('goal') or '')[:90]}"
+                for row in rows[-10:]
+            ]
+        )
+
+    if action == "cancel_trigger":
+        trigger_id = _as_text(parameters.get("trigger_id"))
+        if not trigger_id:
+            return "Zum Abbrechen brauche ich die trigger_id."
+        if _BRAIN.cancel_trigger(trigger_id):
+            return f"Zeit-Trigger {trigger_id} wurde abgebrochen."
+        return f"Zeit-Trigger {trigger_id} wurde nicht als offen gefunden."
 
     if action == "list":
         pending = _load_all(QUEUE)
         done = _load_all(DONE)
-        lines = [f"Offen: {len(pending)} | Erledigt: {len(done)}"]
-        for t in pending[-5:]:
-            lines.append(f"  [offen] {t['id']}: {t['goal'][:80]} (Status {t['status']})")
-        for t in done[-5:]:
-            lines.append(f"  [erledigt] {t['id']}: {t['goal'][:60]} -> {str(t.get('result') or '')[:80]}")
+        lines = [f"Offen: {len(pending)} | Abgeschlossen: {len(done)}"]
+        for task in pending[-8:]:
+            lines.append(
+                f"  [{_state(task)}] {task.get('id')}: "
+                f"{str(task.get('goal') or '')[:80]}"
+            )
+        for task in done[-5:]:
+            lines.append(
+                f"  [{_state(task)}] {task.get('id')}: "
+                f"{str(task.get('goal') or '')[:55]} -> "
+                f"{str(task.get('result') or '')[:90]}"
+            )
         return "\n".join(lines)
 
-    if action == "result":
-        tid = _as_text(parameters.get("task_id"))
-        for t in _load_all(DONE):
-            if not tid or t["id"] == tid:
-                if tid or t is _load_all(DONE)[-1]:
-                    return f"Ergebnis von {t['id']} ({t['goal'][:60]}):\n{t.get('result') or '(kein Ergebnis)'}"
-        for t in _load_all(QUEUE):
-            if t["id"] == tid:
-                return f"Aufgabe {tid} ist noch nicht fertig (Status {t['status']}, {t['attempts']} Versuche)."
-        return "Keine passende Aufgabe gefunden."
+    if action == "approve":
+        task_id = _as_text(parameters.get("task_id"))
+        if not task_id:
+            return "Fuer die Freigabe brauche ich die task_id."
+        path = QUEUE / f"{task_id}.json"
+        if not path.exists():
+            return f"Aufgabe {task_id} wurde nicht in der offenen Queue gefunden."
+        try:
+            task = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return f"Aufgabe {task_id} konnte nicht gelesen werden: {type(exc).__name__}."
+        if _state(task) != "WAITING_FOR_APPROVAL":
+            return f"Aufgabe {task_id} wartet nicht auf Freigabe. Aktueller Status: {_state(task)}."
+        task["policy"] = "approved_by_user"
+        _BRAIN.transition(task, "QUEUED", approved_by="user")
+        path.write_text(json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8")
+        return f"Aufgabe {task_id} ist freigegeben und steht jetzt auf QUEUED."
 
-    return "Unbekannte Aktion. Nutze create, list oder result."
+    if action == "cancel":
+        task_id = _as_text(parameters.get("task_id"))
+        if not task_id:
+            return "Zum Abbrechen brauche ich die task_id."
+        path = QUEUE / f"{task_id}.json"
+        if not path.exists():
+            return f"Aufgabe {task_id} wurde nicht in der offenen Queue gefunden."
+        try:
+            task = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return f"Aufgabe {task_id} konnte nicht gelesen werden: {type(exc).__name__}."
+        _BRAIN.transition(task, "CANCELLED", result="Vom Nutzer abgebrochen.")
+        (DONE / path.name).write_text(json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8")
+        path.unlink(missing_ok=True)
+        return f"Aufgabe {task_id} wurde abgebrochen."
+
+    if action == "result":
+        task_id = _as_text(parameters.get("task_id"))
+        done = _load_all(DONE)
+        if task_id:
+            for task in done:
+                if str(task.get("id")) == task_id:
+                    return (
+                        f"Ergebnis von {task_id} ({str(task.get('goal') or '')[:60]}):\n"
+                        f"{task.get('result') or '(kein Ergebnis)'}"
+                    )
+            for task in _load_all(QUEUE):
+                if str(task.get("id")) == task_id:
+                    return (
+                        f"Aufgabe {task_id} ist noch nicht fertig. "
+                        f"Status: {_state(task)}, Versuche: {int(task.get('attempts', 0))}."
+                    )
+            return "Keine passende Aufgabe gefunden."
+
+        if not done:
+            pending = _load_all(QUEUE)
+            if pending:
+                task = pending[-1]
+                return (
+                    f"Die neueste Aufgabe {task.get('id')} ist noch offen. "
+                    f"Status: {_state(task)}."
+                )
+            return "Es gibt noch keine Hintergrund-Aufgabe."
+
+        task = max(done, key=lambda row: float(row.get("finished") or row.get("created") or 0))
+        return (
+            f"Letztes Ergebnis von {task.get('id')} "
+            f"({str(task.get('goal') or '')[:60]}):\n"
+            f"{task.get('result') or '(kein Ergebnis)'}"
+        )
+
+    return "Unbekannte Aktion. Nutze create, schedule, triggers, cancel_trigger, list, result, approve oder cancel."
 
 
 TOOL = {
     "name": "background_task",
     "description": (
-        "Persistent background task engine. Use 'create' when the user hands over a task that "
-        "takes time or should be completed even after the conversation ends - it is queued and "
-        "executed by a background worker independently of the chat. 'list' shows open/finished "
-        "tasks, 'result' fetches a finished task's outcome. Never claim a queued task is already "
-        "done - report its real status."
+        "Persistente echte Hintergrund-Aufgaben und operative Proaktivitaet. create legt "
+        "sofort einen Task an; schedule registriert einen dauerhaften Zeit-Trigger; triggers "
+        "zeigt offene Trigger; cancel_trigger bricht einen Trigger ab. list/result zeigen reale "
+        "Task-Zustaende. Nie eine Aufgabe als erledigt behaupten, bevor ihr Zustand DONE ist."
     ),
     "parameters": {
         "type": "OBJECT",
         "properties": {
-            "action": {"type": "STRING", "description": "create | list | result"},
-            "goal": {"type": "STRING", "description": "The task to complete (for create)"},
-            "task_id": {"type": "STRING", "description": "Task id (for result), optional"},
+            "action": {"type": "STRING", "description": "create | schedule | triggers | cancel_trigger | list | result | approve | cancel"},
+            "goal": {"type": "STRING", "description": "Aufgabenziel fuer create oder schedule"},
+            "task_id": {"type": "STRING", "description": "Task-ID fuer result, approve oder cancel"},
+            "run_at": {"type": "STRING", "description": "ISO-8601-Zeitpunkt fuer schedule, z.B. 2026-10-01T09:00:00+02:00"},
+            "trigger_id": {"type": "STRING", "description": "Trigger-ID fuer cancel_trigger"},
         },
         "required": ["action"],
     },

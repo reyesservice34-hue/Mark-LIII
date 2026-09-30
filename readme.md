@@ -17,29 +17,17 @@ Du arbeitest auf dem echten Mark-LIII/JARVIS-Server. Das Companion-/Remote-Dashb
 
 - Dashboard und Companion unter `/companion/` bleiben erreichbar.
 - Der Dienst `mark-liii.service` bleibt stabil.
-- Codeänderungen am Dashboard sind erlaubt, aber nur nach Sicherung.
+- Codeänderungen am Dashboard sind erlaubt, aber nur am aktuellen Hauptstand.
 - Rechte werden gezielt auf den Dashboard-Bereich gesetzt; keine pauschalen Systemfreigaben.
 - Secrets, Tokens, PINs, Zertifikate, API-Keys, `.env`-Dateien, OAuth-Dateien und private Keys bleiben geschützt und werden nicht ausgegeben.
 
 ### Vorgehen vor jeder Änderung
 
-1. Prüfe zuerst den aktuellen Dienst- und Dateistand.
-2. Lege eine Sicherung mit Zeitstempel unter `/root/Mark-LIII/dashboard-backups/` an.
+1. Prüfe zuerst den aktuellen Dienst-, Git- und Dateistand.
+2. Erzeuge keine parallelen Backup-Verzeichnisse oder `.bak`-Kopien. Git ist die Versionshistorie.
 3. Ändere nur die konkret nötigen Dateien in `/root/Mark-LIII/dashboard` oder dessen `static`-Unterordner.
 4. Kein Refactor, keine neuen Ports, keine Firewall-Änderung, keine Kosten, keine n8n-Änderung ohne ausdrückliche Freigabe.
 5. Nach der Änderung: Syntax prüfen, Dienststatus prüfen und Companion-/Dashboard-Erreichbarkeit testen.
-
-### Empfohlene Sicherung
-
-```bash
-TS="$(date +%Y%m%dT%H%M%SZ)"
-BACKUP="/root/Mark-LIII/dashboard-backups/edit-$TS"
-mkdir -p "$BACKUP"
-cp -a /root/Mark-LIII/dashboard "$BACKUP/dashboard"
-find /root/Mark-LIII/dashboard -maxdepth 3 -printf '%M %u:%g %p
-' | sort > "$BACKUP/permissions-before.txt"
-echo "backup=$BACKUP"
-```
 
 ### Erlaubter Änderungsbereich
 

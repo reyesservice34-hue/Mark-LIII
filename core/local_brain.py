@@ -23,6 +23,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from core.action_loader import discover_actions  # noqa: E402
 from core.understanding import clarify  # noqa: E402
+from memory.memory_manager import load_memory, format_memory_for_prompt  # noqa: E402
 
 CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 # Dieselbe Datei, die main.py's Gemini-Pfad laedt (core/prompt.txt) - NICHT
@@ -33,7 +34,11 @@ PROMPT_PATH = BASE_DIR / "core" / "prompt.txt"
 
 OLLAMA_URL = "http://127.0.0.1:11434"       # Ollama laeuft bereits lokal AUF dem Brain-Server (15GB RAM, 8 Kerne)
 SPEACHES_URL = "http://127.0.0.1:8005"      # mia-speaches-kerstin, lokal auf diesem (Brain) Server
-OLLAMA_MODEL = "qwen3:1.7b"                 # dasselbe Modell wie understanding.py - vermeidet teures Modell-Wechseln in Ollama
+OLLAMA_MODEL = "qwen3:1.7b"                 # 2026-09-29: tried qwen3:8b for more reliable tool-calling (e.g.
+                                             # self_dev) — reverted: >180s with no response on this CPU-only
+                                             # hardware, unusable for interactive chat. 1.7b stays the default;
+                                             # a real fix for complex tool-calling needs either GPU hardware or
+                                             # Gemini once its quota recovers, not a bigger CPU-bound local model.
 
 
 import re as _re_top
@@ -68,6 +73,84 @@ def _extract_explicit_date(raw_text: str) -> tuple[str, str] | None:
     if parsed is None:
         return None
     return word, parsed.strftime("%Y-%m-%d")
+
+
+_BACKGROUND_REQUEST_RE = _re_top.compile(
+    r"\b(im hintergrund|kümmere dich|kümmer dich|kuemmere dich|kuemmer dich|"
+    r"arbeite daran|später fertig|spaeter fertig)\b",
+    _re_top.IGNORECASE,
+)
+_SCHEDULE_REQUEST_RE = _re_top.compile(
+    r"\b(prüfe|pruefe|kontrolliere|checke|überwache|ueberwache|beobachte|"
+    r"nachfassen|fass nach|follow[- ]?up|arbeite weiter|mach weiter|"
+    r"kümmere dich|kümmer dich|kuemmere dich|kuemmer dich)\b",
+    _re_top.IGNORECASE,
+)
+_ABS_DATE_RE = _re_top.compile(
+    r"\b(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\.\d{1,2}\.(?:\d{4})?)\b"
+)
+_CLOCK_RE = _re_top.compile(
+    r"(?:\bum\s+([01]?\d|2[0-3])(?:[:.]([0-5]\d))?\s*(?:uhr)?\b|"
+    r"\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:uhr)?\b)",
+    _re_top.IGNORECASE,
+)
+
+
+def _extract_schedule_at(raw_text: str) -> str | None:
+    """Return an offset-aware ISO time only for explicit date + clock requests."""
+    text = str(raw_text or "")
+    date_hit = _extract_explicit_date(text)
+    date_value = date_hit[1] if date_hit else ""
+    if not date_value:
+        match = _ABS_DATE_RE.search(text)
+        if match:
+            parsed = _dateparser.parse(
+                match.group(1),
+                languages=["de"],
+                settings=_DATEPARSER_SETTINGS,
+            )
+            if parsed is not None:
+                date_value = parsed.strftime("%Y-%m-%d")
+    clock = _CLOCK_RE.search(text)
+    if not date_value or not clock:
+        return None
+    hour = int(clock.group(1) or clock.group(3))
+    minute = int(clock.group(2) or clock.group(4) or 0)
+    local_tz = _dt.datetime.now().astimezone().tzinfo
+    due = _dt.datetime.fromisoformat(
+        f"{date_value}T{hour:02d}:{minute:02d}:00"
+    ).replace(tzinfo=local_tz)
+    if due <= _dt.datetime.now().astimezone():
+        return None
+    return due.isoformat(timespec="seconds")
+
+
+def _extract_background_goal(raw_text: str) -> str:
+    """Extract the actual goal from an explicit background-work request."""
+    text = " ".join(str(raw_text or "").split()).strip()
+    if ":" in text:
+        head, tail = text.split(":", 1)
+        if _BACKGROUND_REQUEST_RE.search(head) and tail.strip():
+            return tail.strip()
+    cleaned = _BACKGROUND_REQUEST_RE.sub(" ", text, count=1)
+    cleaned = _re_top.sub(
+        r"(?i)^\s*(bitte|darum|dass|und|jetzt)\b[:,\s-]*",
+        "",
+        cleaned,
+        count=1,
+    ).strip(" :-,")
+    return cleaned or text
+
+
+def _extract_scheduled_goal(raw_text: str) -> str:
+    """Remove the explicit trigger time from the later task's actual goal."""
+    goal = _extract_background_goal(raw_text)
+    goal = _DATE_WORD_RE.sub(" ", goal, count=1)
+    goal = _ABS_DATE_RE.sub(" ", goal, count=1)
+    goal = _CLOCK_RE.sub(" ", goal, count=1)
+    goal = _re_top.sub(r"(?i)\b(am|für|fuer)\b(?=\s*[,;:-])", " ", goal)
+    goal = " ".join(goal.split()).strip(" :-,")
+    return goal or _extract_background_goal(raw_text)
 
 
 from memory.memory_manager import search_memory as _search_memory  # noqa: E402
@@ -187,21 +270,57 @@ def _load_config() -> dict:
         return {}
 
 
-def _load_system_prompt() -> str:
+_memory_prompt_snapshot: str | None = None
+
+
+def _load_system_prompt(refresh_memory: bool = False) -> str:
+    global _memory_prompt_snapshot
+
     try:
         base = PROMPT_PATH.read_text(encoding="utf-8")
     except Exception:
         base = "Du bist MIA, eine hilfsbereite, ehrliche KI-Assistentin. Sprich Deutsch."
-    # Aktuelles Datum/Uhrzeit fest einbetten - ohne das rechnet das kleine
-    # Modell bei "morgen", "in einer Stunde" etc. oft falsch (z.B. bei
-    # Erinnerungen), weil es kein echtes Zeitgefuehl hat.
+
+    # Memory waehrend einer laufenden Unterhaltung stabil halten.
+    # Dadurch kann Ollama den langen Prefix zwischen Turns wiederverwenden.
+    if refresh_memory or _memory_prompt_snapshot is None:
+        try:
+            _memory_prompt_snapshot = format_memory_for_prompt(load_memory())
+        except Exception as e:
+            print(f"[LocalBrain] memory injection failed: {e}")
+            if _memory_prompt_snapshot is None:
+                _memory_prompt_snapshot = ""
+
+    if _memory_prompt_snapshot:
+        base = f"{base}\n\n{_memory_prompt_snapshot}"
+
+    try:
+        from brain.cognition import cognitive_context_for_prompt
+        cognitive_context = cognitive_context_for_prompt(max_chars=2200)
+    except Exception as e:
+        print(f"[LocalBrain] cognitive context unavailable: {e}")
+        cognitive_context = ""
+    if cognitive_context:
+        base = f"{base}\n\n{cognitive_context}"
+
+    # Datum ist innerhalb eines Tages stabil und zerstoert deshalb den Prefix-Cache nicht.
     now = _dt.datetime.now()
-    weekday_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][now.weekday()]
+    weekday_de = [
+        "Montag", "Dienstag", "Mittwoch", "Donnerstag",
+        "Freitag", "Samstag", "Sonntag"
+    ][now.weekday()]
+
     return (
-        f"{base}\n\nAKTUELLES DATUM UND UHRZEIT: {weekday_de}, {now.strftime('%d.%m.%Y')}, {now.strftime('%H:%M')} Uhr "
-        f"(Format fuer Tools: Datum als {now.strftime('%Y-%m-%d')}, Uhrzeit als HH:MM). "
-        "Rechne relative Zeitangaben ('morgen', 'in einer Stunde', 'naechsten Montag') IMMER ausgehend von diesem Datum, nicht raten."
+        f"{base}\n\nAKTUELLES DATUM: {weekday_de}, {now.strftime('%d.%m.%Y')} "
+        f"(Tool-Format: {now.strftime('%Y-%m-%d')})."
     )
+
+def _record_cognitive_turn(user_text: str, assistant_text: str) -> None:
+    try:
+        from brain.cognition import observe_turn
+        observe_turn(user_text, assistant_text, "de-DE")
+    except Exception as e:
+        print(f"[LocalBrain] cognitive turn recording failed: {e}")
 
 
 def _lower_types(schema):
@@ -261,6 +380,10 @@ _TOOL_KEYWORDS: dict[str, list[str]] = {
     "dev_agent": ["entwickl", "deploy", "server", "repository", "git"],
     "ask_command_center": ["command center", "kommandozentrale", "system status"],
     "self_dev": ["verbesser dich", "trainier dich"],
+    "clone_and_learn": ["github", "gitlab", "klon", "clone", "repo", "repository"],
+    "install_cloned_repo": ["installier", "installieren", "setup", "dependencies", "abhängigkeiten", "npm", "pip"],
+    "plugin_manager": ["plugin", "erweiterung installieren", "plugin installieren", "addon", "add-on"],
+    "read_link": ["http://", "https://", "www.", "link", "seite", "webseite", "url"],
     "recall_memory": [
         "erinnerst du dich", "weißt du noch", "was hast du gelernt", "was wurde geändert",
         "was hast du heute", "erinnere dich", "weißt du was", "kennst du",
@@ -268,7 +391,13 @@ _TOOL_KEYWORDS: dict[str, list[str]] = {
     "save_memory": ["merk dir", "merke dir", "speicher", "notier", "vergiss nicht dass", "ich heiße", "mein name ist", "ich mag", "ich bin"],
     "system_status": ["cpu", "ram", "speicher voll", "auslastung", "wie geht es dir", "systemstatus", "server status", "laufzeit"],
     "undo": ["rückgängig", "mach das rückgängig", "undo", "zurücknehmen", "nein nicht das"],
-    "background_task": ["im hintergrund", "kümmer dich", "kümmere dich", "erledige das", "aufgabe", "später fertig", "arbeite daran", "offene aufgaben", "ergebnis der aufgabe"],
+    "background_task": [
+        "im hintergrund", "kümmer dich", "kümmere dich", "erledige das", "aufgabe",
+        "später fertig", "spaeter fertig", "arbeite daran", "arbeite weiter", "mach weiter",
+        "offene aufgaben", "ergebnis der aufgabe", "nachfassen", "fass nach", "follow-up",
+        "prüfe weiter", "pruefe weiter", "überwache", "ueberwache", "beobachte",
+        "später prüfen", "spaeter pruefen", "prüfe später", "pruefe spaeter",
+    ],
     "search_knowledge": [
         "was weißt du über", "was kannst du", "welche skills", "erkläre mir", "erklär mir",
         "wie funktioniert", "wie geht", "was ist", "strategie", "tipps", "vorgehen",
@@ -298,6 +427,59 @@ def _needs_tools(clear_text: str, tool_names: list[str]) -> bool:
     return bool(_matching_tool_names(clear_text, tool_names))
 
 
+def _deterministic_worker_fallback(clear_text: str, tools: list[dict], registry):
+    """Execute only safe/read-only tools deterministically when the small local
+    model refuses to emit a tool_call. Returns (name, args, result) or None."""
+    names = {t.get("function", {}).get("name") for t in tools}
+    low = clear_text.lower()
+    task_text = clear_text.split("AUFGABE:", 1)[-1].strip()
+
+    if "system_status" in names and any(k in low for k in (
+        "systemstatus", "system status", "cpu", "ram", "auslastung", "laufzeit"
+    )):
+        args = {}
+        result = _run_inline_tool("system_status", args)
+        return "system_status", args, result
+
+    if "recall_memory" in names and any(k in low for k in (
+        "erinner", "weisst du", "weißt du", "vorhin", "gestern", "damals",
+        "letztes mal", "was habe ich", "was hab ich"
+    )):
+        args = {"query": task_text}
+        result = _run_inline_tool("recall_memory", args)
+        return "recall_memory", args, result
+
+    if "search_knowledge" in names and any(k in low for k in (
+        "was weisst du", "was weißt du", "wie funktioniert", "erklaer", "erklär",
+        "strategie", "wissen", "kenntnis", "skills", "vorgehen"
+    )):
+        args = {"query": task_text}
+        result = registry.run("search_knowledge", args, ctx={})
+        return "search_knowledge", args, result
+
+    if "weather_report" in names and any(k in low for k in (
+        "wetter", "temperatur", "regen", "sonne", "schnee"
+    )):
+        import re as _re_worker
+        m = _re_worker.search(
+            r"(?i)wetter.*?in\s+([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß .-]{1,50}?)(?:\s+(?:mit|und|heute|morgen|aktuell)|[,.]|$)",
+            task_text,
+        )
+        if m:
+            args = {"city": m.group(1).strip(), "time": "today"}
+            result = registry.run("weather_report", args, ctx={})
+            return "weather_report", args, result
+
+    if "web_search" in names and any(k in low for k in (
+        "suche", "recherch", "internet", "aktuell", "finde heraus", "nachrichten", "news"
+    )):
+        args = {"query": task_text, "mode": "search"}
+        result = registry.run("web_search", args, ctx={})
+        return "web_search", args, result
+
+    return None
+
+
 def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool = False) -> tuple[str, list[dict]]:
     """Ein Gespraechsturn, komplett lokal ueber Ollama + lokale Tool-Ausfuehrung.
 
@@ -309,11 +491,81 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
     """
     all_tools = build_ollama_tools()
     tool_names = [t["function"]["name"] for t in all_tools]
-    system_prompt = _load_system_prompt()
+
+    worker_mode = bool(globals().get("_FORCE_TOOL_EXECUTION", False))
+    if worker_mode:
+        now = _dt.datetime.now()
+        system_prompt = (
+            "Du bist MIAs autonomer Hintergrund-Ausfuehrungsmotor. "
+            "Deine Aufgabe ist echte Ausfuehrung, nicht Ankuendigung. "
+            "Nutze fuer operative Aufgaben die angebotenen Tools. "
+            "Behaupte niemals, etwas getan oder geprueft zu haben, wenn kein passendes "
+            "Tool-Ergebnis vorliegt. Wenn ein Tool scheitert, nutze ein geeignetes "
+            "Alternativ-Tool, sofern vorhanden. Respektiere Fehler, Bestaetigungsgrenzen "
+            "und Sicherheitsregeln der Tools. Antworte am Ende kurz auf Deutsch mit dem "
+            "konkreten, nachpruefbaren Ergebnis. Keine Versprechen wie 'ich werde'. "
+            f"Aktuelles Datum: {now.strftime('%Y-%m-%d')}."
+        )
+    else:
+        system_prompt = _load_system_prompt(refresh_memory=not bool(history))
 
     clear_text = user_text if skip_clarify else clarify(user_text)
 
-    messages = history[:] if history else [{"role": "system", "content": system_prompt}]
+    # Explicit background-work language must create REAL work immediately.
+    # Do not burn a local-model round just to decide whether "kümmer dich darum"
+    # means a background task: that latency caused the exact false-activity
+    # behaviour this subsystem is meant to prevent.
+    schedule_at = _extract_schedule_at(clear_text)
+    if not worker_mode and schedule_at and _SCHEDULE_REQUEST_RE.search(clear_text):
+        registry = get_registry()
+        if registry.has("background_task"):
+            goal = _extract_scheduled_goal(clear_text)
+            args = {"action": "schedule", "goal": goal, "run_at": schedule_at}
+            result = registry.run("background_task", args, ctx={})
+            messages = [{"role": "system", "content": system_prompt}] + (history or [])
+            messages.append({"role": "user", "content": clear_text})
+            messages.append({"role": "assistant", "content": "", "tool_calls": [{
+                "type": "function",
+                "function": {"name": "background_task", "arguments": args},
+            }]})
+            messages.append({"role": "tool", "content": str(result)})
+            answer = str(result)
+            _record_cognitive_turn(user_text, answer)
+            return answer, messages
+
+    if not worker_mode and _BACKGROUND_REQUEST_RE.search(clear_text):
+        registry = get_registry()
+        if registry.has("background_task"):
+            goal = _extract_background_goal(clear_text)
+            args = {"action": "create", "goal": goal}
+            result = registry.run(
+                "background_task",
+                args,
+                ctx={},
+            )
+            messages = [{"role": "system", "content": system_prompt}] + (history or [])
+            messages.append({"role": "user", "content": clear_text})
+            messages.append({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "type": "function",
+                    "function": {
+                        "name": "background_task",
+                        "arguments": args,
+                    },
+                }],
+            })
+            messages.append({"role": "tool", "content": str(result)})
+            answer = str(result)
+            _record_cognitive_turn(user_text, answer)
+            return answer, messages
+
+    # 2026-09-30: history used to REPLACE the system prompt entirely when given, silently
+    # dropping the persona + memory injection (_load_system_prompt()) for any caller that
+    # passed prior turns — exactly what "remember like a human" needs. System prompt now
+    # always leads; passed history is prior conversation turns appended after it.
+    messages = [{"role": "system", "content": system_prompt}] + (history or [])
     messages.append({"role": "user", "content": clear_text})
 
     # Gleiche Optimierung wie in chat_stream_and_speak: Datum deterministisch
@@ -325,11 +577,70 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
         word, resolved = date_hit
         messages.append({"role": "system", "content": f"FAKT (nicht selbst nachrechnen, direkt uebernehmen): '{word}' bedeutet hier exakt das Datum {resolved}. Falls du ein Tool mit einem 'date'-Feld aufrufst, nutze GENAU '{resolved}'."})
     matched_names = set(_matching_tool_names(clear_text, tool_names))
+    _lower = clear_text.lower().strip()
+
+    # Worker-Routing: explizite Systemstatus-Anfragen muessen deterministisch
+    # auf system_status gehen. Ein generisches dev_agent/web_search daneben
+    # macht das kleine lokale Modell unnoetig unentschlossen.
+    if worker_mode and "system_status" in tool_names and any(
+        k in _lower for k in ("systemstatus", "cpu", "ram", "auslastung", "laufzeit")
+    ):
+        matched_names = {"system_status"}
+
+    # Websuche nur als Fallback anbieten, wenn der Router sonst gar kein
+    # passendes Werkzeug gefunden hat. Nicht pauschal zu jedem Worker-Job.
+    if worker_mode and not matched_names and "web_search" in tool_names:
+        matched_names.add("web_search")
+
+    # Fast-Chat: Memory- und Confirmation-Tools nur laden, wenn der Turn sie braucht.
+
+    if any(k in _lower for k in (
+        "erinner", "weißt du", "weisst du", "vorhin", "gestern", "damals",
+        "letztes mal", "hatten wir", "haben wir schon",
+        "was habe ich", "was hab ich", "wer bin ich",
+        "wie heiße ich", "wie heisse ich", "was weißt du über mich",
+        "was weisst du ueber mich"
+    )):
+        matched_names.add("recall_memory")
+
+    if (
+        _lower in {
+            "ja", "ja bitte", "ok", "okay", "mach das", "tu das", "genau",
+            "nein", "ne", "abbrechen", "bestätigen", "bestaetigen"
+        }
+        or _lower.startswith(("ja ", "ja,", "nein ", "nein,", "ok ", "okay "))
+    ):
+        matched_names.add("check_pending_confirmation")
+        matched_names.add("respond_to_confirmation")
+
     tools = [t for t in all_tools if t["function"]["name"] in matched_names]
 
     registry = get_registry()
 
-    for _round in range(4):  # max 4 Tool-Call-Runden pro Turn, verhindert Endlosschleifen
+    # In the background worker, clear read-only jobs should never wait for the
+    # language model just to format a tool call. Execute the deterministic tool
+    # immediately and return its raw evidence. The worker's verification layer
+    # remains authoritative and will reject failed/error results.
+    if worker_mode:
+        deterministic = _deterministic_worker_fallback(clear_text, tools, registry)
+        if deterministic is not None:
+            d_name, d_args, d_result = deterministic
+            print(
+                f"[LocalBrain][Worker] Deterministischer Preflight: {d_name}",
+                flush=True,
+            )
+            messages.append({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "type": "function",
+                    "function": {"name": d_name, "arguments": d_args},
+                }],
+            })
+            messages.append({"role": "tool", "content": str(d_result)})
+            return str(d_result).strip(), messages
+
+    for _round in range(12):  # bounded multi-step execution
         resp = requests.post(
             f"{OLLAMA_URL}/api/chat",
             json={"model": OLLAMA_MODEL, "messages": messages, "stream": False, "think": False,
@@ -344,7 +655,133 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
 
         tool_calls = msg.get("tool_calls") or []
         if not tool_calls:
-            return (msg.get("content") or "").strip(), messages
+            force_tools = bool(globals().get("_FORCE_TOOL_EXECUTION", False))
+            answer_text = (msg.get("content") or "").strip()
+            answer_low = answer_text.lower()
+
+            tool_messages = [
+                m for m in messages
+                if isinstance(m, dict) and m.get("role") == "tool"
+            ]
+            last_tool_text = (
+                str(tool_messages[-1].get("content") or "").lower().strip()
+                if tool_messages else ""
+            )
+            failure_markers = (
+                "fehler", "error", "fehlgeschlagen", "failed",
+                "couldn't get", "could not get", "could not be retrieved",
+                "returned false", "resource_exhausted", "quota",
+                "nicht erreichbar", "unreachable", "timeout",
+                "unbekanntes tool", "unknown tool", "search failed",
+            )
+            last_tool_failed = bool(tool_messages) and (
+                not last_tool_text
+                or any(marker in last_tool_text for marker in failure_markers)
+            )
+            promise_markers = (
+                "ich werde", "werde ich", "ich versuche es", "ich mache das jetzt",
+                "i will", "i'll", "let me", "i am going to", "i'm going to",
+                "will now use",
+            )
+            promise_only = any(marker in answer_low for marker in promise_markers)
+
+            # Deterministischer Worker-Pfad: Wenn exakt ein Tool angeboten wird
+            # und dieses keine Pflichtparameter braucht, muss das kleine Modell
+            # nicht erst einen Tool-Call formulieren. Fuehre es direkt aus.
+            if force_tools and not tool_messages and len(tools) == 1:
+                tool_spec = tools[0]
+                fn_spec = tool_spec.get("function", {})
+                required = ((fn_spec.get("parameters") or {}).get("required") or [])
+                if not required:
+                    name = fn_spec.get("name")
+                    inline_result = _run_inline_tool(name, {})
+                    if inline_result is not None:
+                        result = inline_result
+                    elif registry.has(name):
+                        try:
+                            result = registry.run(name, {}, ctx={})
+                        except Exception as e:
+                            result = f"Fehler beim Ausfuehren von {name}: {e}"
+                    else:
+                        result = f"Fehler: unbekanntes Tool '{name}'"
+                    print(
+                        "[LocalBrain][Worker] Deterministischer Tool-Aufruf:",
+                        name,
+                        flush=True,
+                    )
+                    messages.append({"role": "tool", "content": str(result)})
+                    continue
+
+            forced_retries = sum(
+                1 for m in messages
+                if isinstance(m, dict)
+                and m.get("role") == "system"
+                and "AUTONOMER AUSFUEHRUNGSMODUS" in str(m.get("content") or "")
+            )
+
+            needs_execution = not tool_messages or last_tool_failed
+
+            if force_tools and not tool_messages:
+                deterministic = _deterministic_worker_fallback(clear_text, tools, registry)
+                if deterministic is not None:
+                    d_name, d_args, d_result = deterministic
+                    print(
+                        f"[LocalBrain][Worker] Deterministischer Tool-Fallback: {d_name}",
+                        flush=True,
+                    )
+                    messages.append({
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [{
+                            "type": "function",
+                            "function": {"name": d_name, "arguments": d_args},
+                        }],
+                    })
+                    messages.append({"role": "tool", "content": str(d_result)})
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "AUTONOMER AUSFUEHRUNGSMODUS: Das Tool wurde wirklich ausgefuehrt. "
+                            "Gib jetzt nur das konkrete Tool-Ergebnis als Abschlussantwort aus. "
+                            "Keine Ankuendigung und keine erfundenen Details."
+                        ),
+                    })
+                    continue
+
+            if force_tools and tools and needs_execution and forced_retries < 4:
+                print(
+                    "[LocalBrain][Worker] Weiterer Tool-Aufruf erforderlich. Kandidaten:",
+                    [t["function"]["name"] for t in tools],
+                    flush=True,
+                )
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "AUTONOMER AUSFUEHRUNGSMODUS: Die Aufgabe ist NOCH NICHT erledigt. "
+                        "Der vorherige Tool-Aufruf ist fehlgeschlagen oder es wurde noch kein "
+                        "Tool ausgefuehrt. Antworte NICHT mit einer Ankuendigung. Waehle jetzt "
+                        "ein passendes verfuegbares Tool und fuehre es wirklich aus."
+                    ),
+                })
+                continue
+
+            if (
+                force_tools and tool_messages and not last_tool_failed
+                and promise_only and forced_retries < 4
+            ):
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "AUTONOMER AUSFUEHRUNGSMODUS: Ein Tool-Ergebnis liegt bereits vor. "
+                        "Keine weitere Ankuendigung. Gib jetzt ausschliesslich das konkrete "
+                        "Ergebnis des erfolgreichen Tool-Aufrufs als Abschlussantwort aus."
+                    ),
+                })
+                continue
+
+            if not worker_mode:
+                _record_cognitive_turn(user_text, answer_text)
+            return answer_text, messages
 
         for tc in tool_calls:
             fn = tc.get("function", {})
@@ -423,11 +860,56 @@ def chat_stream_and_speak(user_text: str, history: list[dict] | None = None, voi
     """
     all_tools = build_ollama_tools()
     tool_names = [t["function"]["name"] for t in all_tools]
-    system_prompt = _load_system_prompt()
+    system_prompt = _load_system_prompt(refresh_memory=not bool(history))
     clear_text = clarify(user_text)
 
-    messages = history[:] if history else [{"role": "system", "content": system_prompt}]
+    # 2026-09-30: history used to REPLACE the system prompt entirely when given, silently
+    # dropping the persona + memory injection (_load_system_prompt()) for any caller that
+    # passed prior turns — exactly what "remember like a human" needs. System prompt now
+    # always leads; passed history is prior conversation turns appended after it.
+    messages = [{"role": "system", "content": system_prompt}] + (history or [])
     messages.append({"role": "user", "content": clear_text})
+
+    # Same truth-first fast path as chat(): an explicit background-work request
+    # creates a persistent task immediately. Voice/streaming must never re-open
+    # the old failure mode where MIA merely says she is working.
+    schedule_at = _extract_schedule_at(clear_text)
+    if (schedule_at and _SCHEDULE_REQUEST_RE.search(clear_text)) or _BACKGROUND_REQUEST_RE.search(clear_text):
+        fast_registry = get_registry()
+        if fast_registry.has("background_task"):
+            if schedule_at and _SCHEDULE_REQUEST_RE.search(clear_text):
+                goal = _extract_scheduled_goal(clear_text)
+                bg_args = {"action": "schedule", "goal": goal, "run_at": schedule_at}
+            else:
+                goal = _extract_background_goal(clear_text)
+                bg_args = {"action": "create", "goal": goal}
+            result = fast_registry.run(
+                "background_task",
+                bg_args,
+                ctx={},
+            )
+            messages.append({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "type": "function",
+                    "function": {
+                        "name": "background_task",
+                        "arguments": bg_args,
+                    },
+                }],
+            })
+            messages.append({"role": "tool", "content": str(result)})
+            answer = str(result)
+            _record_cognitive_turn(user_text, answer)
+            out_path = _tempfile.mktemp(suffix=".wav")
+            try:
+                speak(answer, out_path, voice=voice)
+                yield {"type": "audio", "path": out_path, "text": answer}
+            except Exception as e:
+                yield {"type": "error", "text": f"TTS fehlgeschlagen: {e}"}
+            yield {"type": "done", "full_answer": answer, "history": messages}
+            return
 
     # Datum deterministisch in Python berechnen statt vom Modell raten lassen
     # (es hat 'morgen'/'montag' verwechselt). Wird als unmissverstaendlicher
@@ -448,11 +930,14 @@ def chat_stream_and_speak(user_text: str, history: list[dict] | None = None, voi
     # Kontext klein, was auf dieser CPU-only Hardware der Hauptfaktor fuer die
     # Antwortzeit ist. Leere Liste = reine Konversation, kein Tool-Call-Versuch.
     matched_names = set(_matching_tool_names(clear_text, tool_names))
+    matched_names.add("recall_memory")  # 2026-09-29: same reasoning as chat() above
+    matched_names.add("check_pending_confirmation")
+    matched_names.add("respond_to_confirmation")
     tools = [t for t in all_tools if t["function"]["name"] in matched_names]
     skip_tool_rounds = not tools
 
     # Runden 1..N: Tool-Calling, non-streaming (wie chat()) - nur falls Tools gematcht haben
-    for _round in range(4 if not skip_tool_rounds else 0):
+    for _round in range(12 if not skip_tool_rounds else 0):
         resp = requests.post(
             f"{OLLAMA_URL}/api/chat",
             json={"model": OLLAMA_MODEL, "messages": messages, "tools": tools, "stream": False, "think": False,
@@ -553,6 +1038,7 @@ def chat_stream_and_speak(user_text: str, history: list[dict] | None = None, voi
             yield {"type": "error", "text": f"TTS fehlgeschlagen fuer Restsatz: {e}"}
 
     messages.append({"role": "assistant", "content": full_answer})
+    _record_cognitive_turn(user_text, full_answer)
     yield {"type": "done", "full_answer": full_answer, "history": messages}
 
 

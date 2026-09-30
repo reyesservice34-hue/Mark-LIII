@@ -95,16 +95,16 @@ def test_migrate_assistant_identity_rewrites_legacy_name_and_keeps_other_fields(
     assert data["assistant_name"] == "MIA"
     assert data["gemini_api_key"] == "abc"
     backup = cm.CONFIG_FILE.with_name(cm.CONFIG_FILE.name + ".pre-mia.bak")
-    assert json.loads(backup.read_text(encoding="utf-8"))["assistant_name"] == "Jarvis"
+    assert not backup.exists()
 
 
-def test_migrate_assistant_identity_does_not_overwrite_existing_backup():
+def test_migrate_assistant_identity_does_not_create_backup():
     cm.ensure_config_dir()
     cm.CONFIG_FILE.write_text(json.dumps({"assistant_name": "Jarvis"}), encoding="utf-8")
     backup = cm.CONFIG_FILE.with_name(cm.CONFIG_FILE.name + ".pre-mia.bak")
-    backup.write_text(json.dumps({"assistant_name": "original-backup"}), encoding="utf-8")
+    assert not backup.exists()
     cm.migrate_assistant_identity()
-    assert json.loads(backup.read_text(encoding="utf-8"))["assistant_name"] == "original-backup"
+    assert not backup.exists()
 
 
 def test_migrate_assistant_identity_false_when_already_fixed():

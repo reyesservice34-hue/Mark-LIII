@@ -70,9 +70,9 @@ def normalize_assistant_name(name) -> str:
 def migrate_assistant_identity() -> bool:
     """One-time migration of a legacy assistant name stored in api_keys.json.
 
-    Rewrites only the 'assistant_name' field, keeps every other key (API keys,
-    plugin credentials) untouched, and leaves a one-off backup of the original
-    file next to it. Returns True when the file was changed."""
+    Rewrites only the 'assistant_name' field and keeps every other key (API keys,
+    plugin credentials) untouched. Git is the rollback history; no parallel
+    backup file is created. Returns True when the file was changed."""
     if not CONFIG_FILE.exists():
         return False
     try:
@@ -84,13 +84,6 @@ def migrate_assistant_identity() -> bool:
     current = data.get("assistant_name")
     fixed = normalize_assistant_name(current)
     if current == fixed:
-        return False
-    backup = CONFIG_FILE.with_name(CONFIG_FILE.name + ".pre-mia.bak")
-    try:
-        if not backup.exists():
-            backup.write_text(CONFIG_FILE.read_text(encoding="utf-8"), encoding="utf-8")
-    except Exception as e:
-        print(f"[Config] ⚠️ Could not back up api_keys.json before migration: {e}")
         return False
     data["assistant_name"] = fixed
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
