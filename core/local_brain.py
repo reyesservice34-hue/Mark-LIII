@@ -268,7 +268,7 @@ _TOOL_KEYWORDS: dict[str, list[str]] = {
     "save_memory": ["merk dir", "merke dir", "speicher", "notier", "vergiss nicht dass", "ich heiße", "mein name ist", "ich mag", "ich bin"],
     "system_status": ["cpu", "ram", "speicher voll", "auslastung", "wie geht es dir", "systemstatus", "server status", "laufzeit"],
     "undo": ["rückgängig", "mach das rückgängig", "undo", "zurücknehmen", "nein nicht das"],
-    "background_task": ["im hintergrund", "kümmer dich", "kümmere dich", "erledige das", "aufgabe", "später fertig", "arbeite daran", "offene aufgaben", "ergebnis der aufgabe"],
+    # Nur explizite Hintergrund-Absicht. Generische Woerter wie "Aufgabe", "erledige"\n    # oder "kuemmere dich" duerfen direkte Befehle NICHT erneut in die Queue schicken.\n    "background_task": ["im hintergrund", "hintergrundaufgabe", "später fertig", "spaeter fertig", "arbeite im hintergrund", "offene aufgaben", "ergebnis der aufgabe", "warteschlange"],
     "search_knowledge": [
         "was weißt du über", "was kannst du", "welche skills", "erkläre mir", "erklär mir",
         "wie funktioniert", "wie geht", "was ist", "strategie", "tipps", "vorgehen",
@@ -298,7 +298,7 @@ def _needs_tools(clear_text: str, tool_names: list[str]) -> bool:
     return bool(_matching_tool_names(clear_text, tool_names))
 
 
-def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool = False) -> tuple[str, list[dict]]:
+def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool = False,\n         routing_text: str | None = None, exclude_tools: set[str] | None = None) -> tuple[str, list[dict]]:
     """Ein Gespraechsturn, komplett lokal ueber Ollama + lokale Tool-Ausfuehrung.
 
     Jede Eingabe (Chat-Tipp ODER STT-Transkript) laeuft zuerst durch die
@@ -324,8 +324,7 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
     if date_hit:
         word, resolved = date_hit
         messages.append({"role": "system", "content": f"FAKT (nicht selbst nachrechnen, direkt uebernehmen): '{word}' bedeutet hier exakt das Datum {resolved}. Falls du ein Tool mit einem 'date'-Feld aufrufst, nutze GENAU '{resolved}'."})
-    matched_names = set(_matching_tool_names(clear_text, tool_names))
-    tools = [t for t in all_tools if t["function"]["name"] in matched_names]
+    # Hintergrund-Worker routen nur nach dem echten Auftragsziel. So koennen\n    # sie background_task ausschliessen und keine neue Queue-Aufgabe erzeugen.\n    route_text = routing_text if routing_text is not None else clear_text\n    matched_names = set(_matching_tool_names(route_text, tool_names))\n    if exclude_tools:\n        matched_names.difference_update(exclude_tools)\n    tools = [t for t in all_tools if t["function"]["name"] in matched_names]
 
     registry = get_registry()
 
