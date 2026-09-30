@@ -94,13 +94,47 @@ _CLOCK_RE = _re_top.compile(
     r"\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:uhr)?\b)",
     _re_top.IGNORECASE,
 )
+_RELATIVE_DELAY_RE = _re_top.compile(
+    r"\bin\s+(\d+|ein(?:e|en)?|zwei|drei|vier|fünf|fuenf|sechs|sieben|acht|neun|zehn|elf|zwölf|zwoelf)\s+"
+    r"(minute(?:n)?|minuten?|stunde(?:n)?|stunden?|tag(?:e|en)?)\b",
+    _re_top.IGNORECASE,
+)
+_DAYPART_RE = _re_top.compile(
+    r"\b(früh|frueh|morgens|vormittag|vormittags|mittag|nachmittag|nachmittags|abend|abends|nacht|nachts)\b",
+    _re_top.IGNORECASE,
+)
+_DAYPART_HOUR = {
+    "früh": 8, "frueh": 8, "morgens": 8,
+    "vormittag": 10, "vormittags": 10,
+    "mittag": 12,
+    "nachmittag": 15, "nachmittags": 15,
+    "abend": 19, "abends": 19,
+    "nacht": 21, "nachts": 21,
+}
 
 
 def _extract_schedule_at(raw_text: str) -> str | None:
-    """Return an offset-aware ISO time only for explicit date + clock requests."""
+    """Return an offset-aware ISO time for explicit future follow-up timing."""
     text = str(raw_text or "")
+    now = _dt.datetime.now().astimezone()
+    local_tz = now.tzinfo
+
+    # Relative delays such as "in zwei Stunden" or "in 30 Minuten".
+    relative = _RELATIVE_DELAY_RE.search(text)
+    if relative:
+        parsed = _dateparser.parse(
+            relative.group(0),
+            languages=["de"],
+            settings={**_DATEPARSER_SETTINGS, "RELATIVE_BASE": now.replace(tzinfo=None)},
+        )
+        if parsed is not None:
+            due = parsed.replace(tzinfo=local_tz)
+            if due > now:
+                return due.isoformat(timespec="seconds")
+
     date_hit = _extract_explicit_date(text)
     date_value = date_hit[1] if date_hit else ""
+    date_word = date_hit[0].lower() if date_hit else ""
     if not date_value:
         match = _ABS_DATE_RE.search(text)
         if match:
@@ -111,16 +145,31 @@ def _extract_schedule_at(raw_text: str) -> str | None:
             )
             if parsed is not None:
                 date_value = parsed.strftime("%Y-%m-%d")
-    clock = _CLOCK_RE.search(text)
-    if not date_value or not clock:
+
+    if not date_value:
         return None
-    hour = int(clock.group(1) or clock.group(3))
-    minute = int(clock.group(2) or clock.group(4) or 0)
-    local_tz = _dt.datetime.now().astimezone().tzinfo
+
+    clock = _CLOCK_RE.search(text)
+    if clock:
+        hour = int(clock.group(1) or clock.group(3))
+        minute = int(clock.group(2) or clock.group(4) or 0)
+    else:
+        daypart = _DAYPART_RE.search(text)
+        if daypart:
+            hour = _DAYPART_HOUR[daypart.group(1).lower()]
+            minute = 0
+        elif date_word and date_word not in {"heute"}:
+            # Explicit future day without a clock: autonomous follow-ups run at
+            # a predictable local business-morning default rather than asking
+            # the user for an unnecessary time.
+            hour, minute = 9, 0
+        else:
+            return None
+
     due = _dt.datetime.fromisoformat(
         f"{date_value}T{hour:02d}:{minute:02d}:00"
     ).replace(tzinfo=local_tz)
-    if due <= _dt.datetime.now().astimezone():
+    if due <= now:
         return None
     return due.isoformat(timespec="seconds")
 
@@ -145,10 +194,13 @@ def _extract_background_goal(raw_text: str) -> str:
 def _extract_scheduled_goal(raw_text: str) -> str:
     """Remove the explicit trigger time from the later task's actual goal."""
     goal = _extract_background_goal(raw_text)
+    goal = _RELATIVE_DELAY_RE.sub(" ", goal, count=1)
     goal = _DATE_WORD_RE.sub(" ", goal, count=1)
     goal = _ABS_DATE_RE.sub(" ", goal, count=1)
     goal = _CLOCK_RE.sub(" ", goal, count=1)
+    goal = _DAYPART_RE.sub(" ", goal, count=1)
     goal = _re_top.sub(r"(?i)\b(am|für|fuer)\b(?=\s*[,;:-])", " ", goal)
+    goal = _re_top.sub(r"(?i)\b(nochmal|noch einmal|später|spaeter)\b", " ", goal)
     goal = " ".join(goal.split()).strip(" :-,")
     return goal or _extract_background_goal(raw_text)
 
