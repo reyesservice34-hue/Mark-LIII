@@ -23,7 +23,12 @@ sys.path.insert(0, str(BASE_DIR))
 
 from core.action_loader import discover_actions  # noqa: E402
 from core.understanding import clarify  # noqa: E402
-from memory.memory_manager import load_memory, format_memory_for_prompt  # noqa: E402
+from memory.memory_manager import (  # noqa: E402
+    load_memory,
+    format_memory_for_prompt,
+    relevant_conversation_memory,
+)
+from memory.config_manager import get_personality_mode, PERSONALITY_MODES  # noqa: E402
 
 CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 # Dieselbe Datei, die main.py's Gemini-Pfad laedt (core/prompt.txt) - NICHT
@@ -347,6 +352,16 @@ def _load_system_prompt(refresh_memory: bool = False) -> str:
         base = f"{base}\n\n{_memory_prompt_snapshot}"
 
     try:
+        personality_mode = get_personality_mode()
+        personality_text = PERSONALITY_MODES.get(personality_mode, "")
+    except Exception as e:
+        print(f"[LocalBrain] personality injection failed: {e}")
+        personality_mode = "mia"
+        personality_text = ""
+    if personality_text:
+        base = f"{base}\n\n[PERSONALITY]\n{personality_text}"
+
+    try:
         from brain.cognition import cognitive_context_for_prompt
         cognitive_context = cognitive_context_for_prompt(max_chars=2200)
     except Exception as e:
@@ -431,7 +446,24 @@ _TOOL_KEYWORDS: dict[str, list[str]] = {
     "code_helper": ["code", "programmier", "funktion schreib", "bug", "python", "javascript", "script"],
     "dev_agent": ["entwickl", "deploy", "server", "repository", "git"],
     "ask_command_center": ["command center", "kommandozentrale", "system status"],
-    "self_dev": ["verbesser dich", "trainier dich"],
+    "agency_agent": [
+        "agententeam", "team von agenten", "mehrere agenten", "delegier", "delegiere",
+        "spezialisten einsetzen", "agentur", "multi-agent", "multi agent",
+    ],
+    "agent_manager": [
+        "agent erstellen", "agenten erstellen", "neuen agent", "neue agentin",
+        "spezialagent", "spezialisten anlegen", "agent aktualisieren", "agent ändern",
+        "agent verwalten", "agenten verwalten", "agentenliste",
+    ],
+    "set_personality": [
+        "persönlichkeit", "persoenlichkeit", "verhalte dich", "sei lockerer",
+        "sei wärmer", "sei waermer", "sei professioneller", "wie jarvis",
+    ],
+    "self_dev": [
+        "verbesser dich", "trainier dich", "ändere dich selbst", "aendere dich selbst",
+        "dashboard ändern", "dashboard aendern", "kommandozentrale ändern",
+        "werkzeug erstellen", "neues werkzeug", "plugin schreiben",
+    ],
     "clone_and_learn": ["github", "gitlab", "klon", "clone", "repo", "repository"],
     "install_cloned_repo": ["installier", "installieren", "setup", "dependencies", "abhängigkeiten", "npm", "pip"],
     "plugin_manager": ["plugin", "erweiterung installieren", "plugin installieren", "addon", "add-on"],
@@ -618,6 +650,14 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
     # passed prior turns — exactly what "remember like a human" needs. System prompt now
     # always leads; passed history is prior conversation turns appended after it.
     messages = [{"role": "system", "content": system_prompt}] + (history or [])
+    if not worker_mode:
+        try:
+            recalled_context = relevant_conversation_memory(clear_text, limit=6, max_chars=2800)
+        except Exception as e:
+            print(f"[LocalBrain] automatic conversation recall failed: {e}")
+            recalled_context = ""
+        if recalled_context:
+            messages.append({"role": "system", "content": recalled_context})
     messages.append({"role": "user", "content": clear_text})
 
     # Gleiche Optimierung wie in chat_stream_and_speak: Datum deterministisch
@@ -920,6 +960,13 @@ def chat_stream_and_speak(user_text: str, history: list[dict] | None = None, voi
     # passed prior turns — exactly what "remember like a human" needs. System prompt now
     # always leads; passed history is prior conversation turns appended after it.
     messages = [{"role": "system", "content": system_prompt}] + (history or [])
+    try:
+        recalled_context = relevant_conversation_memory(clear_text, limit=6, max_chars=2800)
+    except Exception as e:
+        print(f"[LocalBrain] automatic conversation recall failed: {e}")
+        recalled_context = ""
+    if recalled_context:
+        messages.append({"role": "system", "content": recalled_context})
     messages.append({"role": "user", "content": clear_text})
 
     # Same truth-first fast path as chat(): an explicit background-work request

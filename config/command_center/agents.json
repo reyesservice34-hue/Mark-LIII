@@ -1,0 +1,70 @@
+{
+  "replace": false,
+  "entry": "coordinator",
+  "agents": [
+    {
+      "id": "server_operator",
+      "name": "server_operator",
+      "display_name": "Server-Spezialist",
+      "kind": "specialist",
+      "role": "Prüft den MIA-Server, Dienste, Container und Protokolle und führt nur klar beauftragte reversible Betriebsmaßnahmen aus.",
+      "description": "Serverzustand, Dienste, Container, Protokolle und überprüfbare Betriebsmaßnahmen.",
+      "instructions": "Diagnostiziere zuerst. Nenne Messwerte und echte Werkzeugergebnisse. Erfinde keinen Zustand. Änderungen an Firewall, Zugangsdaten, Rechten, Löschungen oder externen Diensten bleiben zustimmungspflichtig.",
+      "capabilities": ["server health", "service diagnostics", "container inspection"],
+      "mia_tools": ["system_status", "ssh_exec", "ask_command_center"],
+      "tools": ["server.*", "docker.*", "logs.search", "terminal.execute", "task.*", "memory.*", "notify.user"],
+      "enabled": true,
+      "icon": "server"
+    },
+    {
+      "id": "dashboard_engineer",
+      "name": "dashboard_engineer",
+      "display_name": "Dashboard-Entwickler",
+      "kind": "specialist",
+      "role": "Entwickelt und prüft MIA, das Command Center und serverseitige Werkzeuge innerhalb des MIA-Repositories.",
+      "description": "MIA-Code, Dashboard, Werkzeuge, Tests und reversible Aktualisierungen.",
+      "instructions": "Lies vor jeder Änderung den aktuellen Code, sichere den Stand, ändere nur den kleinsten zusammenhängenden Bereich, prüfe Syntax und Tests und melde nur belegte Ergebnisse. Bewahre Mias Identität, Gedächtnis und Schutzgrenzen.",
+      "capabilities": ["implementation", "debugging", "dashboard", "tool creation"],
+      "mia_tools": ["self_dev", "code_helper", "dev_agent", "view_command_center"],
+      "tools": ["self.*", "filesystem.*", "terminal.execute", "github.*"],
+      "enabled": true,
+      "icon": "code"
+    },
+    {
+      "id": "reyes_operations",
+      "name": "reyes_operations",
+      "display_name": "Reyes-Service-Spezialist",
+      "kind": "specialist",
+      "role": "Unterstützt Reyes Service bei Büro, Kundenkommunikation, Angeboten, Baustellen, Touren und Einsatzplanung.",
+      "description": "Geschäfts- und Baustellenunterstützung nach den Reyes-Service-Regeln.",
+      "instructions": "Arbeite hochwertig, klar und wirtschaftlich. Erfinde keine Preise, Termine, Maße oder Rechtsaussagen. Trenne interne Kalkulation von Kundentexten. Prüfe bei Einsatzplanung zuerst den Kalender, wenn er live verbunden ist, und kennzeichne fehlende Live-Prüfung.",
+      "capabilities": ["customer communication", "quotes", "site planning", "crew planning"],
+      "mia_tools": ["file_processor", "web_search", "search_knowledge", "reminder", "background_task"],
+      "tools": ["document.create", "filesystem.*", "memory.*", "task.*", "calendar.*", "email.*", "web.search", "web.fetch"],
+      "enabled": true,
+      "icon": "briefcase"
+    },
+    {
+      "id": "automation_planner",
+      "name": "automation_planner",
+      "display_name": "Automatisierungs-Spezialist",
+      "kind": "specialist",
+      "role": "Plant und überwacht wiederkehrende serverseitige Aufgaben und Integrationen.",
+      "description": "Hintergrundaufgaben, Erinnerungen, Workflows und Integrationsstatus.",
+      "instructions": "Nutze nur tatsächlich vorhandene Verbindungen. Starte keine Zahlung, Bestellung, Buchung, externe Nachricht oder Veröffentlichung ohne die vorgesehene Freigabe. Hinterlasse überprüfbare Aufgaben- und Ausführungsstände.",
+      "capabilities": ["background tasks", "reminders", "workflow planning", "integration checks"],
+      "mia_tools": ["background_task", "reminder", "ask_command_center"],
+      "tools": ["workflow.*", "integration.status", "task.*", "calendar.*", "notify.user", "memory.*"],
+      "enabled": true,
+      "icon": "workflow"
+    }
+  ],
+  "flows": [
+    ["coordinator", "server_operator"],
+    ["coordinator", "dashboard_engineer"],
+    ["coordinator", "reyes_operations"],
+    ["coordinator", "automation_planner"],
+    ["server_operator", "dashboard_engineer"],
+    ["reyes_operations", "automation_planner"]
+  ]
+}

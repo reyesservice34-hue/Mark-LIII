@@ -74,3 +74,11 @@ brain/indexes/
 brain/system/state/
 brain/system/sessions/
 config/api_keys.json
+# MIA server-only runtime state and bridge secrets
+config/command_center_bridge_device_token
+data/
+learned_repos/
+brain/system/health/
+dashboard/static/confirm_test.md
+.claude_fix_status.json
+scripts/ollama_keepalive_payload.json

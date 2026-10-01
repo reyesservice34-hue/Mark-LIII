@@ -44,7 +44,8 @@ def get_base_dir() -> Path:
 
 BASE_DIR        = get_base_dir()
 API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
-ROSTER_PATH     = BASE_DIR / "config" / "agency.json"
+ROSTER_PATH     = BASE_DIR / "config" / "command_center" / "agents.json"
+LEGACY_ROSTER_PATH = BASE_DIR / "config" / "agency.json"
 ACTIONS_DIR     = BASE_DIR / "actions"
 
 from core.free_llm import DEFAULT_MODEL   # one default, one place
@@ -135,7 +136,8 @@ def _coerce_agent(raw: dict) -> Optional[Agent]:
     name = str(raw.get("name", "")).strip()
     if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$", name):
         return None
-    tools = [str(t).strip() for t in (raw.get("tools") or []) if str(t).strip()]
+    tools = [str(t).strip() for t in (raw.get("mia_tools") or raw.get("tools") or [])
+             if str(t).strip()]
     return Agent(
         name=name,
         role=str(raw.get("role", "")).strip(),
@@ -170,37 +172,46 @@ def load_roster(logger: Callable[[str], None] = print) -> Roster:
         entry=DEFAULT_AGENTS[0].name,
     )
 
-    if not ROSTER_PATH.exists():
+    path = ROSTER_PATH if ROSTER_PATH.exists() else LEGACY_ROSTER_PATH
+    if not path.exists():
         return default
 
     try:
-        raw = json.loads(ROSTER_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(path.read_text(encoding="utf-8"))
         agents = [a for a in (_coerce_agent(r) for r in raw.get("agents", [])) if a]
-        if not agents:
+        if raw.get("replace") is True and not agents:
             raise ValueError("no valid agents in 'agents'")
 
-        by_name = {a.name: a for a in agents}
-        flows: list[tuple[str, str]] = []
+        if raw.get("replace") is True:
+            by_name = {a.name: a for a in agents}
+            flows: list[tuple[str, str]] = []
+            fallback_entry = agents[0].name
+        else:
+            by_name = dict(default.agents)
+            by_name.update({a.name: a for a in agents})
+            flows = list(default.flows)
+            fallback_entry = default.entry
+
         for pair in raw.get("flows", []):
             if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
                 continue
             sender, receiver = str(pair[0]).strip(), str(pair[1]).strip()
-            # A flow naming an agent that does not exist is dropped, not fatal —
-            # it grants nothing, so it cannot widen anyone's reach.
             if sender in by_name and receiver in by_name and sender != receiver:
-                flows.append((sender, receiver))
+                edge = (sender, receiver)
+                if edge not in flows:
+                    flows.append(edge)
 
-        entry = str(raw.get("entry", "")).strip() or agents[0].name
+        entry = str(raw.get("entry", "")).strip() or fallback_entry
         if entry not in by_name:
-            logger(f"Agency: entry '{entry}' is not in the roster — using '{agents[0].name}'.")
-            entry = agents[0].name
+            logger(f"Agency: entry '{entry}' is not in the roster — using '{fallback_entry}'.")
+            entry = fallback_entry
 
-        logger(f"Agency: roster loaded from {ROSTER_PATH.name} "
+        logger(f"Agency: roster loaded from {path.name} "
                f"({len(by_name)} agents, {len(flows)} flows, entry '{entry}').")
-        return Roster(agents=by_name, flows=flows, entry=entry, source=ROSTER_PATH.name)
+        return Roster(agents=by_name, flows=flows, entry=entry, source=str(path))
 
     except Exception as e:
-        logger(f"Agency: {ROSTER_PATH.name} ignored ({e}) — using the built-in roster.")
+        logger(f"Agency: {path.name} ignored ({e}) — using the built-in roster.")
         return default
 
 
