@@ -1,0 +1,33 @@
+services:
+  mia-live-voice:
+    image: jarvis-live-voice:latest
+    container_name: mia-live-voice
+    restart: unless-stopped
+    environment:
+      LOCAL_LLM_MODEL: qwen2.5:7b
+      SPEACHES_URL: http://mia-speaches-kerstin:8000
+      STT_MODEL: Systran/faster-whisper-base
+      TTS_MODEL: speaches-ai/piper-de_DE-thorsten-medium
+      TTS_VOICE: thorsten
+    ports:
+      - "127.0.0.1:8006:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mia_shared
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  mia_shared:
+    external: true
+    name: mia-mark53-shared
