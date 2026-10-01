@@ -201,6 +201,8 @@ def main() -> int:
                 "Wenn etwas nicht geht, nenne exakt den echten Blocker.\n\nAUFGABE: "
                 + str(task.get("goal") or ""),
                 skip_clarify=True,
+                routing_text=str(task.get("goal") or ""),
+                exclude_tools={"background_task"},
             )
             answer = str(answer or "").strip()
 

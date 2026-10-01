@@ -479,12 +479,14 @@ _TOOL_KEYWORDS: dict[str, list[str]] = {
     "save_memory": ["merk dir", "merke dir", "speicher", "notier", "vergiss nicht dass", "ich heiße", "mein name ist", "ich mag", "ich bin"],
     "system_status": ["cpu", "ram", "speicher voll", "auslastung", "wie geht es dir", "systemstatus", "server status", "laufzeit"],
     "undo": ["rückgängig", "mach das rückgängig", "undo", "zurücknehmen", "nein nicht das"],
+    # Nur explizite Hintergrund-/Monitoring-Absicht. Direkte Befehle wie
+    # "erledige das" oder "kümmer dich" sollen sofort ausgeführt werden.
     "background_task": [
-        "im hintergrund", "kümmer dich", "kümmere dich", "erledige das", "aufgabe",
-        "später fertig", "spaeter fertig", "arbeite daran", "arbeite weiter", "mach weiter",
-        "offene aufgaben", "ergebnis der aufgabe", "nachfassen", "fass nach", "follow-up",
-        "prüfe weiter", "pruefe weiter", "überwache", "ueberwache", "beobachte",
-        "später prüfen", "spaeter pruefen", "prüfe später", "pruefe spaeter",
+        "im hintergrund", "hintergrundaufgabe", "arbeite im hintergrund",
+        "später fertig", "spaeter fertig", "offene aufgaben", "ergebnis der aufgabe",
+        "warteschlange", "nachfassen", "fass nach", "follow-up",
+        "prüfe später", "pruefe spaeter", "später prüfen", "spaeter pruefen",
+        "überwache", "ueberwache", "beobachte",
     ],
     "search_knowledge": [
         "was weißt du über", "was kannst du", "welche skills", "erkläre mir", "erklär mir",
@@ -568,7 +570,8 @@ def _deterministic_worker_fallback(clear_text: str, tools: list[dict], registry)
     return None
 
 
-def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool = False) -> tuple[str, list[dict]]:
+def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool = False,
+         routing_text: str | None = None, exclude_tools: set[str] | None = None) -> tuple[str, list[dict]]:
     """Ein Gespraechsturn, komplett lokal ueber Ollama + lokale Tool-Ausfuehrung.
 
     Jede Eingabe (Chat-Tipp ODER STT-Transkript) laeuft zuerst durch die
@@ -672,8 +675,11 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
     if date_hit:
         word, resolved = date_hit
         messages.append({"role": "system", "content": f"FAKT (nicht selbst nachrechnen, direkt uebernehmen): '{word}' bedeutet hier exakt das Datum {resolved}. Falls du ein Tool mit einem 'date'-Feld aufrufst, nutze GENAU '{resolved}'."})
-    matched_names = set(_matching_tool_names(clear_text, tool_names))
-    _lower = clear_text.lower().strip()
+    route_text = routing_text if routing_text is not None else clear_text
+    matched_names = set(_matching_tool_names(route_text, tool_names))
+    if exclude_tools:
+        matched_names.difference_update(exclude_tools)
+    _lower = route_text.lower().strip()
 
     # Worker-Routing: explizite Systemstatus-Anfragen muessen deterministisch
     # auf system_status gehen. Ein generisches dev_agent/web_search daneben
