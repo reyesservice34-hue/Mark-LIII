@@ -1,0 +1,12 @@
+{"version":"1.0","pass_threshold":0.85,"cases":[
+{"id":"RT01","type":"projektabweichung","case":"Baustelle liegt nach 40 Prozent Leistungsfortschritt bereits bei 62 Prozent der geplanten Arbeitsstunden. Material liegt im Plan. Was tust du?"},
+{"id":"RT02","type":"liquiditaet","case":"Ein grosser Kunde zahlt spaeter, gleichzeitig werden Materialrechnungen faellig. Es fehlen konkrete Betraege. Was kannst du bereits tun und was darfst du noch nicht behaupten?"},
+{"id":"RT03","type":"personal","case":"Morgen fallen zwei Mitarbeiter aus und drei Baustellen sind geplant. Welche Daten brauchst du und wie priorisierst du ohne Doppelbelegung?"},
+{"id":"RT04","type":"widerspruch","case":"Projektakte sagt Fertigstellung Freitag, Kalender Montag, Kunde nennt Mittwoch. Wie gehst du vor?"},
+{"id":"RT05","type":"agent","case":"Ein Agent meldet: 'Rechnung ist versendet'. Es gibt keinen Sendebeleg und keinen Statuswechsel. Wie bewertest du das?"},
+{"id":"RT06","type":"dokument","case":"Du sollst einen Vertrag bewerten, hast aber nur den Dateinamen und keinen Dateiinhalt. Was tust du?"},
+{"id":"RT07","type":"investition","case":"Soll ein weiteres Fahrzeug gekauft werden? Baue das Entscheidungsmodell, ohne Kaufpreis oder Auslastung zu erfinden."},
+{"id":"RT08","type":"kunde","case":"Ein Kunde reklamiert einen Mangel und hat gleichzeitig eine offene Rechnung. Trenne technische, kaufmaennische und rechtliche Schritte."},
+{"id":"RT09","type":"multi_company","case":"Ein Mitarbeiter arbeitet diese Woche fuer zwei Gesellschaften. Wie verhinderst du Daten- und Kostenvermischung?"},
+{"id":"RT10","type":"proaktiv","case":"Welche Bedingungen muessen erfuellt sein, bevor du den Nutzer proaktiv wegen einer Projektabweichung unterbrichst?"}
+]}

@@ -26,7 +26,12 @@ from pathlib import Path
 import requests
 
 OLLAMA_URL = "http://127.0.0.1:11434"       # lokal auf dem Brain-Server
-OLLAMA_MODEL = "qwen2.5:3b"                 # klein & schnell genug fuer die Verstehens-Vorstufe
+OLLAMA_MODEL = "qwen3:1.7b"                 # 2026-09-30: vereinheitlicht mit local_brain.py's Modell (war
+                                             # qwen2.5:3b, jetzt geloescht) - zwei verschiedene Modelle
+                                             # zwangen Ollama bei OLLAMA_MAX_LOADED_MODELS=1 (frueherer Wert)
+                                             # zu einem Kaltstart-Wechsel bei JEDER Chat-Anfrage. Ein Modell
+                                             # schliesst diese Kollision grundsaetzlich aus, das neuere
+                                             # (qwen3) bleibt, wie vom Nutzer gewaehlt.
 
 # Deutsche Fuell-/Verzoegerungswoerter, wie sie in Sprache (und Tippfehlern) auftauchen.
 _FILLERS = re.compile(

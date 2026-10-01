@@ -35,10 +35,13 @@ WHAT BELONGS HERE AND WHAT DOES NOT
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from dataclasses import dataclass
 from typing import Callable, Optional
+
+import requests
 
 # A pending confirmation is abandoned after this long. Chosen to outlast a
 # normal "hang on, let me look at the screen" pause without leaving a live
@@ -63,6 +66,28 @@ _lock = threading.Lock()
 _show_cb: Optional[Callable[[str, str], None]] = None
 _hide_cb: Optional[Callable[[], None]] = None
 _log_cb:  Optional[Callable[[str], None]] = None
+
+
+def _push_phone(title: str, detail: str) -> None:
+    """2026-09-29 (user, explicit): proactively alert the phone when something
+    needs confirmation — a banner nobody is looking at expires unanswered
+    after TIMEOUT_SECONDS. Uses the same ntfy topic already configured for
+    the Command Center (same phone, same app already installed). Fire-and-
+    forget in a thread — a confirmation must never wait on network I/O."""
+    topic = os.environ.get("JARVIS_CC_NTFY_TOPIC", "").strip()
+    if not topic:
+        return
+
+    def _send():
+        try:
+            requests.post(os.environ.get("JARVIS_CC_NTFY_URL", "https://ntfy.sh").rstrip("/"),
+                         json={"topic": topic, "title": f"MIA braucht deine Bestätigung: {title}"[:120],
+                               "message": detail[:500], "priority": 4, "tags": ["robot"]},
+                         timeout=6)
+        except Exception:  # noqa: BLE001 — a failed push must never break the confirmation itself
+            pass
+
+    threading.Thread(target=_send, daemon=True, name="confirm-push").start()
 
 
 def bind(show, hide, log=None) -> None:
@@ -104,6 +129,7 @@ def request(key: str, title: str, detail: str, run: Callable[[], str]) -> str:
             _pending = None
         return f"Could not ask for confirmation: {e}. Nothing was done."
 
+    _push_phone(title, detail)
     _log(f"SYS: Awaiting confirmation — {title}")
     return (
         f"[CONFIRMATION_PENDING] I have put a confirmation on screen for: {title}. "

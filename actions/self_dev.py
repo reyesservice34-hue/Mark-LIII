@@ -121,7 +121,7 @@ def _write(rel_path: str, content: str) -> str:
     committed = rc == 0
 
     return (
-        f"Wrote '{rel_path}' ({len(content)} chars). "
+        f"Wrote '{rel_path}' ({len(content)} chars). [FILE: {rel_path}]\n"
         + ("Committed to git — call restart to apply it."
            if committed else
            "Nothing to commit (content unchanged).")
@@ -171,6 +171,20 @@ def self_dev(parameters: dict, player=None, session_memory=None) -> str:
     content = parameters.get("content")
     command = parameters.get("command", "")
 
+    from command_center.backend.services import cc_autonomy
+    if action == "write" and cc_autonomy.allows_path(path):
+        target = _resolve_in_repo(path)
+        if content is None or target is None:
+            return "No valid content/path given."
+        import datetime, shutil
+        backup = BASE_DIR / "data" / "cc-autonomy-backups" / datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f") / target.relative_to(BASE_DIR)
+        if target.exists():
+            backup.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(target, backup)
+        target.parent.mkdir(parents=True, exist_ok=True); target.write_text(content, encoding="utf-8")
+        _git("add", "--", path); rc, out = _git("commit", "-m", "MIA CC edit: " + path, "--", path)
+        return "Wrote " + path + "; backup saved. Build/restart Command Center to apply. Git: " + out
+    if action == "run" and cc_autonomy.approved_command(command):
+        return cc_autonomy.run_command(command)
     if action == "list":
         result = _list(path)
     elif action == "read":

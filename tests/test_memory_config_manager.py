@@ -175,11 +175,11 @@ def test_wake_word_enabled_defaults_false_and_round_trips():
 
 
 # ── Personality mode ─────────────────────────────────────────────────────────
-def test_personality_mode_defaults_to_professional():
-    assert cm.get_personality_mode() == cm.DEFAULT_PERSONALITY_MODE == "professional"
+def test_personality_mode_defaults_to_mia():
+    assert cm.get_personality_mode() == cm.DEFAULT_PERSONALITY_MODE == "mia"
 
 
-@pytest.mark.parametrize("mode", ["casual", "concise", "warm", "professional"])
+@pytest.mark.parametrize("mode", ["mia", "casual", "concise", "warm", "professional"])
 def test_save_and_get_personality_mode_round_trip(mode):
     cm.save_personality_mode(mode)
     assert cm.get_personality_mode() == mode

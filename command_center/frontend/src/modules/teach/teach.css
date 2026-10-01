@@ -1,0 +1,13 @@
+.rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--err); box-shadow: 0 0 10px var(--err); animation: pulse 1.4s ease-in-out infinite; }
+.teach-trace { max-height: 420px; overflow: auto; }
+.trace-row { display: flex; align-items: flex-start; gap: 10px; padding: 7px 16px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.trace-row:last-child { border-bottom: 0; }
+.trace-kind { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); width: 62px; flex: none; padding-top: 2px; }
+.trace-row.said { background: rgba(90, 200, 255, 0.05); }
+.trace-row.said .trace-kind { color: var(--accent); }
+.trace-row.note { background: rgba(255, 180, 84, 0.06); }
+.trace-row.note .trace-kind { color: var(--warn); }
+.trace-row.tool .trace-kind, .trace-row.desktop .trace-kind { color: var(--ok); }
+.trace-row code { word-break: break-word; }
+.teach-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.teach-steps li::marker { color: var(--accent); font-family: var(--mono); font-size: 12px; }

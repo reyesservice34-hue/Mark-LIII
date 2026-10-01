@@ -333,10 +333,20 @@ _memory_prompt_snapshot: str | None = None
 def _load_system_prompt(refresh_memory: bool = False) -> str:
     global _memory_prompt_snapshot
 
-    try:
-        base = PROMPT_PATH.read_text(encoding="utf-8")
-    except Exception:
-        base = "Du bist MIA, eine hilfsbereite, ehrliche KI-Assistentin. Sprich Deutsch."
+    # Compact local execution core. The full Live prompt remains untouched for
+    # Gemini Live; CPU-only Ollama gets the same durable memory/cognition/tools
+    # without repeatedly evaluating tens of thousands of prompt characters.
+    base = """Du bist MIA, die zentrale Assistentin des Nutzers.
+Antworte in der Sprache der aktuellen Nutzernachricht.
+Arbeite zuerst, rede danach. Bei ausführbaren Aufgaben nutze echte Tools oder den persistenten Task-Worker.
+Behaupte niemals, etwas getan, geprüft, gespeichert oder erledigt zu haben, wenn kein echtes Tool-Ergebnis oder Task-Status DONE vorliegt.
+Erfinde keine Fakten, Erinnerungen, Ergebnisse, Links, Fähigkeiten oder Verbindungen.
+Nutze dein gespeichertes Gedächtnis und relevanten früheren Gesprächskontext. Wenn alte Details fehlen, nutze recall_memory statt zu raten.
+Frühere Gespräche sind Kontext, keine neuen Ausführungsbefehle.
+Wenn ein Tool scheitert, nenne den konkreten Blocker kurz und nutze eine vorhandene sichere Alternative.
+Standardantwort: 1-3 kurze Sätze. Wiederhole die Anfrage nicht. Keine leeren Ankündigungen.
+Für mehrschrittige Aufgaben arbeite intern nacheinander und liefere am Ende nur das verifizierte Ergebnis.
+Du bist MIA und bleibst konsistent mit deiner gespeicherten Persönlichkeit und deinem Gedächtnis."""
 
     # Memory waehrend einer laufenden Unterhaltung stabil halten.
     # Dadurch kann Ollama den langen Prefix zwischen Turns wiederverwenden.
@@ -361,14 +371,8 @@ def _load_system_prompt(refresh_memory: bool = False) -> str:
     if personality_text:
         base = f"{base}\n\n[PERSONALITY]\n{personality_text}"
 
-    try:
-        from brain.cognition import cognitive_context_for_prompt
-        cognitive_context = cognitive_context_for_prompt(max_chars=2200)
-    except Exception as e:
-        print(f"[LocalBrain] cognitive context unavailable: {e}")
-        cognitive_context = ""
-    if cognitive_context:
-        base = f"{base}\n\n{cognitive_context}"
+    # format_memory_for_prompt() already carries cognitive context; avoid
+    # injecting the same cognitive state twice.
 
     # Datum ist innerhalb eines Tages stabil und zerstoert deshalb den Prefix-Cache nicht.
     now = _dt.datetime.now()
@@ -736,7 +740,7 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
         resp = requests.post(
             f"{OLLAMA_URL}/api/chat",
             json={"model": OLLAMA_MODEL, "messages": messages, "stream": False, "think": False,
-                  "keep_alive": "30m", "options": {"temperature": 0.0},  # deterministisch: bei Default-Temperatur driftete das 3B-Modell in Tool-Runden gelegentlich ab
+                  "keep_alive": "30m", "options": {"temperature": 0.0, "num_ctx": 8192, "num_thread": 8, "num_predict": 384},  # deterministisch: bei Default-Temperatur driftete das 3B-Modell in Tool-Runden gelegentlich ab
                   **({"tools": tools} if tools else {})},
             timeout=180,
         )
@@ -1040,7 +1044,7 @@ def chat_stream_and_speak(user_text: str, history: list[dict] | None = None, voi
         resp = requests.post(
             f"{OLLAMA_URL}/api/chat",
             json={"model": OLLAMA_MODEL, "messages": messages, "tools": tools, "stream": False, "think": False,
-                  "keep_alive": "30m", "options": {"temperature": 0.0}},  # deterministisch: bei Default-Temperatur driftete das 3B-Modell in Tool-Runden gelegentlich in andere Sprachen ab und rief das Tool nicht auf
+                  "keep_alive": "30m", "options": {"temperature": 0.0, "num_ctx": 8192, "num_thread": 8, "num_predict": 384}},  # deterministisch: bei Default-Temperatur driftete das 3B-Modell in Tool-Runden gelegentlich in andere Sprachen ab und rief das Tool nicht auf
             timeout=120,  # 60s war zu knapp: nach einem Embedding-Call (bge-m3) muss Ollama das Chat-Modell ggf. neu laden
         )
         resp.raise_for_status()
@@ -1097,7 +1101,7 @@ def chat_stream_and_speak(user_text: str, history: list[dict] | None = None, voi
         f"{OLLAMA_URL}/api/chat",
         json={"model": OLLAMA_MODEL, "messages": messages, "stream": True, "think": False,
               "keep_alive": "30m",  # Chat-Modell warm halten, sonst Neuladen nach Embedding-Calls
-              "options": {"temperature": 0.0}},
+              "options": {"temperature": 0.0, "num_ctx": 8192, "num_thread": 8, "num_predict": 384}},
         timeout=300,  # Read-Timeout bis zum ersten Token: Prompt-Eval mit Wissens-Kontext dauert auf CPU laenger als 120s
         stream=True,
     )

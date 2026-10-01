@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import os
 import re
 import sys
 import traceback
@@ -37,6 +38,13 @@ from typing import Callable, Optional
 _NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$")
 _DEFAULT_PARAMS = {"type": "OBJECT", "properties": {}}
 _CTX_KEYS = ("player", "speak", "response", "session_memory")
+_HEADLESS_SKIP_FILES = {
+    "computer_control.py",
+    "computer_settings.py",
+    "desktop.py",
+    "send_message.py",
+    "youtube_video.py",
+}
 
 
 @dataclass
@@ -141,8 +149,13 @@ def discover_actions(actions_dir: Path, reserved_names: set[str] | None = None,
     all_records: list[ActionRecord] = []
 
     files = sorted(actions_dir.glob("*.py"), key=lambda p: p.name)  # deterministic order
+    headless_worker = os.environ.get("MIA_HEADLESS_WORKER") == "1"
+    headless_runtime = headless_worker or not bool(os.environ.get("DISPLAY"))
     for path in files:
         if path.name.startswith("_"):
+            continue
+        if headless_runtime and path.name in _HEADLESS_SKIP_FILES:
+            logger(f"Action skipped in headless runtime: {path.name}")
             continue
         try:
             module_name = f"actions.{path.stem}"

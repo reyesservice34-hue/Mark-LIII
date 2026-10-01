@@ -1126,6 +1126,12 @@ class DashboardServer:
                 text = (body.get("text") or "").strip()
             if not text:
                 return JSONResponse({"error": "empty text"}, status_code=400)
+            # 2026-09-30 (user, explicit): "remember like a human" — prior turns of THIS
+            # conversation, passed by the caller (the Command Center bridge sends its own
+            # conversation history here), not just standing facts from memory/long_term.json.
+            _history_in = body.get("history") or []
+            _history = [{"role": str(m.get("role", "user")), "content": str(m.get("content", ""))}
+                       for m in _history_in if isinstance(m, dict) and str(m.get("content", "")).strip()][-6:]
             # Deterministic local project-file access: an explicit Mark-LIII path
             # must be read before MIA answers; do not make a small local model guess.
             import re as _re
@@ -1149,10 +1155,17 @@ class DashboardServer:
                     _sys.path.insert(0, str(_base))
                 from core.understanding import clarify as _clarify
                 from core.local_brain import chat as _local_chat
+                from memory.memory_manager import record_conversation_turn as _record_turn
 
                 def _run():
-                    clear_text = _clarify(text)
-                    answer, _ = _local_chat(clear_text, skip_clarify=True)
+                    clear_text = text
+                    answer, _ = _local_chat(clear_text, history=_history or None, skip_clarify=True)
+                    # Text and Live Voice now write the same exact durable turn
+                    # format. record_conversation_turn also updates the cognitive state.
+                    try:
+                        _record_turn(clear_text, answer, "de-DE")
+                    except Exception as _mem_exc:
+                        print(f"[Memory] text-chat turn persistence skipped: {_mem_exc}")
                     return clear_text, answer
 
                 clear_text, answer = await asyncio.to_thread(_run)
@@ -1287,6 +1300,25 @@ class DashboardServer:
                 _log_event("warning", "file_open_failed", where="download", reason="not_found_or_unsafe")
                 return JSONResponse({"error": "Not found"}, status_code=404)
             return FileResponse(str(path), filename=path.name)
+
+        @app.get("/api/project-file")
+        async def project_file(path: str = "", token: str = ""):
+            # 2026-09-29: serves a file MIA created/downloaded (downloads/, learned_repos/,
+            # or anywhere else inside this repo) so the Command Center bridge can fetch and
+            # actually show it in the chat, instead of the user only ever seeing a text path.
+            # Same query-token auth pattern as /uploads/{filename} above.
+            tok = token.strip()
+            if not tok or tok not in self._tokens:
+                _log_event("warning", "auth_failed", where="project_file", reason="invalid_token")
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                target = (BASE_DIR / path).resolve()
+                target.relative_to(BASE_DIR.resolve())
+            except (ValueError, RuntimeError, OSError):
+                return JSONResponse({"error": "Refused: path outside the project"}, status_code=400)
+            if not target.is_file():
+                return JSONResponse({"error": "Not found"}, status_code=404)
+            return FileResponse(str(target), filename=target.name)
 
         @app.websocket("/ws")
         async def ws_ep(websocket: WebSocket, token: str = ""):

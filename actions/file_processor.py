@@ -44,6 +44,7 @@ def _gemini_client():
 
 def _detect_type(path: Path) -> str:
     ext = path.suffix.lower().lstrip(".")
+    name = path.name.lower()
     image_exts = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "svg", "ico"}
     video_exts = {"mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v", "3gp"}
     audio_exts = {"mp3", "wav", "ogg", "m4a", "aac", "flac", "wma", "opus"}
@@ -51,6 +52,7 @@ def _detect_type(path: Path) -> str:
                   "cpp", "cs", "go", "rs", "rb", "php", "swift", "kt", "sh",
                   "bash", "ps1", "lua", "r", "m", "sql", "yaml", "toml"}
     archive_exts = {"zip", "rar", "tar", "gz", "7z", "bz2", "xz"}
+    if name in {".env", ".gitignore", ".dockerignore", "dockerfile", "makefile", "license", "license.txt"}: return "text"
 
     if ext in image_exts:  return "image"
     if ext in video_exts:  return "video"
@@ -59,7 +61,7 @@ def _detect_type(path: Path) -> str:
     if ext in archive_exts: return "archive"
     if ext == "pdf":       return "pdf"
     if ext in ("docx", "doc"): return "docx"
-    if ext in ("txt", "md", "rst", "log"): return "text"
+    if ext in ("txt", "md", "rst", "log", "ini", "cfg", "conf", "properties", "lock"): return "text"
     if ext in ("csv", "tsv"): return "csv"
     if ext in ("xlsx", "xls", "ods"): return "excel"
     if ext == "json":      return "json"
@@ -658,7 +660,7 @@ def _process_video(path: Path, action: str, params: dict, speak=None) -> str:
             return f"Extract frame failed: {e}"
 
     if action == "compress":
-        crf = int(params.get("quality", 28))  
+        crf = int(params.get("quality", 28))
         if not _ffmpeg_available():
             return "ffmpeg not found."
         out = _output_path(path, f"compressed_crf{crf}", ".mp4")
@@ -815,7 +817,7 @@ def file_processor(parameters: dict, player=None, speak=None) -> str:
         "csv":     lambda p, a, pm, s: _process_data(p, "csv",   a, pm, s),
         "excel":   lambda p, a, pm, s: _process_data(p, "excel", a, pm, s),
         "json":    _process_json,
-        "xml":     lambda p, a, pm, s: _process_json(p, a, pm, s),  
+        "xml":     lambda p, a, pm, s: _process_json(p, a, pm, s),
         "code":    _process_code,
         "audio":   _process_audio,
         "video":   _process_video,

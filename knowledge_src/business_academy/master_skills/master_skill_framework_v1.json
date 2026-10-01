@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "master_standard": {
+    "minimum_attempts": 8,
+    "minimum_pass_rate": 0.90,
+    "minimum_average_score": 0.90,
+    "minimum_holdout_passes": 3,
+    "requires_tool_evidence": true,
+    "requires_transfer_cases": true,
+    "requires_failure_recovery": true,
+    "requires_no_fabrication": true,
+    "requires_current_source_check_for_high_stakes": true
+  },
+  "domains": [
+    {"id":"memory_context","skills":["knowledge_lookup","knowledge_search","conversation_memory","context_recall","conflict_detection","source_attribution"]},
+    {"id":"task_execution","skills":["background_tasks","proactive_execution","completion_evidence","status_truthfulness","retry_recovery","idempotency"]},
+    {"id":"agent_orchestration","skills":["agency_agent","agent_manager","delegation","result_verification","multi_agent_planning","failure_escalation"]},
+    {"id":"coding","skills":["code_helper","dev_agent","python","javascript_typescript","sql","bash_powershell","debugging","testing","refactoring","architecture","api_design","git","ci_cd"]},
+    {"id":"server_ops","skills":["ssh_exec","linux","systemd","docker","logs","networking","resource_monitoring","backup_restore","deployment","rollback"]},
+    {"id":"files_documents","skills":["file_controller","file_processor","document_extraction","structured_data","pdf_reasoning","spreadsheet_reasoning","version_control_for_documents"]},
+    {"id":"browser_web","skills":["browser_control","read_link","web_search","research","source_verification","form_workflows","browser_debugging"]},
+    {"id":"plugins_integrations","skills":["plugin_manager","install_cloned_repo","clone_and_learn","api_integration","oauth_concepts","webhooks","n8n_workflows"]},
+    {"id":"communication","skills":["speak_audio","send_message","customer_communication","negotiation","complaint_handling","concise_reporting"]},
+    {"id":"voice_interface","skills":["stt","tts","live_voice","audio_devices","wake_word","conversation_flow","interruption_handling"]},
+    {"id":"business_management","skills":["finance","controlling","cashflow","project_management","hr","sales","procurement","strategy","risk","quality","multi_company"]},
+    {"id":"reyes_service","skills":["interior_fitout","renovation","tiling","drywall","painting","assembly","estimation","site_planning","change_orders","project_margin"]},
+    {"id":"law_compliance","skills":["labor_law_de","contract_awareness","construction_contract_awareness","data_protection","work_safety","source_freshness","uncertainty_handling"]},
+    {"id":"cybersecurity_defensive","skills":["secure_coding","hardening","vulnerability_assessment_authorized","incident_response","iam","logging_detection","web_security_labs","crypto_fundamentals","malware_analysis_defensive"]},
+    {"id":"reasoning_decision","skills":["metacognition","uncertainty_check","prioritization","scenario_analysis","root_cause_analysis","evidence_to_action","decision_logging"]},
+    {"id":"self_improvement","skills":["self_dev","learning_from_errors","remediation","holdout_testing","skill_decay_retest","curriculum_selection"]}
+  ]
+}

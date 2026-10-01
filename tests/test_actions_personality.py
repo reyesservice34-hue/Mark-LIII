@@ -28,6 +28,9 @@ def test_set_personality_with_exact_mode_name_persists_and_confirms():
 
 
 @pytest.mark.parametrize("raw,expected", [
+    ("MIA", "mia"),
+    ("default", "mia"),
+    ("normal", "mia"),
     ("Professional", "professional"),
     ("formal", "professional"),
     ("business", "professional"),

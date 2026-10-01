@@ -1,12 +1,23 @@
 ﻿{
   "name": "MIA Brain",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "modules": {
     "architecture": "Systemaufbau und technische Zusammenhänge",
     "knowledge": "Validiertes Langzeitwissen",
     "skills": "Ausführbare Fähigkeiten und Skill-Beschreibungen",
     "procedures": "Abläufe und Arbeitsanweisungen",
     "errors": "Bekannte und gelöste Fehler",
+    "cognition": {
+      "cognitive_cycle": "Kontext, aktive Ziele, offene Punkte und Gedächtnisabruf",
+      "autonomous_core": "Ereignisse, Initiative, Freigabepolitik, Task-Lebenszyklus, Trigger und Verifikation"
+    },
+    "events": {
+      "inbox": "Erkannte noch nicht verarbeitete Ereignisse",
+      "processed": "Verarbeitete Ereignisse mit zugeordneten Task-IDs"
+    },
+    "system": {
+      "health": "Maschinenlesbare Zustände und Health-Snapshots der Gehirnkomponenten"
+    },
     "memory": {
       "working": "Aktiver Sitzungskontext",
       "episodic": "Ereignisse und abgeschlossene Sitzungen",

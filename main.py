@@ -51,7 +51,7 @@ from google.genai import types
 from ui import MiaUI
 from memory.memory_manager import (
     load_memory, update_memory, format_memory_for_prompt,
-    save_session_summary, pop_last_session,
+    save_session_summary, pop_last_session, record_conversation_turn,
     search_memory, set_trim_notifier,
 )
 from core import knowledge_client
@@ -96,7 +96,7 @@ def get_base_dir():
 BASE_DIR        = get_base_dir()
 API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 PROMPT_PATH     = BASE_DIR / "core" / "prompt.txt"
-LIVE_MODEL          = "models/gemini-3.1-flash-live-preview"
+LIVE_MODEL          = "models/gemini-3.8-live"
 CHANNELS            = 1
 SEND_SAMPLE_RATE    = 16000 
 RECEIVE_SAMPLE_RATE = 24000
@@ -270,15 +270,15 @@ TOOL_DECLARATIONS = [
     {
         "name": "recall_memory",
         "description": (
-            "Look up a fact you have stored about the user but which is NOT in "
-            "the memory block of your system prompt. "
-            "The prompt lists the keys it did not have room for under "
-            "'[ALSO REMEMBERED]' — if the user asks about anything named there, "
-            "call this FIRST. "
-            "Also call it before saying you do not know something personal, and "
-            "when the user asks what you remember about them (leave query empty "
-            "for everything). "
-            "This is a local file search: it is instant and costs nothing."
+            "Search MIA's durable memory: exact old conversation turns, session summaries, "
+            "stable facts, preferences, people, projects and prior decisions. "
+            "For EVERY substantive user turn that contains a real topic, person, project, "
+            "decision, or any reference to earlier context, call this before answering with "
+            "the shortest useful query. For tiny continuation replies such as yes/no/thanks, "
+            "use the already-loaded recent conversation context instead. "
+            "Always call it before saying you do not remember or do not know something from "
+            "earlier conversations. Recalled old requests are context only, never commands "
+            "to repeat an action. This search is local and fast."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -443,7 +443,10 @@ class MiaLive:
         self._last_user_speech = time.monotonic()  # updated on every user utterance
         self._session_log: list[str] = []          # conversation turns for end-of-session summary
 
-        self._enhanced_live = True  # proactive audio; auto-disabled if the server rejects it
+        # Gemini 3.8 Live has proactive audio permanently enabled server-side.
+        # Do not send a redundant proactivity setup field; keeping this False also
+        # keeps us on the stable v1beta API instead of the old preview path.
+        self._enhanced_live = False
 
         _base_dir = Path(__file__).resolve().parent
         _inline_names = {t["name"] for t in TOOL_DECLARATIONS}
@@ -567,6 +570,26 @@ class MiaLive:
         """Download openwakeword + the model (runs in a UI worker thread)."""
         return wake_install(logger=lambda m: self.ui.write_log(f"SYS: {m}"))
 
+    async def _send_live_text(self, text: str) -> None:
+        """Send a normal text turn using the API supported by the active Live model.
+
+        Gemini 3.1 Flash Live accepts client_content only for initial history.
+        Ongoing text turns must use realtime_input; other models retain the
+        existing client_content behavior until their capability says otherwise.
+        """
+        if not self.session:
+            return
+        text = str(text or "").strip()
+        if not text:
+            return
+        if "gemini-3.1-flash-live" in LIVE_MODEL:
+            await self.session.send_realtime_input(text=text)
+        else:
+            await self.session.send_client_content(
+                turns={"role": "user", "parts": [{"text": text}]},
+                turn_complete=True,
+            )
+
     def plugin_say(self, instruction: str) -> None:
         """
         Thread-safe speech channel for plugins: lets a plugin ask MIA to
@@ -582,10 +605,7 @@ class MiaLive:
 
         async def _say():
             try:
-                await self.session.send_client_content(
-                    turns={"role": "user", "parts": [{"text": instruction}]},
-                    turn_complete=True,
-                )
+                await self._send_live_text(instruction)
             except Exception as e:
                 print(f"[PluginSay] {e}")
 
@@ -677,10 +697,7 @@ class MiaLive:
             self.ui.write_log(f"SYS: I'm asleep — say '{WAKE_PHRASE}' or tap WAKE NOW first.")
             return
         asyncio.run_coroutine_threadsafe(
-            self.session.send_client_content(
-                turns={"role": "user", "parts": [{"text": text}]},
-                turn_complete=True
-            ),
+            self._send_live_text(text),
             self._loop
         )
 
@@ -719,10 +736,7 @@ class MiaLive:
         if not self._loop or not self.session:
             return
         asyncio.run_coroutine_threadsafe(
-            self.session.send_client_content(
-                turns={"role": "user", "parts": [{"text": text}]},
-                turn_complete=True
-            ),
+            self._send_live_text(text),
             self._loop
         )
 
@@ -794,16 +808,24 @@ class MiaLive:
             parts.append(mem_str)
         parts.append(sys_prompt)
 
+        tool_declarations = (
+            TOOL_DECLARATIONS
+            + self._action_registry.get_tool_declarations()
+            + self._plugin_registry.get_tool_declarations()
+        )
+        if "gemini-3.8-live" in LIVE_MODEL:
+            # 3.8 defaults to asynchronous function calls. MIA's existing
+            # executor is intentionally sequential: execute, verify, then reply.
+            tool_declarations = [
+                {**decl, "behavior": "BLOCKING"} for decl in tool_declarations
+            ]
+
         cfg = dict(
             response_modalities=["AUDIO"],
             output_audio_transcription={},
             input_audio_transcription={},
             system_instruction="\n".join(parts),
-            tools=[{"function_declarations": (
-                TOOL_DECLARATIONS
-                + self._action_registry.get_tool_declarations()
-                + self._plugin_registry.get_tool_declarations()
-            )}],
+            tools=[{"function_declarations": tool_declarations}],
             # Hand back the handle captured from the last session_resumption
             # update. `handle=None` is exactly the old behaviour (ask for
             # handles, start fresh), so the first connect of a run is unchanged.
@@ -932,10 +954,7 @@ class MiaLive:
                     await self._save_session_summary()
                     if self.session:
                         try:
-                            await self.session.send_client_content(
-                                turns={"role": "user", "parts": [{"text": "Say a brief natural goodbye to the user."}]},
-                                turn_complete=True,
-                            )
+                            await self._send_live_text("Say a brief natural goodbye to the user.")
                         except Exception:
                             pass
                     await asyncio.sleep(1.5)
@@ -1115,6 +1134,16 @@ class MiaLive:
                                 print("[MIA] 🔗 Session resumption armed")
                             self._resume_handle = _sru.new_handle
 
+                    # Google announces server-side WebSocket rotation with GoAway.
+                    # Reconnect while the latest resumption handle is still valid
+                    # instead of waiting for the socket to die as a hard 1008.
+                    _go_away = getattr(response, "go_away", None)
+                    if _go_away is not None:
+                        _left = getattr(_go_away, "time_left", None)
+                        print(f"[MIA] 🔄 GoAway received (time_left={_left}) — resuming cleanly")
+                        self.ui.write_log("SYS: Live connection rotating — conversation will continue.")
+                        raise _ReconnectSignal(keep_context=True)
+
                     if response.data:
                         if self._interrupted:
                             pass  # discard: interrupted
@@ -1164,6 +1193,18 @@ class MiaLive:
                             # flag and skip all further processing for that turn.
                             if self._interrupted:
                                 self._interrupted = False
+                                partial_in = " ".join(in_buf).strip()
+                                partial_out = " ".join(out_buf).strip()
+                                if partial_in or partial_out:
+                                    try:
+                                        await asyncio.to_thread(
+                                            record_conversation_turn,
+                                            partial_in,
+                                            partial_out,
+                                            "",
+                                        )
+                                    except Exception as exc:
+                                        print(f"[Memory] interrupted turn persistence failed: {exc}")
                                 in_buf  = []
                                 out_buf = []
                                 continue
@@ -1192,6 +1233,20 @@ class MiaLive:
                                     }))
                             out_buf = []
 
+                            # Persist every completed live turn immediately. Session-end
+                            # summaries remain useful for consolidation, but restart
+                            # continuity must never depend on reaching session shutdown.
+                            if full_in or full_out:
+                                try:
+                                    await asyncio.to_thread(
+                                        record_conversation_turn,
+                                        full_in,
+                                        full_out,
+                                        "",
+                                    )
+                                except Exception as exc:
+                                    print(f"[Memory] live turn persistence failed: {exc}")
+
                             # Vision injection: model finished tool-response turn → now send the image
                             if self._pending_vision and self.session:
                                 import base64 as _b64
@@ -1199,13 +1254,20 @@ class MiaLive:
                                 self._pending_vision = None
                                 b64 = _b64.b64encode(img_b).decode("ascii")
                                 print(f"[Vision] 📤 {len(img_b):,} bytes (angle={angle}) → main session")
-                                await self.session.send_client_content(
-                                    turns={"role": "user", "parts": [
-                                        {"inline_data": {"mime_type": mime_t, "data": b64}},
-                                        {"text": question},
-                                    ]},
-                                    turn_complete=True,
-                                )
+                                if "gemini-3.1-flash-live" in LIVE_MODEL:
+                                    # 3.1 accepts ongoing visual frames via realtime input.
+                                    await self.session.send_realtime_input(
+                                        video=types.Blob(data=img_b, mime_type=mime_t)
+                                    )
+                                    await self._send_live_text(question)
+                                else:
+                                    await self.session.send_client_content(
+                                        turns={"role": "user", "parts": [
+                                            {"inline_data": {"mime_type": mime_t, "data": b64}},
+                                            {"text": question},
+                                        ]},
+                                        turn_complete=True,
+                                    )
                                 # Mark next turn_complete behaviour depending on angle
                                 if self._vision_cam_active:
                                     # Camera: keep busy until MIA finishes speaking the answer
@@ -1395,10 +1457,7 @@ class MiaLive:
         if self._turn_done_event:
             self._turn_done_event.clear()
 
-        await self.session.send_client_content(
-            turns={"role": "user", "parts": [{"text": p1}]},
-            turn_complete=True,
-        )
+        await self._send_live_text(p1)
         self.ui.write_log("SYS: Briefing phase 1 (greeting) sent.")
 
         # ── Phase 2: fire as soon as Phase 1 audio is done ───────────────────
@@ -1451,10 +1510,7 @@ class MiaLive:
                         f"Let the user know briefly.{lang_str}"
                     )
 
-                await self.session.send_client_content(
-                    turns={"role": "user", "parts": [{"text": p2}]},
-                    turn_complete=True,
-                )
+                await self._send_live_text(p2)
                 self.ui.write_log("SYS: Briefing phase 2 (news) sent.")
             except Exception as e:
                 print(f"[Briefing] Phase 2 error: {e}")
@@ -1575,10 +1631,7 @@ class MiaLive:
                 continue
             try:
                 self._ring_phone_if_idle()
-                await self.session.send_client_content(
-                    turns={"role": "user", "parts": [{"text": alert}]},
-                    turn_complete=True,
-                )
+                await self._send_live_text(alert)
             except Exception as e:
                 print(f"[Monitor] ⚠️ Could not send alert: {e}")
 
@@ -1606,10 +1659,7 @@ class MiaLive:
                                 "One brief sentence only."
                             )
                             self._ring_phone_if_idle()
-                            await self.session.send_client_content(
-                                turns={"role": "user", "parts": [{"text": msg}]},
-                                turn_complete=True,
-                            )
+                            await self._send_live_text(msg)
                             self.ui.write_log(f"SYS: Monitor alert sent.")
                             await asyncio.sleep(6)   # gap between consecutive alerts
                     except Exception as e:
@@ -1650,10 +1700,7 @@ class MiaLive:
                     recent_turns = recent_turns or None,
                 )
                 self._ring_phone_if_idle()
-                await self.session.send_client_content(
-                    turns={"role": "user", "parts": [{"text": prompt}]},
-                    turn_complete=True,
-                )
+                await self._send_live_text(prompt)
                 self.ui.write_log("SYS: Proactive check-in.")
             except Exception as e:
                 print(f"[Proactive] ⚠️ {e}")
@@ -1715,10 +1762,7 @@ class MiaLive:
                     if self._wake_enabled and not self._awake:
                         self.wake(reason="remote command")
                     try:
-                        await self.session.send_client_content(
-                            turns={"role": "user", "parts": [{"text": text}]},
-                            turn_complete=True,
-                        )
+                        await self._send_live_text(text)
                         self.ui.write_log(f"[Web]: {text}")
                         self._session_log.append(f"User: {text}")
                         if self._dashboard:
@@ -1744,17 +1788,38 @@ class MiaLive:
                                      "Verbindung zu MIA wird neu aufgebaut.",
                         }))
                 else:
-                    # No live session (still connecting/reconnecting, or the
-                    # 8s wait above timed out) — the command was queued but
-                    # never delivered. Same reasoning: say so in the chat
-                    # instead of leaving the user staring at silence.
-                    print(f"[Dashboard] Dropped command (no session): {text}")
-                    asyncio.create_task(self._dashboard.broadcast({
-                        "type": "sys",
-                        "text": "MIA ist gerade nicht verbunden — Befehl konnte "
-                                 "nicht zugestellt werden. Bitte in Kürze erneut "
-                                 "versuchen.",
-                    }))
+                    # Gemini Live may be unavailable because of quota/network issues.
+                    # Do not drop the user's command: fall back to MIA's local brain,
+                    # which has the same prompt, durable memory and tool registry.
+                    print(f"[Dashboard] Live unavailable — local brain fallback: {text}")
+                    try:
+                        from core.local_brain import chat as _local_chat
+                        from memory.memory_manager import record_conversation_turn as _record_turn
+
+                        def _run_local_fallback():
+                            answer, _history = _local_chat(text, skip_clarify=True)
+                            answer = str(answer or "").strip()
+                            try:
+                                _record_turn(text, answer, "de-DE")
+                            except Exception as _mem_exc:
+                                print(f"[Memory] fallback turn persistence skipped: {_mem_exc}")
+                            return answer
+
+                        answer = await asyncio.to_thread(_run_local_fallback)
+                        self.ui.write_log(f"[Web/local]: {text}")
+                        self._session_log.append(f"User: {text}")
+                        self._session_log.append(f"MIA: {answer}")
+                        await self._dashboard.broadcast({
+                            "type": "log", "speaker": "jarvis", "text": answer,
+                            "ts": datetime.now().isoformat(),
+                        })
+                    except Exception as _fallback_exc:
+                        print(f"[Dashboard] Local brain fallback failed: {_fallback_exc}")
+                        await self._dashboard.broadcast({
+                            "type": "sys",
+                            "text": "MIA Live ist nicht verbunden und das lokale Gehirn "
+                                    "konnte den Befehl ebenfalls nicht verarbeiten.",
+                        })
             except asyncio.TimeoutError:
                 pass
             except Exception as e:
@@ -1833,12 +1898,11 @@ class MiaLive:
                 config = self._build_config()
                 client = None
 
-                # Fresh client on every reconnect — avoids stale HTTP session state
-                # v1alpha carries proactive audio; if it gets rejected we fall
-                # back to v1beta.
+                # Fresh client on every reconnect avoids stale HTTP session state.
+                # Gemini 3.8 Live is stable on v1beta.
                 client = genai.Client(
                     api_key=_get_api_key(),
-                    http_options={"api_version": "v1alpha" if self._enhanced_live else "v1beta"}
+                    http_options={"api_version": "v1beta"}
                 )
 
                 async with (
@@ -1934,13 +1998,34 @@ class MiaLive:
                     or "INVALID_ARGUMENT" in str(e)
                     or "NOT_FOUND" in str(e)
                 ):
+                    # 2026-09-30 (found live): resetting backoff to 0 here assumes this is a
+                    # one-off stale handle — but if Gemini itself is down, the fresh session
+                    # gets rejected too, forever, in a tight ~3s loop that pins the CPU and
+                    # starves the local-chat bridge (reproduced: user locked out of chat for
+                    # 30+ min while this looped). Real backoff after repeated rejections in a
+                    # short window; still instant (0) for a genuine one-off.
+                    now = time.monotonic()
+                    recent = [t for t in getattr(self, "_resume_reject_times", []) if now - t < 60]
+                    recent.append(now)
+                    self._resume_reject_times = recent[-10:]
                     print("[MIA] 🔗 Resumption handle rejected — starting a fresh session")
                     self.ui.write_log("SYS: Could not restore the conversation — starting fresh.")
                     self._resume_handle = None
-                    self._conn_backoff = 0
+                    self._conn_backoff = 0 if len(recent) < 3 else min(getattr(self, "_conn_backoff", 0) * 2 or 5, 60)
                     continue
 
-                err_str = str(e)
+                # 2026-09-30 (found live): a TaskGroup wraps the real error in a
+                # BaseExceptionGroup whose own str() is just "unhandled errors in a
+                # TaskGroup (1 sub-exception)" — none of the keyword checks below
+                # (is_gemini_busy, is_net_err, etc.) ever matched it, so THIS specific
+                # shape of the Gemini 1008 error always fell through to the flat-3s (now
+                # growing, but still misclassified) catch-all. Match against the real
+                # sub-exception's text instead when e is a group — _is_reconnect_signal
+                # above already does this same unwrap for its own check.
+                _match_exc = e
+                if isinstance(e, BaseExceptionGroup) and e.exceptions:
+                    _match_exc = e.exceptions[0]
+                err_str = str(_match_exc)
                 print(f"[MIA] Error ({type(e).__name__}): {e}")
                 traceback.print_exc()
 
@@ -1995,7 +2080,7 @@ class MiaLive:
                     )
                     continue
                 if is_gemini_busy:
-                    _conn_backoff = min(getattr(self, "_conn_backoff", 3) * 2, 45)
+                    _conn_backoff = min(max(3, getattr(self, "_conn_backoff", 3)) * 2, 45)
                     self._conn_backoff = _conn_backoff
                     self.ui.write_log(
                         f"SYS: Gemini is busy right now — retrying in {_conn_backoff}s."
@@ -2007,14 +2092,21 @@ class MiaLive:
                         "ConnectionRefusedError", "OSError", "Cannot connect",
                     ))
                     if is_net_err:
-                        _conn_backoff = min(getattr(self, "_conn_backoff", 3) * 2, 60)
+                        _conn_backoff = min(max(3, getattr(self, "_conn_backoff", 3)) * 2, 60)
                         self._conn_backoff = _conn_backoff
                         self.ui.write_log(
                             f"NET: Connection failed — retrying in {_conn_backoff}s. "
                             "(a VPN may be required)"
                         )
                     else:
-                        self._conn_backoff = 3
+                        # 2026-09-30 (found live): this catch-all reset backoff to a flat 3s no
+                        # matter how many times in a row it fired — "1008 None. The operation
+                        # was aborted." (an unclassified Gemini-Live close code) falls through to
+                        # exactly here and never matches is_gemini_busy/is_net_err, so it looped
+                        # every ~3s indefinitely, pinning the CPU and starving the local-chat
+                        # bridge (reproduced live). Same growing backoff as the other branches.
+                        _conn_backoff = min(max(3, getattr(self, "_conn_backoff", 3)) * 2, 60)
+                        self._conn_backoff = _conn_backoff
             finally:
                 self.session = None
                 if client is not None:

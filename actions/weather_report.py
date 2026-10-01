@@ -1,8 +1,7 @@
 import json
 import sys
-import webbrowser
+import requests
 from pathlib import Path
-from urllib.parse import quote_plus
 
 
 def _get_base_dir() -> Path:
@@ -50,32 +49,48 @@ def _gemini_weather(city: str, when: str) -> str:
 
 
 def _browser_fallback(city: str, when: str, player=None, session_memory=None) -> str:
-    search_query = f"weather in {city} {when}"
-    url          = f"https://www.google.com/search?q={quote_plus(search_query)}"
-
+    """Headless-safe HTTP fallback via wttr.in, no browser and no API key."""
     try:
-        opened = webbrowser.open(url)
-        if not opened:
-            raise RuntimeError("webbrowser.open returned False")
+        r = requests.get(
+            f"https://wttr.in/{city}",
+            params={"format": "j1"},
+            headers={"User-Agent": "MIA/1.0"},
+            timeout=15,
+        )
+        r.raise_for_status()
+        data = r.json()
+        current = (data.get("current_condition") or [{}])[0]
+        temp_c = current.get("temp_C")
+        feels_c = current.get("FeelsLikeC")
+        desc = ((current.get("weatherDesc") or [{}])[0].get("value") or "").strip()
+        wind_kmh = current.get("windspeedKmph")
+        humidity = current.get("humidity")
+        if temp_c in (None, "") or not desc:
+            raise RuntimeError("wttr.in returned incomplete weather data")
+
+        report = (
+            f"{city}: {desc}, {temp_c} °C"
+            + (f", gefuehlt {feels_c} °C" if feels_c not in (None, "") else "")
+            + (f", Wind {wind_kmh} km/h" if wind_kmh not in (None, "") else "")
+            + (f", Luftfeuchte {humidity} %" if humidity not in (None, "") else "")
+            + "."
+        )
+
+        if session_memory:
+            try:
+                session_memory.set_last_search(
+                    query=f"weather in {city} {when}",
+                    response=report,
+                )
+            except Exception:
+                pass
+
+        _log(f"Weather HTTP fallback for {city} succeeded.", player)
+        return report
     except Exception as e:
-        msg = f"Sir, I couldn't get the weather for {city}: {e}"
+        msg = f"Weather lookup failed for {city}: {e}"
         _log(msg, player)
         return msg
-
-    msg = (
-        f"I couldn't fetch the weather directly, sir, so I've opened it in "
-        f"your browser for {city}, {when}."
-    )
-    _log(msg, player)
-
-    if session_memory:
-        try:
-            session_memory.set_last_search(query=search_query, response=msg)
-        except Exception:
-            pass
-
-    return msg
-
 
 def weather_action(
     parameters: dict,
@@ -93,23 +108,8 @@ def weather_action(
     city = city.strip()
     when = (when or "today").strip()
 
-    try:
-        report = _gemini_weather(city, when)
-        _log(f"Weather for {city}: {report[:80]}", player)
-
-        if session_memory:
-            try:
-                session_memory.set_last_search(
-                    query=f"weather in {city} {when}", response=report,
-                )
-            except Exception:
-                pass
-
-        return report
-
-    except Exception as e:
-        print(f"[Weather] ⚠️ Gemini weather failed ({e}) — opening browser instead")
-        return _browser_fallback(city, when, player, session_memory)
+    # Serverbetrieb: direkter HTTP-Abruf ohne Browser und ohne API-Quota.
+    return _browser_fallback(city, when, player, session_memory)
 
 
 def _log(message: str, player=None) -> None:
@@ -126,7 +126,7 @@ TOOL = {
     "name": "weather_report",
     "description": (
         "Gives the current weather report for a city, spoken directly to the "
-        "user — falls back to opening a browser search only if that fails."
+        "user — falls back to a headless web search if the primary provider fails."
     ),
     "parameters": {
         "type": "OBJECT",

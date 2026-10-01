@@ -82,3 +82,24 @@ brain/system/health/
 dashboard/static/confirm_test.md
 .claude_fix_status.json
 scripts/ollama_keepalive_payload.json
+
+# Server-local development/runtime files
+command_center/frontend/node_modules/
+*.bak
+.claude/settings.local.json
+.claude/HAUPTGEDAECHTNIS.md
+.claude/STEHENDE_ANWEISUNGEN.md
+knowledge/index.json
+
+# MIA Academy runtime evidence/state stays server-local
+knowledge_src/business_academy/academy_state.json
+knowledge_src/business_academy/adaptive_training_plan.json
+knowledge_src/business_academy/competency_matrix.json
+knowledge_src/business_academy/exam_v1_answers.json
+knowledge_src/business_academy/next_training_plan.json
+knowledge_src/business_academy/remediation_queue.json
+knowledge_src/business_academy/results/
+knowledge_src/business_academy/practical/results/
+
+# Legacy pre-MIA brain documents are not part of active MIA source
+command_center/brain/

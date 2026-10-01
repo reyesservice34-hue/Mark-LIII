@@ -1,6 +1,10 @@
 from memory.config_manager import PERSONALITY_MODES, save_personality_mode
 
 _ALIASES = {
+    "mia": "mia",
+    "default": "mia",
+    "normal": "mia",
+    "standard": "mia",
     "professional": "professional",
     "formal": "professional",
     "business": "professional",
@@ -47,8 +51,9 @@ def set_personality(
 TOOL = {
     "name": "set_personality",
     "description": (
-        "Changes MIA's conversational tone/personality. Call when the user "
-        "asks you to be more casual, more professional, more concise, "
+        "Changes MIA's conversational tone/personality. 'mia' restores the "
+        "user-defined central MIA personality. Call when the user asks for MIA's "
+        "normal/default personality or to be more casual, professional, concise, "
         "friendlier/warmer, or to change how you talk — in ANY language "
         "(e.g. 'sei lockerer', 'be more casual', 'talk less', 'sei wärmer'). "
         "The choice is remembered for future sessions."
@@ -59,8 +64,8 @@ TOOL = {
             "mode": {
                 "type": "STRING",
                 "description": (
-                    "One of: professional, casual, concise, warm. Map the "
-                    "user's request to the closest one of these four."
+                    "One of: mia, professional, casual, concise, warm. Map the "
+                    "user's request to the closest one of these five."
                 ),
             }
         },

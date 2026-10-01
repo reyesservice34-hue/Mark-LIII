@@ -1,0 +1,14 @@
+{
+  "version":"1.0",
+  "date":"2026-10-01",
+  "pass_threshold":0.85,
+  "hard_fail":["invented_fact","invented_source","missing_current_source_on_legal_case","mixing_company_entities"],
+  "cases":[
+    {"id":"A2-01","domain":"arbeitsrecht","question":"Ein Mitarbeiter soll regelmaessig 10 Stunden pro Werktag arbeiten. Welche Pruefschritte sind erforderlich? Nenne aktuelle Primaerquellen und unterscheide Grundregel, Ausgleich und Pausen/Ruhezeit."},
+    {"id":"A3-01","domain":"arbeitsrecht","question":"Pruefe einen Urlaubsfall mit 5-Tage-Woche. Erklaere zuerst, welche Angaben fehlen, bevor du einen konkreten Anspruch berechnest."},
+    {"id":"A6-01","domain":"arbeitsrecht","question":"Vor einer betriebsbedingten Kuendigung: Welche Tatsachen musst du erheben, bevor du eine rechtliche Einschaetzung gibst? Nutze aktuelle Primaerquellen."},
+    {"id":"F2-01","domain":"finanzen","question":"Erklaere eine 13-Wochen-Liquiditaetsplanung mit Anfangsbestand, sicheren/unsicheren Einzahlungen, Auszahlungen und woechentlichem Endbestand. Keine erfundenen Werte."},
+    {"id":"F4-01","domain":"finanzen","question":"Projekt: Nettoerloes 25000, direktes Material 7000, direkte Fremdleistung 3500, direkte produktive Lohnkosten 6000. Berechne Deckungsbeitrag vor Gemeinkosten und zeige jeden Rechenschritt."},
+    {"id":"U1-01","domain":"unternehmensfuehrung","question":"Zwei GmbHs teilen Mitarbeiter, Fahrzeuge und Einkauf. Entwirf ein Daten- und Steuerungsmodell, das Vermischungen verhindert und gemeinsame Ressourcen transparent macht."}
+  ]
+}

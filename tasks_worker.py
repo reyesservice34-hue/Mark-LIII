@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 import time
 import traceback
@@ -22,6 +21,8 @@ from brain.cognition.autonomous_core import AutonomousBrain
 
 QUEUE = BASE / "tasks" / "queue"
 DONE = BASE / "tasks" / "done"
+NOTIFY_OUTBOX = BASE / "tasks" / "notify_outbox"
+COMMAND_CENTER_GID = int(os.environ.get("MIA_COMMAND_CENTER_GID", "999"))
 LOCK = BASE / "tasks" / ".worker.lock"
 MAX_ATTEMPTS = 3
 RUNNABLE_STATES = {"DETECTED", "PLANNED", "QUEUED"}
@@ -47,6 +48,13 @@ def _lock_owner_alive() -> bool:
 
 
 def _notify_completion(task: dict) -> None:
+    """Persist completion delivery for the live Command Center to consume.
+
+    Do not publish from this worker with a private EventBus. That writes state
+    but cannot reach the running dashboard subscribers. The outbox survives
+    restarts and is consumed inside the real Command Center process, where the
+    shared EventBus, toast, live inbox and phone push are all available.
+    """
     status = str(task.get("status") or "")
     if status not in {"done", "failed", "waiting_approval"}:
         return
@@ -66,58 +74,32 @@ def _notify_completion(task: dict) -> None:
             "Freigabe mit der Task-ID erforderlich."
         )
         severity = "warning"
+
     task_id = str(task.get("id") or "")
-
-    code = r"""
-import asyncio
-import sys
-from command_center.backend.config import get_settings
-from command_center.backend.db import Database
-from command_center.backend.events import EventBus
-from command_center.backend.services.notifications import NotificationService
-
-task_id, status, title, body, severity = sys.argv[1:6]
-db = Database(get_settings().db_path)
-NotificationService(db, EventBus()).notify(
-    category="task",
-    title=title,
-    body=body,
-    severity=severity,
-    user_id="*",
-    link="/notifications",
-    meta={"background_task_id": task_id, "background_task_status": status, "push": False},
-)
-
-try:
-    from command_center.backend.modules.heartbeat import push
-    ok = asyncio.run(push("MIA: " + title, body, severity))
-    print("push=" + ("ok" if ok else "not-configured-or-failed"))
-except Exception as exc:
-    print("push=failed:" + exc.__class__.__name__)
-"""
-
+    if not task_id:
+        return
+    payload = {
+        "task_id": task_id,
+        "status": status,
+        "title": title,
+        "body": body,
+        "severity": severity,
+        "created_epoch": time.time(),
+    }
     try:
-        proc = subprocess.run(
-            [
-                "/usr/bin/docker", "exec", "jarvis-command-center",
-                "python", "-c", code,
-                task_id, status, title, body, severity,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=20,
-            check=False,
-        )
-        if proc.returncode == 0:
-            print(f"[tasks] notification sent for {task_id}: {proc.stdout.strip()}", flush=True)
-        else:
-            print(
-                f"[tasks] notification failed for {task_id}: "
-                f"{(proc.stderr or proc.stdout).strip()[:300]}",
-                flush=True,
-            )
+        NOTIFY_OUTBOX.mkdir(parents=True, exist_ok=True)
+        # The Command Center container runs as GID 999 and must be able to
+        # consume/delete delivered records from this host-created directory.
+        # Keep access limited to root + that group, never world-writable.
+        os.chown(NOTIFY_OUTBOX, 0, COMMAND_CENTER_GID)
+        os.chmod(NOTIFY_OUTBOX, 0o770)
+        target = NOTIFY_OUTBOX / f"{task_id}.json"
+        temp = target.with_suffix(".json.tmp")
+        temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp.replace(target)
+        print(f"[tasks] completion queued for delivery: {task_id}", flush=True)
     except Exception as exc:
-        print(f"[tasks] notification skipped for {task_id}: {type(exc).__name__}: {exc}", flush=True)
+        print(f"[tasks] completion delivery queue failed for {task_id}: {type(exc).__name__}: {exc}", flush=True)
 
 
 def _load_runnable() -> tuple[Path, dict] | None:

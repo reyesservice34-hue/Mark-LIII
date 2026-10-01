@@ -1,4 +1,4 @@
-# scripts/mark-liii.service — keep JARVIS running after you close the SSH session,
+# scripts/mark-liii.service — keep MIA running after you close the SSH session,
 # and restart it automatically if it crashes.
 #
 # Install (adjust User= and WorkingDirectory= to match your setup):
@@ -11,7 +11,7 @@
 # Restart:   sudo systemctl restart mark-liii
 
 [Unit]
-Description=Mark-LIII (JARVIS) assistant + remote dashboard
+Description=MIA Brain (MARK LIII) assistant + remote dashboard
 After=network-online.target
 Wants=network-online.target
 
