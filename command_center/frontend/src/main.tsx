@@ -6,6 +6,7 @@ import { AuthProvider } from "@/lib/auth";
 import "@/design/base.css";
 import "@/design/polish.css";
 import "@/design/modern.css";
+import "@/design/noir-glass.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -18,13 +19,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 );
 
 // Registers the no-op service worker (public/sw.js) that makes this page
-// installable — the pinnable icon in the browser's address bar. Never lets a
-// registration failure (an older browser, a blocked worker) break the app.
+// installable. A registration failure never blocks the application.
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").then((reg) => {
-      // MIA lives on the server: new UI builds should arrive automatically.
-      // Conversation/task/calendar data is server-side, so this only refreshes the shell.
       const activate = () => reg.waiting?.postMessage({ type: "SKIP_WAITING" });
       if (reg.waiting) activate();
       reg.addEventListener("updatefound", () => {
