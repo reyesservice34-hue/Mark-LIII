@@ -1,0 +1,6 @@
+/* MIA home composition: presentation-only visibility rules.
+   The underlying modules, routes and data remain untouched. */
+.hero-core ~ .grid[style*="minmax(0, 3fr)"] > .stack:first-child > .panel:first-child,
+.hero-core ~ .grid[style*="minmax(0, 3fr)"] > .stack:last-child > .panel:first-child {
+  display: none;
+}
