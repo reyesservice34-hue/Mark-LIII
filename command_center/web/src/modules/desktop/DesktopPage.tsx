@@ -13,6 +13,7 @@
 import { useState } from "react";
 import QRCode from "qrcode";
 import { useApi } from "@/lib/useApi";
+import "@/modules/home/architecture.css"; // .core-chip (Fähigkeiten-Chips)
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { dateTime, relative } from "@/lib/format";
