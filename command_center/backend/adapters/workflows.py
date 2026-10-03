@@ -6,6 +6,7 @@ details stay in `N8nAdapter`.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -50,13 +51,19 @@ class WorkflowAdapter:
         return None
 
     async def trigger(self, external_id: str, payload: dict | None = None) -> dict:
-        raise RuntimeError("triggering is not supported by this adapter")
+        raise RuntimeError("Diese Workflow-Engine kann Workflows nicht auslösen.")
 
     async def set_active(self, external_id: str, active: bool) -> dict:
-        raise RuntimeError("activation is not supported by this adapter")
+        raise RuntimeError("Diese Workflow-Engine kann Workflows nicht ein- oder ausschalten.")
 
     async def retry(self, run_id: str) -> dict:
-        raise RuntimeError("retry is not supported by this adapter")
+        raise RuntimeError("Diese Workflow-Engine kann Ausführungen nicht wiederholen.")
+
+    async def rename_workflow(self, external_id: str, name: str) -> dict:
+        raise RuntimeError("Diese Workflow-Engine kann Workflows nicht umbenennen.")
+
+    async def delete_workflow(self, external_id: str) -> dict:
+        raise RuntimeError("Diese Workflow-Engine kann Workflows nicht löschen.")
 
 
 class N8nAdapter(WorkflowAdapter):
@@ -101,7 +108,8 @@ class N8nAdapter(WorkflowAdapter):
                     active=bool(w.get("active")), trigger=trigger, last_execution_at=None,
                     next_execution_at=None, last_status="",
                     meta={"webhook_path": path, "updated_at": w.get("updatedAt"), "tags": [
-                        t.get("name") for t in (w.get("tags") or [])]}))
+                        t.get("name") for t in (w.get("tags") or [])],
+                        "editor_url": f"{self.base}/workflow/{w['id']}"}))
             return out
 
     @staticmethod
@@ -152,10 +160,10 @@ class N8nAdapter(WorkflowAdapter):
         workflows = await self.list_workflows()
         wf = next((w for w in workflows if w.external_id == str(external_id)), None)
         if not wf:
-            raise RuntimeError("workflow not found")
+            raise RuntimeError("Workflow nicht gefunden.")
         path = wf.meta.get("webhook_path")
         if not path:
-            raise RuntimeError(f"'{wf.name}' has no webhook trigger; n8n can only be triggered through a webhook node")
+            raise RuntimeError(f"„{wf.name}“ hat keinen Webhook-Auslöser. n8n lässt sich nur über einen Webhook-Knoten starten.")
         url = f"{self.webhook_base}/webhook/{path.lstrip('/')}"
         async with httpx.AsyncClient(timeout=30.0) as c:
             r = await c.post(url, json=payload or {})
@@ -167,6 +175,56 @@ class N8nAdapter(WorkflowAdapter):
             r = await c.post(f"/workflows/{external_id}/{'activate' if active else 'deactivate'}")
             r.raise_for_status()
             return {"ok": True, "active": bool(r.json().get("active", active))}
+
+    # Einstellungen, die die n8n-API beim Speichern annimmt; alles andere weist sie als "additional properties" ab.
+    _SETTINGS_KEYS = ("saveExecutionProgress", "saveManualExecutions", "saveDataErrorExecution",
+                      "saveDataSuccessExecution", "executionTimeout", "errorWorkflow", "timezone", "executionOrder")
+
+    @staticmethod
+    def _check(r: httpx.Response) -> None:
+        """n8n-Fehler mit der Meldung von n8n selbst weitergeben statt nur mit dem HTTP-Status."""
+        if r.status_code >= 400:
+            text = r.text.strip()[:300]
+            try:
+                text = str(r.json().get("message") or text)
+            except ValueError:
+                pass
+            raise RuntimeError(f"n8n meldet Fehler {r.status_code}: {text}")
+
+    async def rename_workflow(self, external_id: str, name: str) -> dict:
+        """Nur den Namen ändern; Knoten, Verbindungen und Einstellungen bleiben wie sie sind."""
+        async with self._client() as c:
+            r = await c.get(f"/workflows/{external_id}")
+            self._check(r)
+            wf = r.json()
+            body = {"name": name, "nodes": wf.get("nodes") or [], "connections": wf.get("connections") or {},
+                    "settings": {k: v for k, v in (wf.get("settings") or {}).items() if k in self._SETTINGS_KEYS}}
+            if wf.get("staticData") is not None:
+                body["staticData"] = wf["staticData"]
+            r = await c.put(f"/workflows/{external_id}", json=body)
+            self._check(r)
+            out = r.json()
+            return {"ok": True, "name": out.get("name", name), "active": bool(out.get("active"))}
+
+    async def delete_workflow(self, external_id: str) -> dict:
+        """Löschen; ein aktiver Workflow wird vorher ausgeschaltet, damit seine Webhooks nicht hängen bleiben."""
+        async with self._client() as c:
+            r = await c.get(f"/workflows/{external_id}")
+            if r.status_code == 404:
+                return {"ok": True, "gone": True}
+            self._check(r)
+            if r.json().get("active"):
+                self._check(await c.post(f"/workflows/{external_id}/deactivate"))
+            # n8n schaltet asynchron aus: ein sofortiges Löschen scheitert mit 409 "wird noch deaktiviert".
+            # Deshalb ein paar Sekunden lang erneut versuchen, statt dem Nutzer einen Fehler zu zeigen.
+            for attempt in range(12):
+                r = await c.delete(f"/workflows/{external_id}")
+                if r.status_code == 409 and "unpublish" in r.text.lower() and attempt < 11:
+                    await asyncio.sleep(1.5)
+                    continue
+                break
+            self._check(r)
+            return {"ok": True}
 
     async def retry(self, run_id: str) -> dict:
         ext = run_id.split(":", 1)[-1]
@@ -198,7 +256,7 @@ class WorkflowHub:
         provider, _, ext = workflow_id.partition(":")
         adapter = self._adapters.get(provider)
         if not adapter or not adapter.configured():
-            raise RuntimeError(f"workflow provider '{provider}' is not configured")
+            raise RuntimeError(f"Die Workflow-Engine „{provider}“ ist nicht eingerichtet.")
         return adapter, ext
 
     async def sync(self) -> list[dict]:
@@ -266,6 +324,23 @@ class WorkflowHub:
         result = await adapter.set_active(ext, active)
         self.db.execute("UPDATE workflows SET active=?, updated_at=? WHERE id=?",
                         (1 if result.get("active", active) else 0, now_iso(), workflow_id))
+        return result
+
+    async def rename_workflow(self, workflow_id: str, name: str) -> dict:
+        adapter, ext = self._adapter_for(workflow_id)
+        result = await adapter.rename_workflow(ext, name)
+        self.db.execute("UPDATE workflows SET name=?, updated_at=? WHERE id=?",
+                        (result.get("name", name), now_iso(), workflow_id))
+        self.bus.publish("workflow.renamed", {"workflow_id": workflow_id, "name": result.get("name", name)})
+        return result
+
+    async def delete_workflow(self, workflow_id: str) -> dict:
+        adapter, ext = self._adapter_for(workflow_id)
+        result = await adapter.delete_workflow(ext)
+        # Auch den Zwischenspeicher leeren, sonst stünde der Workflow bis zum nächsten Abgleich noch in der Liste.
+        self.db.execute("DELETE FROM workflows WHERE id=?", (workflow_id,))
+        self.db.execute("DELETE FROM workflow_runs WHERE workflow_id=?", (workflow_id,))
+        self.bus.publish("workflow.deleted", {"workflow_id": workflow_id})
         return result
 
     async def run_detail(self, run_id: str) -> dict | None:

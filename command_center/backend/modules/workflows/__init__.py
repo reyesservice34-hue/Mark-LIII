@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ...auth import Principal
 from ...deps import AppState, current_principal, get_state, require_role
@@ -17,6 +17,10 @@ class TriggerBody(BaseModel):
 
 class ActiveBody(BaseModel):
     active: bool
+
+
+class RenameBody(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
 
 
 @router.get("")
@@ -40,9 +44,9 @@ async def run_detail(run_id: str, state: AppState = Depends(get_state), _: Princ
     try:
         detail = await state.workflows.run_detail(run_id)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Workflow engine error: {e}")
+        raise HTTPException(status_code=502, detail=f"Fehler der Workflow-Engine: {e}")
     if not detail:
-        raise HTTPException(status_code=404, detail="Execution not found")
+        raise HTTPException(status_code=404, detail="Ausführung nicht gefunden")
     return {"run": detail}
 
 
@@ -82,6 +86,39 @@ async def retry(run_id: str, state: AppState = Depends(get_state), principal: Pr
     return {"result": result}
 
 
+@router.patch("/{workflow_id:path}")
+async def rename(workflow_id: str, body: RenameBody, state: AppState = Depends(get_state),
+                 principal: Principal = Depends(require_role("operator"))):
+    """Den Namen eines Workflows ändern. Knoten und Einstellungen bleiben unberührt."""
+    name = " ".join(body.name.split())
+    if not name:
+        raise HTTPException(status_code=400, detail="Der Name darf nicht leer sein.")
+    try:
+        result = await state.workflows.rename_workflow(workflow_id, name)
+    except Exception as e:  # noqa: BLE001
+        state.log.audit(actor_type="user", actor_id=principal.actor, action="workflow.rename", target=workflow_id,
+                        status="error", error=str(e))
+        raise HTTPException(status_code=502, detail=str(e))
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="workflow.rename", target=workflow_id,
+                    status="ok", result=name)
+    return {"result": result}
+
+
+@router.delete("/{workflow_id:path}")
+async def delete(workflow_id: str, state: AppState = Depends(get_state),
+                 principal: Principal = Depends(require_role("admin"))):
+    """Einen Workflow endgültig löschen (nur Admins). Aktive Workflows werden vorher ausgeschaltet."""
+    try:
+        result = await state.workflows.delete_workflow(workflow_id)
+    except Exception as e:  # noqa: BLE001
+        state.log.audit(actor_type="user", actor_id=principal.actor, action="workflow.delete", target=workflow_id,
+                        status="error", error=str(e))
+        raise HTTPException(status_code=502, detail=str(e))
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="workflow.delete", target=workflow_id,
+                    status="ok")
+    return {"result": result}
+
+
 def _startup(state: AppState) -> None:
     hub = state.workflows
     state.scheduler.add("workflow_sync", "Workflow sync", 60, hub.sync, silent=True,
@@ -92,5 +129,5 @@ def _startup(state: AppState) -> None:
 MODULE = ModuleSpec(
     id="workflows", title="Workflows", router=router, icon="workflow", path="/workflows", order=50,
     description="Abläufe in n8n", on_startup=_startup,
-    commands=[{"id": "workflows.open", "title": "Run Workflow", "path": "/workflows", "shortcut": "g w"}],
+    commands=[{"id": "workflows.open", "title": "Workflows öffnen", "path": "/workflows", "shortcut": "g w"}],
 )

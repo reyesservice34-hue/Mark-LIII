@@ -106,6 +106,9 @@ services:
       - ./command_center/backend/modules/memory/__init__.py:/app/command_center/backend/modules/memory/__init__.py:ro
       # 2026-10-03: Mail-Fakten laufen nur noch als Vorschlag (modules/memory.propose); ohne diese Zeile bliebe der alte Code im Image aktiv
       - ./command_center/backend/modules/maillearn/__init__.py:/app/command_center/backend/modules/maillearn/__init__.py:ro
+      # 2026-10-03: Workflows löschen und umbenennen (Adapter + Routen); ohne Mount bliebe der alte Code im Image aktiv
+      - ./command_center/backend/adapters/workflows.py:/app/command_center/backend/adapters/workflows.py:ro
+      - ./command_center/backend/modules/workflows/__init__.py:/app/command_center/backend/modules/workflows/__init__.py:ro
       # 2026-10-03: Verhaltensgedächtnis (memory/behavior_memory.py) im Container, ohne Image-Neubau. Dieselben drei
       # Dateien kopiert auch das Dockerfile; ohne Mount fiele runtime.py still auf "keine Regeln" zurück.
       - ./memory/__init__.py:/app/memory/__init__.py:ro

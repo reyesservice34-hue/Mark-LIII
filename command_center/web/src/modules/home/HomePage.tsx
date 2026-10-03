@@ -4,7 +4,6 @@ import { useApi } from "@/lib/useApi";
 import { api } from "@/lib/api";
 import { useEvent } from "@/lib/events";
 import {
-  Activity,
   AlertTriangle,
   Bot,
   Calendar,
@@ -32,7 +31,6 @@ import "@/modules/chat/chat.css";
 import "./ops-home.css";
 import "./architecture.css";
 import { BrainCore } from "./BrainCore";
-import { ActivityFeed } from "./ActivityFeed";
 import { CoreDeck } from "./CoreDeck";
 import { HeartbeatTile } from "./HeartbeatTile";
 
@@ -311,7 +309,9 @@ export default function HomePage() {
         </Link>
       </section>
 
-      <div className="ops-main">
+      {/* Das Feld "Ereignisse" ist auf Wunsch des Nutzers von der MIA-Seite entfernt (Protokoll bleibt unter /logs);
+          deshalb nur noch eine Spalte. */}
+      <div className="ops-main" style={{ gridTemplateColumns: "minmax(0, 1fr)" }}>
         <Panel
           className="ops-core"
           title="MIA Kern"
@@ -375,15 +375,6 @@ export default function HomePage() {
           </div>
         </Panel>
 
-        <Panel
-          className="ops-feed"
-          title="Ereignisse"
-          icon={<Activity size={14} />}
-          actions={<Link className="btn sm ghost" to="/logs">Protokoll</Link>}
-          flush
-        >
-          <ActivityFeed limit={30} />
-        </Panel>
       </div>
 
       {sessionId && (

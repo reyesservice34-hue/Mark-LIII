@@ -86,7 +86,7 @@ export default function WorkflowsPage() {
           </div>
         </Panel>
       )}
-      <div className="ops-split">
+      <div className="ops-split wide">
         <Panel title="Workflows" icon={<Workflow size={15} />} flush foot={list.data?.stats && Object.keys(list.data.stats).length ? `letzte 7 Tage: ${Object.entries(list.data.stats).map(([k, v]: any) => `${v.count} ${de(LAUF, k)}`).join(" · ")}` : undefined}>
           {!list.data ? <div className="panel-body"><Skeleton rows={4} /></div> : list.data.workflows.length === 0 ? <EmptyState icon={<Workflow size={26} />} title={list.data.configured ? "Keine Workflows gefunden" : "Nicht verbunden"}>{list.data.configured ? "Die verbundene Engine meldet noch keine Workflows." : "Engine einrichten, um Workflows zu sehen."}</EmptyState> : (
             <table className="table">
@@ -98,7 +98,7 @@ export default function WorkflowsPage() {
                   <td className="small">{w.last_execution_at ? relative(w.last_execution_at) : "—"}</td>
                   <td>{w.last_status ? <Badge status={w.last_status} /> : <span className="muted">—</span>}</td>
                   <td onClick={(e) => e.stopPropagation()}><Toggle checked={w.active} onChange={(v) => can("operator") && setActive(w, v)} label={`${w.name} aktivieren`} /></td>
-                  <td onClick={(e) => e.stopPropagation()} className="row" style={{ justifyContent: "flex-end", gap: 6 }}>
+                  <td onClick={(e) => e.stopPropagation()} className="row" style={{ justifyContent: "flex-end", gap: 6, flexWrap: "nowrap", whiteSpace: "nowrap" }}>
                     {can("operator") && <button className="btn sm" onClick={() => trigger(w)} disabled={w.trigger !== "webhook"} title={w.trigger === "webhook" ? "Per Webhook auslösen" : "Hier lassen sich nur Webhook-Workflows auslösen"}><Play />Starten</button>}
                     {can("operator") && <button className="btn sm" onClick={() => setEdit({ w, name: w.name })} title="Bearbeiten (Namen ändern, im n8n-Editor öffnen)"><Pencil size={13} />Bearbeiten</button>}
                     {can("admin") && <button className="btn sm danger" onClick={() => setDel(w)} title="Workflow endgültig löschen"><Trash2 size={13} />Löschen</button>}
