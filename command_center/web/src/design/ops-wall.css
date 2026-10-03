@@ -156,7 +156,8 @@ body::after {
   color: var(--text);
   box-shadow: none;
 }
-.input, .select { height: 32px; }
+.input, .select { height: 32px; padding-top: 0; padding-bottom: 0; line-height: 1.2; }
+.select { padding-right: 26px; }
 .input:focus, .select:focus, .textarea:focus, input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
@@ -316,3 +317,10 @@ button.ops-tile { font: inherit; text-align: left; cursor: pointer; width: 100%;
 
 /* Starre Inline-Raster (zwei Spalten) auf schmalen Schirmen untereinander. */
 @media (max-width: 1100px) { .grid[style*="grid-template-columns"] { grid-template-columns: 1fr !important; } }
+
+/* Karten mit langen Variablennamen (Integrationen): nichts darf über den Rand laufen. */
+.panel code { overflow-wrap: anywhere; word-break: break-word; }
+.row.between.tiny > .row { flex-wrap: wrap; min-width: 0; }
+.row.between.tiny { flex-wrap: wrap; gap: 6px 10px; }
+.grid.auto > .panel { min-width: 0; }
+.grid.auto .small.muted, .grid.auto .small { overflow-wrap: anywhere; }

@@ -50,20 +50,20 @@ export default function LogsPage() {
       <div className="page-head">
         <div><div className="eyebrow">Protokollzentrale</div><h1>Protokoll</h1></div>
         <div className="actions">
-          <div className="row" style={{ gap: 4 }}><button className={`btn sm ${tab === "logs" ? "primary" : ""}`} onClick={() => setTab("logs")}><ScrollText />Logs</button>{can("operator") && <button className={`btn sm ${tab === "audit" ? "primary" : ""}`} onClick={() => setTab("audit")}><ShieldCheck />Audit trail</button>}</div>
+          <div className="row" style={{ gap: 4 }}><button className={`btn sm ${tab === "logs" ? "primary" : ""}`} onClick={() => setTab("logs")}><ScrollText />Logs</button>{can("operator") && <button className={`btn sm ${tab === "audit" ? "primary" : ""}`} onClick={() => setTab("audit")}><ShieldCheck />Prüfprotokoll</button>}</div>
           <input className="input" style={{ width: 220 }} placeholder="Suchen" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Protokoll durchsuchen" />
           {tab === "logs" && <>
-            <select className="select" style={{ width: 130 }} value={level} onChange={(e) => setLevel(e.target.value)} aria-label="Minimum level">{LEVELS.map((l) => <option key={l} value={l}>{l || "All levels"}</option>)}</select>
-            <select className="select" style={{ width: 160 }} value={source} onChange={(e) => setSource(e.target.value)} aria-label="Source"><option value="">All sources</option>{(sources.data?.sources || []).map((s) => <option key={s}>{s}</option>)}</select>
-            <button className={`btn sm ${live ? "success" : ""}`} onClick={() => setLive((v) => !v)} title="Live stream">{live ? <Pause /> : <Play />}{live ? "Live" : "Paused"}</button>
+            <select className="select" style={{ width: 130 }} value={level} onChange={(e) => setLevel(e.target.value)} aria-label="Mindeststufe">{LEVELS.map((l) => <option key={l} value={l}>{l || "Alle Stufen"}</option>)}</select>
+            <select className="select" style={{ width: 160 }} value={source} onChange={(e) => setSource(e.target.value)} aria-label="Quelle"><option value="">Alle Quellen</option>{(sources.data?.sources || []).map((s) => <option key={s}>{s}</option>)}</select>
+            <button className={`btn sm ${live ? "success" : ""}`} onClick={() => setLive((v) => !v)} title="Live-Stream">{live ? <Pause /> : <Play />}{live ? "Live" : "Pausiert"}</button>
           </>}
         </div>
       </div>
       <ErrorState error={error} retry={() => load(false)} />
       {tab === "logs" ? (
-        <Panel title={`${rows.length} entries`} flush foot={next ? <button className="btn sm" onClick={() => load(true)} disabled={loading}>Load older</button> : "Beginning of retained logs"}>
+        <Panel title={`${rows.length} Einträge`} flush foot={next ? <button className="btn sm" onClick={() => load(true)} disabled={loading}>Ältere laden</button> : "Anfang der gespeicherten Protokolle"}>
           <div ref={listRef} style={{ maxHeight: "calc(100vh - 260px)", overflow: "auto" }}>
-            {loading && rows.length === 0 ? <div className="panel-body"><Skeleton rows={6} /></div> : rows.length === 0 ? <EmptyState icon={<ScrollText size={26} />} title="No log entries match" /> : (
+            {loading && rows.length === 0 ? <div className="panel-body"><Skeleton rows={6} /></div> : rows.length === 0 ? <EmptyState icon={<ScrollText size={26} />} title="Keine passenden Einträge" /> : (
               <table className="table" style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
                 <tbody>{rows.map((l) => (
                   <tr key={l.id}>
@@ -76,8 +76,8 @@ export default function LogsPage() {
           </div>
         </Panel>
       ) : (
-        <Panel title="Audit trail" flush foot="Who did what, through which agent and tool, with what result. Audit rows are never trimmed.">
-          {!audit.data ? <div className="panel-body"><Skeleton rows={6} /></div> : audit.data.events.length === 0 ? <EmptyState title="No audit events" /> : (
+        <Panel title="Prüfprotokoll" flush foot="Who did what, through which agent and tool, with what result. Audit rows are never trimmed.">
+          {!audit.data ? <div className="panel-body"><Skeleton rows={6} /></div> : audit.data.events.length === 0 ? <EmptyState title="Keine Prüfereignisse" /> : (
             <table className="table" style={{ fontSize: 12.5 }}>
               <thead><tr><th>When</th><th>Actor</th><th>Agent</th><th>Action</th><th>Tool</th><th>Target</th><th>Status</th><th>Result / error</th></tr></thead>
               <tbody>{audit.data.events.map((a) => (

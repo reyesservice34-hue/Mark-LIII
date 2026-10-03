@@ -75,7 +75,7 @@ export default function FilesPage() {
         <div><div className="eyebrow">Arbeitsbereich · {recent.data ? `${recent.data.usage.files} Dateien · ${bytes(recent.data.usage.bytes)}` : ""}</div><h1>Dateien</h1></div>
         <div className="actions">
           <div className="row" style={{ gap: 6 }}><Search size={14} style={{ color: "var(--text-3)" }} /><input ref={searchInput} className="input" style={{ width: 220 }} placeholder="Nach Name suchen" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search files" /></div>
-          {can("operator") && <><input ref={fileInput} type="file" multiple hidden onChange={(e) => upload(e.target.files)} /><button className="btn" onClick={mkdir}><FolderPlus />Folder</button><button className="btn primary" onClick={() => fileInput.current?.click()} disabled={uploading}>{uploading ? <span className="spinner" /> : <Upload />}Upload</button></>}
+          {can("operator") && <><input ref={fileInput} type="file" multiple hidden onChange={(e) => upload(e.target.files)} /><button className="btn" onClick={mkdir}><FolderPlus />Ordner</button><button className="btn primary" onClick={() => fileInput.current?.click()} disabled={uploading}>{uploading ? <span className="spinner" /> : <Upload />}Hochladen</button></>}
         </div>
       </div>
       <ErrorState error={dir.error || search.error} retry={() => dir.reload(false)} />
@@ -100,7 +100,7 @@ export default function FilesPage() {
               <button className="btn icon ghost" onClick={() => setTerminalRuns([])} disabled={!terminalRuns.length || terminalBusy} title="Terminal leeren"><Trash2 /></button>
             </div>
           </Panel>}
-          <Panel title={<span className="row" style={{ gap: 4 }}><button className="btn sm ghost" onClick={() => { setQ(""); setPath(""); }}>workspace</button>{crumbs.map((c, i) => <span key={i} className="row" style={{ gap: 4 }}><span className="muted">/</span><button className="btn sm ghost" onClick={() => setPath(crumbs.slice(0, i + 1).join("/"))}>{c}</button></span>)}</span>} flush foot="Only the configured workspace is reachable; deletions go to .trash inside it.">
+          <Panel title={<span className="row" style={{ gap: 4 }}><button className="btn sm ghost" onClick={() => { setQ(""); setPath(""); }}>workspace</button>{crumbs.map((c, i) => <span key={i} className="row" style={{ gap: 4 }}><span className="muted">/</span><button className="btn sm ghost" onClick={() => setPath(crumbs.slice(0, i + 1).join("/"))}>{c}</button></span>)}</span>} flush foot="Nur der eingerichtete Arbeitsbereich ist erreichbar; Gelöschtes landet in .trash darin.">
             {(q ? search.loading && !search.data : dir.loading && !dir.data) ? <div className="panel-body"><Skeleton rows={5} /></div> : entries.length === 0 ? <EmptyState icon={<Folder size={26} />} title={q ? "No files match" : "Empty folder"}>{q ? "" : "Upload files here or let an agent create documents."}</EmptyState> : (
               <table className="table">
                 <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th /></tr></thead>
@@ -112,17 +112,17 @@ export default function FilesPage() {
                       <td className="num small muted">{e.is_dir ? "—" : bytes(e.size)}</td><td className="small muted">{relative(e.modified_at)}</td>
                       <td className="row" style={{ justifyContent: "flex-end", gap: 2 }} onClick={(ev) => ev.stopPropagation()}>
                         {!e.is_dir && <a className="btn icon ghost sm" href={dl(e)} title="Download"><Download /></a>}
-                        {!e.is_dir && <button className="btn icon ghost sm" onClick={() => open(e)} title="Preview"><Eye /></button>}
+                        {!e.is_dir && <button className="btn icon ghost sm" onClick={() => open(e)} title="Vorschau"><Eye /></button>}
                         {!e.is_dir && can("operator") && <button className="btn icon ghost sm" onClick={() => setVersionsFor(e)} title="Versionen"><RotateCcw /></button>}
-                        {can("operator") && <><button className="btn icon ghost sm" onClick={() => rename(e)} title="Rename"><Pencil /></button><button className="btn icon ghost sm" onClick={() => move(e)} title="Move"><MoveRight /></button><button className="btn icon ghost sm" onClick={() => remove(e)} title="Delete"><Trash2 /></button></>}
+                        {can("operator") && <><button className="btn icon ghost sm" onClick={() => rename(e)} title="Umbenennen"><Pencil /></button><button className="btn icon ghost sm" onClick={() => move(e)} title="Verschieben"><MoveRight /></button><button className="btn icon ghost sm" onClick={() => remove(e)} title="Löschen"><Trash2 /></button></>}
                       </td>
                     </tr>))}
                 </tbody>
               </table>)}
           </Panel>
         </div>
-        <Panel title="Recent & generated" icon={<FileText size={15} />} flush>
-          {!recent.data ? <div className="panel-body"><Skeleton /></div> : recent.data.files.length === 0 ? <EmptyState title="Nothing yet" /> : <div className="list">{recent.data.files.map((f) => { const flags: string[] = f.meta?.security?.flags || []; return <div key={f.id} className="list-item" style={{ padding: "8px 12px" }}><div className="grow small" style={{ minWidth: 0 }}><a className="truncate" style={{ display: "block", color: "inherit" }} href={`${api.base}/api/files/download?path=${encodeURIComponent(f.path)}`}>{f.path}</a><div className="tiny muted">{f.source} · {bytes(f.size)} · {relative(f.updated_at)}{f.task_id && <> · <a href={`/tasks/${f.task_id}`}>task</a></>}{!f.exists && <span style={{ color: "var(--warn)" }}> · missing</span>}</div>{flags.length > 0 && <div className="tiny" style={{ color: "var(--warn)", marginTop: 2 }} title={flags.join(" · ")}>⚠ {flags[0]}</div>}</div></div>; })}</div>}
+        <Panel title="Zuletzt & erzeugt" icon={<FileText size={15} />} flush>
+          {!recent.data ? <div className="panel-body"><Skeleton /></div> : recent.data.files.length === 0 ? <EmptyState title="Noch nichts" /> : <div className="list">{recent.data.files.map((f) => { const flags: string[] = f.meta?.security?.flags || []; return <div key={f.id} className="list-item" style={{ padding: "8px 12px" }}><div className="grow small" style={{ minWidth: 0 }}><a className="truncate" style={{ display: "block", color: "inherit" }} href={`${api.base}/api/files/download?path=${encodeURIComponent(f.path)}`}>{f.path}</a><div className="tiny muted">{f.source} · {bytes(f.size)} · {relative(f.updated_at)}{f.task_id && <> · <a href={`/tasks/${f.task_id}`}>task</a></>}{!f.exists && <span style={{ color: "var(--warn)" }}> · missing</span>}</div>{flags.length > 0 && <div className="tiny" style={{ color: "var(--warn)", marginTop: 2 }} title={flags.join(" · ")}>⚠ {flags[0]}</div>}</div></div>; })}</div>}
         </Panel>
       </div>
       {preview && (

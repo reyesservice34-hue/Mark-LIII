@@ -46,15 +46,15 @@ export default function IntegrationsPage() {
             <div key={i.id} className="panel" style={{ padding: 14, gap: 10 }}>
               <div className="row between">
                 <span className="row"><span className="agent-avatar" style={{ width: 32, height: 32 }}><Icon name={i.icon} size={16} /></span><div><div style={{ fontWeight: 600 }}>{i.name}</div><div className="tiny muted">{i.kind}</div></div></span>
-                <Badge status={i.status === "not_configured" ? "offline" : i.status}>{i.status === "not_configured" ? "not connected" : i.status}</Badge>
+                <Badge status={i.status === "not_configured" ? "offline" : i.status}>{i.status === "not_configured" ? "nicht verbunden" : i.status}</Badge>
               </div>
-              <div className="small" style={{ minHeight: 18 }}>{i.status === "not_configured" ? <span className="muted">Set {[...i.required_env, ...(i.any_env.length ? [i.any_env.join(" or ")] : [])].map((k: string) => <code key={k} style={{ marginRight: 4 }}>{k}</code>)}</span> : <span className={i.status === "healthy" ? "dim" : ""} style={i.status === "offline" ? { color: "var(--err)" } : undefined}>{i.detail}</span>}</div>
+              <div className="small" style={{ minHeight: 18 }}>{i.status === "not_configured" ? <span className="muted">Setze {[...i.required_env, ...(i.any_env.length ? [i.any_env.join(" or ")] : [])].map((k: string) => <code key={k} style={{ marginRight: 4 }}>{k}</code>)}</span> : <span className={i.status === "healthy" ? "dim" : ""} style={i.status === "offline" ? { color: "var(--err)" } : undefined}>{i.detail}</span>}</div>
               <div className="row wrap" style={{ gap: 5 }}>{i.capabilities.map((c: string) => <span key={c} className={`badge ${c.includes("planned") ? "muted" : ""}`}>{c}</span>)}</div>
               <div className="row between tiny muted">
                 <span className="row" style={{ gap: 6 }}>{Object.entries(i.config_state).map(([k, v]: any) => <span key={k} className="row" style={{ gap: 3 }} title={k}><StatusIndicator status={v ? "ok" : "offline"} />{k.replace(/^(JARVIS_CC_|JARVIS_)/, "").slice(0, 18)}</span>)}</span>
-                <span>{i.last_checked_at ? `checked ${relative(i.last_checked_at)}` : "never checked"}</span>
+                <span>{i.last_checked_at ? `geprüft ${relative(i.last_checked_at)}` : "noch nie geprüft"}</span>
               </div>
-              {can("operator") && <button className="btn sm" onClick={() => check(i.id)} disabled={busy === i.id || !i.configured}><Plug />{busy === i.id ? "Checking…" : "Check connection"}</button>}
+              {can("operator") && <button className="btn sm" onClick={() => check(i.id)} disabled={busy === i.id || !i.configured}><Plug />{busy === i.id ? "Prüfe …" : "Verbindung prüfen"}</button>}
               {can("admin") && (edit === i.id ? (
                 <form className="stack" style={{ gap: 8 }} autoComplete="off" onSubmit={(e) => { e.preventDefault(); save(i.id); }}>
                   {[...new Set([...i.required_env, ...i.any_env, ...i.optional_env])].map((k: string) => (
