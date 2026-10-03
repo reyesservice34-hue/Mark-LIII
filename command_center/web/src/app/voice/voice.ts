@@ -66,13 +66,13 @@ class ServerVoiceBackend implements VoiceBackend {
 
   async listen(onState?: (s: "recording" | "transcribing") => void): Promise<string> {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      throw new Error("This browser cannot record audio (a secure origin — https or localhost — is required).");
+      throw new Error("Dieser Browser kann kein Audio aufnehmen (nötig ist eine sichere Adresse — https oder localhost).");
     }
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      throw new Error("Microphone access was denied.");
+      throw new Error("Zugriff auf das Mikrofon wurde abgelehnt.");
     }
     this.stream = stream;
     const mimeType = ServerVoiceBackend.mimeType();
@@ -89,7 +89,7 @@ class ServerVoiceBackend implements VoiceBackend {
 
     const blob = await finished;
     this.cleanup();
-    if (!blob.size) throw new Error("The recording was empty.");
+    if (!blob.size) throw new Error("Die Aufnahme war leer.");
     onState?.("transcribing");
 
     const form = new FormData();

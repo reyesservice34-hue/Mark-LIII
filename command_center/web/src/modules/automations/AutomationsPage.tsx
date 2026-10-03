@@ -9,8 +9,8 @@ import { toast } from "@/lib/toast";
 export default function AutomationsPage() {
   const { can } = useAuth();
   const jobs = useApi<{ jobs: any[] }>("/api/automations/jobs", { refreshOn: ["job.updated"], interval: 15000 });
-  const run = async (id: string) => { try { await api.post(`/api/automations/jobs/${id}/run`); } catch (e: any) { toast({ title: "Run failed", body: e.message, tone: "err" }); } };
-  const toggle = async (id: string, on: boolean) => { try { await api.post(`/api/automations/jobs/${id}/${on ? "enable" : "disable"}`); jobs.reload(); } catch (e: any) { toast({ title: "Change failed", body: e.message, tone: "err" }); } };
+  const run = async (id: string) => { try { await api.post(`/api/automations/jobs/${id}/run`); } catch (e: any) { toast({ title: "Ausführung fehlgeschlagen", body: e.message, tone: "err" }); } };
+  const toggle = async (id: string, on: boolean) => { try { await api.post(`/api/automations/jobs/${id}/${on ? "enable" : "disable"}`); jobs.reload(); } catch (e: any) { toast({ title: "Änderung fehlgeschlagen", body: e.message, tone: "err" }); } };
   // Nur das, was aus einer gelernten Prozedur stammt, lässt sich löschen —
   // und dort wirkt es auf den Zeitplan der Prozedur, nicht auf den Auftrag
   // allein: der käme beim nächsten Abgleich zurück. Die Aufträge des Betriebs
@@ -28,10 +28,10 @@ export default function AutomationsPage() {
     <div className="page">
       <div className="page-head"><div><div className="eyebrow">Hintergrundjobs</div><h1>Automatisierungen</h1></div></div>
       <ErrorState error={jobs.error} retry={() => jobs.reload(false)} />
-      <Panel title="Geplante Jobs" icon={<Timer size={15} />} flush foot="These are the command center's own recurring jobs (sampling, health checks, housekeeping). External workflows live under Workflows.">
+      <Panel title="Geplante Jobs" icon={<Timer size={15} />} flush foot="Das sind die eigenen wiederkehrenden Jobs des Command Centers (Messwerte, Systemprüfungen, Aufräumen). Externe Workflows stehen unter Workflows.">
         {!jobs.data ? <div className="panel-body"><Skeleton rows={4} /></div> : (
           <table className="table">
-            <thead><tr><th>Job</th><th>Interval</th><th>Last run</th><th>Result</th><th>Runs</th><th>Enabled</th><th /></tr></thead>
+            <thead><tr><th>Job</th><th>Intervall</th><th>Letzter Lauf</th><th>Ergebnis</th><th>Läufe</th><th>Aktiv</th><th /></tr></thead>
             <tbody>{jobs.data.jobs.map((j) => (
               <tr key={j.id}>
                 <td><div>{j.name}</div><div className="tiny muted">{j.description}</div></td>
@@ -42,7 +42,7 @@ export default function AutomationsPage() {
                 <td><Toggle checked={j.enabled} onChange={(v) => can("admin") && toggle(j.id, v)} label={`Enable ${j.name}`} /></td>
                 <td style={{ textAlign: "right" }}>
                   <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
-                    {can("operator") && <button className="btn sm" onClick={() => run(j.id)} disabled={j.running}><Play />Run now</button>}
+                    {can("operator") && <button className="btn sm" onClick={() => run(j.id)} disabled={j.running}><Play />Jetzt ausführen</button>}
                     {can("admin") && j.id.startsWith("procedure:") && <button className="btn sm danger" onClick={() => remove(j.id, j.name)} title="Zeitplan entfernen"><Trash2 size={13} /></button>}
                   </div>
                 </td>

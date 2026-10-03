@@ -179,7 +179,7 @@ export default function ChatPage() {
             <button className="btn sm ghost chat-history-toggle" onClick={() => setListOpen((v) => !v)} aria-label="Sitzungsverläufe"><MessageSquare /></button>
             <h2 className="truncate">{(() => {
               const title = list.find((c) => c.id === conversationId)?.title;
-              return title === "New conversation" ? "Neue Sitzung" : title || (conversationId ? "Sitzung" : "MIA Sitzung");
+              return title === "Neue Unterhaltung" ? "Neue Sitzung" : title || (conversationId ? "Sitzung" : "MIA Sitzung");
             })()}</h2>
           </div>
           <div className="row">

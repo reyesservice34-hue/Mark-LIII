@@ -1,5 +1,5 @@
 import { Link } from "@/lib/router";
-import { relative } from "@/lib/format";
+import { relative, prioLabel } from "@/lib/format";
 import { Badge } from "@/components/ui";
 
 const ORDER = ["QUEUED", "PLANNING", "RUNNING", "WAITING_FOR_APPROVAL", "PAUSED", "COMPLETED", "FAILED", "CANCELLED"];
@@ -25,7 +25,7 @@ function TaskRow({ t }: { t: any }) {
       </div>
       <div className="grow" style={{ minWidth: 0 }}>
         <div className="truncate">{t.parent_id && <span className="muted">↳ </span>}{t.title}</div>
-        <div className="small muted truncate">{t.assigned_agent || "nicht zugewiesen"} · {t.priority} · {relative(t.updated_at)}{t.error && <span style={{ color: "var(--err)" }}> · {t.error}</span>}</div>
+        <div className="small muted truncate">{t.assigned_agent || "nicht zugewiesen"} · {prioLabel(t.priority)} · {relative(t.updated_at)}{t.error && <span style={{ color: "var(--err)" }}> · {t.error}</span>}</div>
       </div>
       <Badge status={t.status} />
     </Link>

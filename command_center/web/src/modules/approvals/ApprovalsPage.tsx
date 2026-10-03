@@ -36,29 +36,29 @@ export default function ApprovalsPage() {
       </div>
       <ErrorState error={error} retry={() => reload(false)} />
       <div className={selected ? "ops-split detail" : ""}>
-        <Panel title="Requests" icon={<ShieldCheck size={15} />} flush>
+        <Panel title="Anfragen" icon={<ShieldCheck size={15} />} flush>
           {loading && !data ? <div className="panel-body"><Skeleton rows={4} /></div> : list.length === 0 ?
-            <EmptyState icon={<ShieldCheck size={28} />} title="No approval requests">High-impact actions from agents will pause here until you decide.</EmptyState> :
+            <EmptyState icon={<ShieldCheck size={28} />} title="Keine Freigabe-Anfragen">Folgenreiche Aktionen von Agenten warten hier, bis du entscheidest.</EmptyState> :
             <div className="list">
               {list.map((a) => (
                 <div key={a.id} className={`list-item clickable ${open === a.id ? "active" : ""}`} onClick={() => setOpen(a.id)}>
                   <Badge status={a.status} />
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="truncate"><code>{a.action}</code> <span className="muted">→</span> {a.target}</div>
-                    <div className="small muted truncate">{a.reason} · by {a.agent_id || a.requested_by} · {relative(a.created_at)}</div>
+                    <div className="small muted truncate">{a.reason} · von {a.agent_id || a.requested_by} · {relative(a.created_at)}</div>
                   </div>
                   <Badge status={a.risk === "high" || a.risk === "critical" ? "error" : "warning"}>{a.risk}</Badge>
                   {a.status === "pending" && can("operator") && (
                     <span className="row" onClick={(e) => e.stopPropagation()}>
-                      <button className="btn sm danger" onClick={() => decide(a, false)}>Reject</button>
-                      <button className="btn sm success" onClick={() => decide(a, true)}>Approve</button>
+                      <button className="btn sm danger" onClick={() => decide(a, false)}>Ablehnen</button>
+                      <button className="btn sm success" onClick={() => decide(a, true)}>Genehmigen</button>
                     </span>
                   )}
                 </div>
               ))}
             </div>}
         </Panel>
-        {selected && <Panel title="Details" actions={<button className="btn sm ghost" onClick={() => setOpen(null)}>Close</button>}><ApprovalDetails a={selected} /></Panel>}
+        {selected && <Panel title="Details" actions={<button className="btn sm ghost" onClick={() => setOpen(null)}>Schließen</button>}><ApprovalDetails a={selected} /></Panel>}
       </div>
     </div>
   );

@@ -37,7 +37,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   }
   if (status.data?.approvals_pending) badges.approvals = { count: status.data.approvals_pending, warn: true };
   return (
-    <aside className={`sidebar ${collapsed ? "collapsed" : ""}`} aria-label="Primary navigation">
+    <aside className={`sidebar ${collapsed ? "collapsed" : ""}`} aria-label="Hauptnavigation">
       <div className="brand">
         <span className="core" aria-hidden><span className={`ring ${conn.state}`} /><span className="nucleus" /></span>
         {!collapsed && <span className="brand-text"><strong>MIA</strong><span className="label">Command Center</span></span>}
@@ -67,7 +67,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         <button className="nav-item" onClick={logout} title="Abmelden">
           <LogOut size={16} />{!collapsed && <span className="truncate">{user?.name} · abmelden</span>}
         </button>
-        <button className="nav-item collapse" onClick={onToggle} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+        <button className="nav-item collapse" onClick={onToggle} aria-label={collapsed ? "Seitenleiste ausklappen" : "Seitenleiste einklappen"}>
           {collapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}{!collapsed && <span className="tiny muted">v{version}</span>}
         </button>
       </div>

@@ -32,7 +32,7 @@ async function request<T>(method: string, path: string, body?: any, init?: Reque
       body: body === undefined ? undefined : isForm ? body : JSON.stringify(body), ...init,
     });
   } catch {
-    throw new ApiError(0, "Network error — the server is unreachable");
+    throw new ApiError(0, "Netzwerkfehler — der Server ist nicht erreichbar");
   }
   if (res.status === 401 && !path.startsWith("/api/auth/login")) {
     window.dispatchEvent(new CustomEvent("jarvis:unauthorized"));
@@ -69,7 +69,7 @@ export function streamPost(path: string, body: any, onEvent: (ev: SSEEvent) => v
         body: JSON.stringify(body),
       });
     } catch (e: any) {
-      if (e?.name !== "AbortError") onDone(new ApiError(0, "Network error"));
+      if (e?.name !== "AbortError") onDone(new ApiError(0, "Netzwerkfehler"));
       else onDone();
       return;
     }

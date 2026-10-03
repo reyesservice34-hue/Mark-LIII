@@ -5,10 +5,10 @@ import { BarChart3 } from "@/lib/icons";
 import { EmptyState, ErrorState, Panel, Skeleton, Sparkline, Stat } from "@/components/ui";
 
 function Bars({ data, keys, colors, height = 120 }: { data: any[]; keys: string[]; colors: string[]; height?: number }) {
-  if (!data.length) return <EmptyState title="No data in this period" />;
+  if (!data.length) return <EmptyState title="Keine Daten in diesem Zeitraum" />;
   const max = Math.max(1, ...data.map((d) => keys.reduce((s, k) => s + (d[k] || 0), 0)));
   return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height }} role="img" aria-label={`Bar chart of ${keys.join(", ")} per day`}>
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height }} role="img" aria-label={`Balkendiagramm: ${keys.join(", ")} pro Tag`}>
       {data.map((d, i) => (
         <div key={i} title={`${d.day}: ${keys.map((k) => `${k} ${d[k] || 0}`).join(", ")}`} style={{ flex: 1, display: "flex", flexDirection: "column-reverse", height: "100%", gap: 1 }}>
           {keys.map((k, j) => <span key={k} style={{ height: `${((d[k] || 0) / max) * 100}%`, background: colors[j], borderRadius: 2, minHeight: d[k] ? 2 : 0, transition: "height 500ms var(--ease)" }} />)}
@@ -31,29 +31,29 @@ export default function AnalyticsPage() {
     <div className="page">
       <div className="page-head">
         <div><div className="eyebrow">Echte Nutzungsdaten · keine Schätzungen</div><h1>Auswertung</h1></div>
-        <div className="actions"><select className="select" style={{ width: 140 }} value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Zeitraum"><option value={7}>Letzte 7 Tage</option><option value={14}>Letzte 14 Tage</option><option value={30}>Letzte 30 Tage</option><option value={90}>Last 90 days</option></select></div>
+        <div className="actions"><select className="select" style={{ width: 140 }} value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Zeitraum"><option value={7}>Letzte 7 Tage</option><option value={14}>Letzte 14 Tage</option><option value={30}>Letzte 30 Tage</option><option value={90}>Letzte 90 Tage</option></select></div>
       </div>
       <ErrorState error={error} retry={() => reload(false)} />
       {loading && !data ? <Skeleton rows={5} height={40} /> : data && (
         <>
           <div className="grid cols-4">
-            <Stat label="Tasks completed" value={data.tasks.by_status.COMPLETED?.count ?? 0} sub={`avg ${duration(data.tasks.by_status.COMPLETED?.avg_seconds)} · ${data.tasks.by_status.FAILED?.count ?? 0} failed`} />
-            <Stat label="Agent runs" value={runs.reduce((s: number, r: any) => s + r.n, 0)} sub={`${Object.keys(byAgent).length} agents active`} />
-            <Stat label="Tokens" value={totalTok >= 1000 ? `${(totalTok / 1000).toFixed(1)}k` : totalTok} sub={`${tokens.reduce((s: number, t: any) => s + t.runs, 0)} runs reported usage`} />
+            <Stat label="Aufgaben erledigt" value={data.tasks.by_status.COMPLETED?.count ?? 0} sub={`Ø ${duration(data.tasks.by_status.COMPLETED?.avg_seconds)} · ${data.tasks.by_status.FAILED?.count ?? 0} fehlgeschlagen`} />
+            <Stat label="Agentenläufe" value={runs.reduce((s: number, r: any) => s + r.n, 0)} sub={`${Object.keys(byAgent).length} agents active`} />
+            <Stat label="Tokens" value={totalTok >= 1000 ? `${(totalTok / 1000).toFixed(1)}k` : totalTok} sub={`${tokens.reduce((s: number, t: any) => s + t.runs, 0)} Läufe mit Verbrauchsangabe`} />
             <Stat label="Approvals" value={data.approvals.approved ?? 0} unit="approved" sub={`${data.approvals.rejected ?? 0} rejected · ${data.approvals.expired ?? 0} expired · ${data.approvals.pending ?? 0} pending`} />
           </div>
           <div className="grid cols-2">
-            <Panel title="Tasks per day" icon={<BarChart3 size={15} />} foot={<span className="row" style={{ gap: 12 }}><span className="row" style={{ gap: 4 }}><span className="dot ok" />completed</span><span className="row" style={{ gap: 4 }}><span className="dot err" />failed</span><span className="row" style={{ gap: 4 }}><span className="dot" style={{ background: "var(--text-4)" }} />other</span></span>}>
+            <Panel title="Aufgaben pro Tag" icon={<BarChart3 size={15} />} foot={<span className="row" style={{ gap: 12 }}><span className="row" style={{ gap: 4 }}><span className="dot ok" />erledigt</span><span className="row" style={{ gap: 4 }}><span className="dot err" />fehlgeschlagen</span><span className="row" style={{ gap: 4 }}><span className="dot" style={{ background: "var(--text-4)" }} />sonstige</span></span>}>
               <Bars data={data.tasks.daily.map((d: any) => ({ ...d, other: d.total - d.completed - d.failed }))} keys={["completed", "failed", "other"]} colors={["var(--ok)", "var(--err)", "var(--text-4)"]} />
             </Panel>
-            <Panel title="Tokens per day" icon={<BarChart3 size={15} />} foot={<span className="row" style={{ gap: 12 }}><span className="row" style={{ gap: 4 }}><span className="dot info" />input</span><span className="row" style={{ gap: 4 }}><span className="dot" style={{ background: "#c792ea" }} />output</span></span>}>
+            <Panel title="Tokens pro Tag" icon={<BarChart3 size={15} />} foot={<span className="row" style={{ gap: 12 }}><span className="row" style={{ gap: 4 }}><span className="dot info" />Eingabe</span><span className="row" style={{ gap: 4 }}><span className="dot" style={{ background: "#c792ea" }} />Ausgabe</span></span>}>
               <Bars data={tokens} keys={["input_tokens", "output_tokens"]} colors={["var(--accent)", "#c792ea"]} />
             </Panel>
           </div>
           <div className="grid cols-3">
-            <Panel title="Agents" flush>{Object.keys(byAgent).length === 0 ? <EmptyState title="No runs yet" /> : <table className="table"><thead><tr><th>Agent</th><th className="num">Runs</th><th className="num">Failed</th><th className="num">Avg</th></tr></thead><tbody>{Object.entries(byAgent).map(([k, v]: any) => <tr key={k}><td>{k}</td><td className="num">{v.runs}</td><td className="num" style={{ color: v.failed ? "var(--err)" : undefined }}>{v.failed}</td><td className="num">{duration(v.avg)}</td></tr>)}</tbody></table>}</Panel>
-            <Panel title="Tool usage" flush>{Object.keys(tools).length === 0 ? <EmptyState title="No tool calls yet" /> : <table className="table"><thead><tr><th>Tool</th><th className="num">OK</th><th className="num">Errors</th></tr></thead><tbody>{Object.entries(tools).sort((a, b) => (b[1].ok + b[1].err) - (a[1].ok + a[1].err)).map(([k, v]) => <tr key={k}><td><code>{k}</code></td><td className="num">{v.ok}</td><td className="num" style={{ color: v.err ? "var(--err)" : undefined }}>{v.err}</td></tr>)}</tbody></table>}</Panel>
-            <Panel title="Server load (persisted, 1 min samples)">
+            <Panel title="Agents" flush>{Object.keys(byAgent).length === 0 ? <EmptyState title="Noch keine Läufe" /> : <table className="table"><thead><tr><th>Agent</th><th className="num">Läufe</th><th className="num">Fehlgeschlagen</th><th className="num">Ø</th></tr></thead><tbody>{Object.entries(byAgent).map(([k, v]: any) => <tr key={k}><td>{k}</td><td className="num">{v.runs}</td><td className="num" style={{ color: v.failed ? "var(--err)" : undefined }}>{v.failed}</td><td className="num">{duration(v.avg)}</td></tr>)}</tbody></table>}</Panel>
+            <Panel title="Werkzeugnutzung" flush>{Object.keys(tools).length === 0 ? <EmptyState title="Noch keine Werkzeugaufrufe" /> : <table className="table"><thead><tr><th>Werkzeug</th><th className="num">OK</th><th className="num">Fehler</th></tr></thead><tbody>{Object.entries(tools).sort((a, b) => (b[1].ok + b[1].err) - (a[1].ok + a[1].err)).map(([k, v]) => <tr key={k}><td><code>{k}</code></td><td className="num">{v.ok}</td><td className="num" style={{ color: v.err ? "var(--err)" : undefined }}>{v.err}</td></tr>)}</tbody></table>}</Panel>
+            <Panel title="Serverlast (gespeichert, Minutenwerte)">
               <div className="stack"><div className="tiny muted">CPU</div><Sparkline points={data.metrics.map((m: any) => m.cpu)} height={40} /><div className="tiny muted">RAM</div><Sparkline points={data.metrics.map((m: any) => m.ram)} height={40} color="var(--ok)" /><div className="tiny muted">{data.metrics.length} points · workspace {bytes(data.files.bytes)} in {data.files.files} files · logs: {Object.entries(data.logs).map(([k, v]) => `${v} ${k}`).join(", ") || "none"}</div></div>
             </Panel>
           </div>

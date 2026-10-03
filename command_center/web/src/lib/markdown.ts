@@ -39,7 +39,7 @@ const marked = new Marked({
     code({ text, lang }: { text: string; lang?: string }) {
       const language = lang && hljs.getLanguage(lang) ? lang : "";
       const highlighted = language ? hljs.highlight(text, { language }).value : escapeHtml(text);
-      return `<pre data-lang="${language}"><button class="btn sm ghost copy-btn" data-copy type="button" aria-label="Copy code">Copy</button><code class="hljs language-${language}">${highlighted}</code></pre>`;
+      return `<pre data-lang="${language}"><button class="btn sm ghost copy-btn" data-copy type="button" aria-label="Code kopieren">Kopieren</button><code class="hljs language-${language}">${highlighted}</code></pre>`;
     },
   },
 });
@@ -66,7 +66,7 @@ export function handleMarkdownClick(e: React.MouseEvent) {
   if (!btn) return;
   const code = btn.parentElement?.querySelector("code")?.textContent || "";
   navigator.clipboard?.writeText(code).then(() => {
-    btn.textContent = "Copied";
-    setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+    btn.textContent = "Kopiert";
+    setTimeout(() => { btn.textContent = "Kopieren"; }, 1200);
   });
 }

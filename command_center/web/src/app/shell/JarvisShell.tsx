@@ -38,13 +38,13 @@ export function JarvisShell() {
 
   // Commands from backend modules + shell-level ones.
   useEffect(() => registerCommands([
-    { id: "home", title: "MIA Home", path: "/", group: "Navigate", shortcut: "g h" },
+    { id: "home", title: "MIA Start", path: "/", group: "Navigation", shortcut: "g h" },
     ...modules.flatMap((m) => [
-      { id: `nav.${m.id}`, title: `Open ${m.title}`, path: m.path, group: "Navigate", keywords: m.description },
+      { id: `nav.${m.id}`, title: `${m.title} öffnen`, path: m.path, group: "Navigation", keywords: m.description },
       ...m.commands.map((c) => ({ id: c.id, title: c.title, path: c.path, shortcut: c.shortcut, group: m.title })),
     ]),
-    { id: "logout", title: "Sign out", group: "Session", run: () => logout() },
-    { id: "reconnect", title: "Reconnect live stream", group: "Session", run: () => events.reconnectNow() },
+    { id: "logout", title: "Abmelden", group: "Sitzung", run: () => logout() },
+    { id: "reconnect", title: "Live-Stream neu verbinden", group: "Sitzung", run: () => events.reconnectNow() },
   ]), [modules, logout]);
 
   // "g x" style shortcuts.
@@ -102,7 +102,7 @@ export function JarvisShell() {
           <Outlet />
         </Suspense>
       </main>
-      <nav className="mobile-nav mobile-only" aria-label="Mobile navigation">
+      <nav className="mobile-nav mobile-only" aria-label="Mobile Navigation">
         {mobile.map((m) => <NavLink key={m.id} to={m.path} end={m.path === "/"} className={({ isActive }) => isActive ? "active" : ""}>{m.id === "home" ? <Home size={18} /> : <Icon name={(m as any).icon} size={18} />}<span>{m.title}</span></NavLink>)}
       </nav>
       <CommandPalette />

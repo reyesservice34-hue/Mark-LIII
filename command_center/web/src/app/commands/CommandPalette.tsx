@@ -46,7 +46,7 @@ export function CommandPalette() {
         <div className="row" style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
           <Search size={16} style={{ color: "var(--text-3)" }} />
           <input ref={input} className="input" style={{ border: 0, background: "transparent", height: 30, padding: 0, boxShadow: "none" }}
-            placeholder="Type a command or search…" value={q} onChange={(e) => { setQ(e.target.value); setIdx(0); }}
+            placeholder="Befehl eingeben oder suchen …" value={q} onChange={(e) => { setQ(e.target.value); setIdx(0); }}
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") { e.preventDefault(); setIdx((i) => Math.min(results.length - 1, i + 1)); }
               if (e.key === "ArrowUp") { e.preventDefault(); setIdx((i) => Math.max(0, i - 1)); }
@@ -55,7 +55,7 @@ export function CommandPalette() {
           <kbd>esc</kbd>
         </div>
         <ul style={{ listStyle: "none", margin: 0, padding: 6, maxHeight: "50vh", overflow: "auto" }} role="listbox">
-          {results.length === 0 && <li className="empty" style={{ padding: 20 }}>No matching command</li>}
+          {results.length === 0 && <li className="empty" style={{ padding: 20 }}>Kein passender Befehl</li>}
           {results.map((c, i) => (
             <li key={c.id} role="option" aria-selected={i === idx} onMouseEnter={() => setIdx(i)} onClick={() => run(c)}
               className="row between" style={{ padding: "9px 10px", borderRadius: 8, cursor: "pointer", background: i === idx ? "var(--accent-soft)" : "transparent" }}>

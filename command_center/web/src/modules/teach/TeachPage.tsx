@@ -46,16 +46,16 @@ export default function TeachPage() {
     setBusy(true);
     try {
       const r = await api.post("/api/teach/recordings", { title: form.title, goal: form.goal });
-      toast({ title: "Recording", body: "Do the work with MIA now. Everything is captured.", tone: "ok" });
+      toast({ title: "Aufnahme läuft", body: "Erledige die Arbeit jetzt mit MIA. Alles wird festgehalten.", tone: "ok" });
       setStarting(false); setParams({}); setForm({ title: "", goal: "" });
       setOpenRec(r.recording.id); recordings.reload();
-    } catch (e: any) { toast({ title: "Could not start", body: e.message, tone: "err" }); }
+    } catch (e: any) { toast({ title: "Start nicht möglich", body: e.message, tone: "err" }); }
     finally { setBusy(false); }
   };
   const stop = async (id: string) => {
     await api.post(`/api/teach/recordings/${id}/stop`);
     recordings.reload();
-    toast({ title: "Recording stopped", body: "Turn it into a procedure when you are ready.", tone: "ok" });
+    toast({ title: "Aufnahme beendet", body: "Mach daraus ein Vorgehen, wenn du so weit bist.", tone: "ok" });
   };
   const addNote = async (id: string) => {
     if (!note.trim()) return;
@@ -66,11 +66,11 @@ export default function TeachPage() {
     setBusy(true);
     try {
       const r = await api.post(`/api/teach/recordings/${id}/distill`, { create_agent: createAgent });
-      toast({ title: `Learned: ${r.procedure.name}`,
-        body: r.agent ? `Specialist “${r.agent.name}” created.` : `${r.procedure.steps.length} steps stored.`,
+      toast({ title: `Gelernt: ${r.procedure.name}`,
+        body: r.agent ? `Spezialist „${r.agent.name}“ angelegt.` : `${r.procedure.steps.length} Schritte gespeichert.`,
         tone: "ok" });
       recordings.reload(); procedures.reload(); setOpenProc(r.procedure);
-    } catch (e: any) { toast({ title: "Could not learn from it", body: e.message, tone: "err" }); }
+    } catch (e: any) { toast({ title: "Lernen nicht möglich", body: e.message, tone: "err" }); }
     finally { setBusy(false); }
   };
 
@@ -86,9 +86,9 @@ export default function TeachPage() {
   const run = async (p: Procedure) => {
     try {
       const r = await api.post(`/api/teach/procedures/${p.id}/run`, { inputs: {} });
-      toast({ title: "Running", body: r.task.title, tone: "ok" });
+      toast({ title: "Läuft", body: r.task.title, tone: "ok" });
       procedures.reload();
-    } catch (e: any) { toast({ title: "Could not run it", body: e.message, tone: "err" }); }
+    } catch (e: any) { toast({ title: "Ausführen nicht möglich", body: e.message, tone: "err" }); }
   };
   const schedule = async (p: Procedure, every: number) => {
     await api.patch(`/api/teach/procedures/${p.id}`,
@@ -97,7 +97,7 @@ export default function TeachPage() {
     setOpenProc(null);
   };
   const remove = async (p: Procedure) => {
-    if (!window.confirm(`Delete “${p.name}”? The recording it came from stays.`)) return;
+    if (!window.confirm(`„${p.name}“ löschen? Die zugehörige Aufnahme bleibt erhalten.`)) return;
     await api.del(`/api/teach/procedures/${p.id}`);
     procedures.reload(); setOpenProc(null);
   };
@@ -116,29 +116,29 @@ export default function TeachPage() {
       <ErrorState error={recordings.error || procedures.error} retry={() => recordings.reload(false)} />
 
       {active && (
-        <Panel title={<span className="row"><span className="rec-dot" />Recording</span>}
-          actions={<button className="btn sm danger" onClick={() => stop(active)}><Square />Stop</button>}>
+        <Panel title={<span className="row"><span className="rec-dot" />Aufnahme</span>}
+          actions={<button className="btn sm danger" onClick={() => stop(active)}><Square />Beenden</button>}>
           <div className="stack">
-            <p className="small">Work with MIA as you normally would. What you say, every tool it runs and every
-              action on your PC is being written down. Add a note whenever the reason behind a step matters.</p>
+            <p className="small">Arbeite mit MIA wie gewohnt. Was du sagst, jedes Werkzeug, das MIA nutzt, und jede
+              Aktion auf deinem PC wird mitgeschrieben. Füge eine Notiz hinzu, wenn der Grund hinter einem Schritt wichtig ist.</p>
             <div className="row">
-              <input className="input" placeholder="Note: why this step happens, or a rule to remember"
+              <input className="input" placeholder="Notiz: warum dieser Schritt passiert, oder eine Regel zum Merken"
                 value={note} onChange={(e) => setNote(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") addNote(active); }} />
-              <button className="btn" onClick={() => addNote(active)} disabled={!note.trim()}>Add note</button>
-              <Link className="btn" to="/chat">Open chat</Link>
+              <button className="btn" onClick={() => addNote(active)} disabled={!note.trim()}>Notiz hinzufügen</button>
+              <Link className="btn" to="/chat">Chat öffnen</Link>
             </div>
           </div>
         </Panel>
       )}
 
       <div className="ops-split even">
-        <Panel title="Recordings" icon={<GraduationCap size={15} />} flush>
+        <Panel title="Aufnahmen" icon={<GraduationCap size={15} />} flush>
           {!recordings.data ? <div className="panel-body"><Skeleton /></div> :
             recordings.data.recordings.length === 0 ?
-              <EmptyState icon={<GraduationCap size={26} />} title="Nothing recorded yet">
-                Start a recording, then do the job once with MIA. It writes down what really happened and can
-                turn it into a procedure and a specialist.
+              <EmptyState icon={<GraduationCap size={26} />} title="Noch nichts aufgenommen">
+                Starte eine Aufnahme und erledige die Arbeit einmal mit MIA. MIA schreibt auf, was wirklich passiert ist,
+                und kann daraus ein Vorgehen und einen Spezialisten machen.
               </EmptyState> : (
                 <div className="list">
                   {recordings.data.recordings.map((r) => (
@@ -148,12 +148,12 @@ export default function TeachPage() {
                         live={r.status === "recording"} />
                       <div className="grow" style={{ minWidth: 0 }}>
                         <div className="truncate">{r.title}</div>
-                        <div className="tiny muted">{r.event_count} steps · {relative(r.started_at)}
-                          {r.procedure_id && " · learned"}</div>
+                        <div className="tiny muted">{r.event_count} Schritte · {relative(r.started_at)}
+                          {r.procedure_id && " · gelernt"}</div>
                       </div>
                       {can("operator") && r.status !== "recording" && !r.procedure_id &&
                         <button className="btn sm primary" onClick={(e) => { e.stopPropagation(); learn(r.id, true); }}
-                          disabled={busy}><Sparkles />Learn</button>}
+                          disabled={busy}><Sparkles />Lernen</button>}
                       {/* Eine Aufnahme ist der Rohstoff: was gesagt wurde und jeder
                           Werkzeugaufruf mit Ergebnis. Ein abgebrochener Versuch soll
                           weggeworfen werden können — das Gelernte bleibt davon
@@ -166,12 +166,12 @@ export default function TeachPage() {
                 </div>)}
         </Panel>
 
-        <Panel title="What MIA has learned" icon={<BookOpen size={15} />} flush>
+        <Panel title="Was MIA gelernt hat" icon={<BookOpen size={15} />} flush>
           {!procedures.data ? <div className="panel-body"><Skeleton /></div> :
             procedures.data.procedures.length === 0 ?
-              <EmptyState icon={<BookOpen size={26} />} title="No procedures yet">
-                A recording becomes a procedure: named steps, the tools they need, and optionally a specialist
-                agent that runs it from then on.
+              <EmptyState icon={<BookOpen size={26} />} title="Noch keine Vorgehen">
+                Aus einer Aufnahme wird ein Vorgehen: benannte Schritte, die nötigen Werkzeuge und auf Wunsch ein
+                Spezialist, der es ab dann ausführt.
               </EmptyState> : (
                 <div className="list">
                   {procedures.data.procedures.map((p) => (
@@ -179,31 +179,31 @@ export default function TeachPage() {
                       <div className="grow" style={{ minWidth: 0 }}>
                         <div className="row" style={{ gap: 8 }}><span className="truncate">{p.name}</span>
                           {p.agent_id && <span className="badge info">{p.agent_id}</span>}
-                          {p.trigger?.type === "schedule" && <span className="badge ok">scheduled</span>}
-                          {!p.enabled && <span className="badge muted">off</span>}</div>
-                        <div className="tiny muted truncate">{p.steps.length} steps · {p.runs} runs
-                          {p.last_run_at && ` · last ${relative(p.last_run_at)}`}</div>
+                          {p.trigger?.type === "schedule" && <span className="badge ok">geplant</span>}
+                          {!p.enabled && <span className="badge muted">aus</span>}</div>
+                        <div className="tiny muted truncate">{p.steps.length} Schritte · {p.runs} Läufe
+                          {p.last_run_at && ` · zuletzt ${relative(p.last_run_at)}`}</div>
                       </div>
                       {can("operator") && <button className="btn sm" onClick={(e) => { e.stopPropagation(); run(p); }}>
-                        <Play />Run</button>}
+                        <Play />Ausführen</button>}
                     </div>))}
                 </div>)}
         </Panel>
       </div>
 
       {openRec && (
-        <Panel title={detail.data?.recording.title || "Recording"} icon={<GraduationCap size={15} />}
+        <Panel title={detail.data?.recording.title || "Aufnahme"} icon={<GraduationCap size={15} />}
           actions={<>
             {can("operator") && detail.data?.recording.status !== "recording" && !detail.data?.recording.procedure_id &&
               <>
-                <button className="btn sm" onClick={() => learn(openRec, false)} disabled={busy}>Procedure only</button>
+                <button className="btn sm" onClick={() => learn(openRec, false)} disabled={busy}>Nur Vorgehen</button>
                 <button className="btn sm primary" onClick={() => learn(openRec, true)} disabled={busy}>
-                  <Sparkles />{busy ? "Reading it…" : "Learn + specialist"}</button>
+                  <Sparkles />{busy ? "Wird ausgewertet …" : "Lernen + Spezialist"}</button>
               </>}
-            <button className="btn sm ghost" onClick={() => setOpenRec(null)}>Close</button></>} flush>
+            <button className="btn sm ghost" onClick={() => setOpenRec(null)}>Schließen</button></>} flush>
           {!detail.data ? <div className="panel-body"><Skeleton /></div> : (
             <div className="teach-trace">
-              {events.length === 0 && <div className="panel-body small muted">Nothing captured yet.</div>}
+              {events.length === 0 && <div className="panel-body small muted">Noch nichts festgehalten.</div>}
               {events.map((e: any, i: number) => (
                 <div key={e.id || i} className={`trace-row ${e.kind}`}>
                   <span className="trace-kind">{e.kind}</span>
@@ -222,48 +222,48 @@ export default function TeachPage() {
       {openProc && (
         <Modal title={openProc.name} onClose={() => setOpenProc(null)} wide
           foot={<>
-            {can("operator") && <button className="btn danger" onClick={() => remove(openProc)}><Trash2 />Delete</button>}
+            {can("operator") && <button className="btn danger" onClick={() => remove(openProc)}><Trash2 />Löschen</button>}
             {can("operator") && <button className="btn primary" onClick={() => { run(openProc); setOpenProc(null); }}>
-              <Play />Run now</button>}
+              <Play />Jetzt ausführen</button>}
           </>}>
           <div className="stack">
             <p className="small">{openProc.description}</p>
             <KeyValue items={[
-              ["Goal", openProc.goal || "—"],
-              ["Specialist", openProc.agent_id ? <Link to={`/agents/${openProc.agent_id}`}>{openProc.agent_id}</Link> : "none — the master agent runs it"],
-              ["Tools", openProc.tools.length ? openProc.tools.map((t) => <code key={t} style={{ marginRight: 6 }}>{t}</code>) : "—"],
-              ["Runs", `${openProc.runs}${openProc.last_status ? ` · last ${openProc.last_status}` : ""}`],
-              ["Confidence when learned", openProc.meta?.confidence || "—"],
+              ["Ziel", openProc.goal || "—"],
+              ["Spezialist", openProc.agent_id ? <Link to={`/agents/${openProc.agent_id}`}>{openProc.agent_id}</Link> : "keiner — der Hauptagent führt es aus"],
+              ["Werkzeuge", openProc.tools.length ? openProc.tools.map((t) => <code key={t} style={{ marginRight: 6 }}>{t}</code>) : "—"],
+              ["Läufe", `${openProc.runs}${openProc.last_status ? ` · zuletzt ${openProc.last_status}` : ""}`],
+              ["Sicherheit beim Lernen", openProc.meta?.confidence || "—"],
             ]} />
             {openProc.meta?.needs_setup?.length > 0 && (
-              <div className="error-state small">Still needs a connection: {openProc.meta.needs_setup.join(", ")}.
-                Those steps will be reported as not done until you configure them.</div>)}
-            {openProc.meta?.notes && <p className="small dim">Note: {openProc.meta.notes}</p>}
+              <div className="error-state small">Braucht noch eine Verbindung: {openProc.meta.needs_setup.join(", ")}.
+                Diese Schritte werden als nicht erledigt gemeldet, bis du sie einrichtest.</div>)}
+            {openProc.meta?.notes && <p className="small dim">Notiz: {openProc.meta.notes}</p>}
             <div>
-              <div className="label" style={{ marginBottom: 6 }}>Steps</div>
+              <div className="label" style={{ marginBottom: 6 }}>Schritte</div>
               <ol className="teach-steps">{openProc.steps.map((s, i) => (
                 <li key={i}>{s.text}{s.tool && <code style={{ marginLeft: 6 }}>{s.tool}</code>}</li>))}</ol>
             </div>
             {openProc.meta?.inputs?.length > 0 && (
-              <div><div className="label" style={{ marginBottom: 6 }}>Asks for</div>
+              <div><div className="label" style={{ marginBottom: 6 }}>Fragt nach</div>
                 <div className="row wrap">{openProc.meta.inputs.map((i: any) => (
                   <span key={i.name} className="badge" title={i.description}>{`{${i.name}}`}</span>))}</div></div>)}
             {can("operator") && (
               <div className="row between" style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>
                 <label className="row small" style={{ gap: 8 }}>
-                  <Toggle checked={openProc.enabled} label="Enabled"
+                  <Toggle checked={openProc.enabled} label="Aktiv"
                     onChange={async (v) => { await api.patch(`/api/teach/procedures/${openProc.id}`, { enabled: v }); procedures.reload(); setOpenProc({ ...openProc, enabled: v }); }} />
-                  Enabled
+                  Aktiv
                 </label>
-                <label className="row small" style={{ gap: 8 }}>Run by itself
+                <label className="row small" style={{ gap: 8 }}>Von selbst ausführen
                   <select className="select" style={{ width: 170 }}
                     value={openProc.trigger?.type === "schedule" ? String(openProc.trigger.every_seconds) : "0"}
                     onChange={(e) => schedule(openProc, Number(e.target.value))}>
-                    <option value="0">only when asked</option>
-                    <option value="3600">every hour</option>
-                    <option value="21600">every 6 hours</option>
-                    <option value="86400">every day</option>
-                    <option value="604800">every week</option>
+                    <option value="0">nur auf Anfrage</option>
+                    <option value="3600">jede Stunde</option>
+                    <option value="21600">alle 6 Stunden</option>
+                    <option value="86400">jeden Tag</option>
+                    <option value="604800">jede Woche</option>
                   </select>
                 </label>
               </div>)}
@@ -273,15 +273,15 @@ export default function TeachPage() {
 
       {starting && (
         <Modal title="Vorführung aufnehmen" onClose={() => { setStarting(false); setParams({}); }}
-          foot={<><button className="btn" onClick={() => { setStarting(false); setParams({}); }}>Cancel</button>
-            <button className="btn primary" onClick={start} disabled={!form.title.trim() || busy}>Start recording</button></>}>
+          foot={<><button className="btn" onClick={() => { setStarting(false); setParams({}); }}>Abbrechen</button>
+            <button className="btn primary" onClick={start} disabled={!form.title.trim() || busy}>Aufnahme starten</button></>}>
           <div className="stack">
-            <p className="small">Give it a name, then do the job once with MIA. What you say and every tool it
-              uses is written down. Afterwards it can turn that into a repeatable procedure and a specialist agent.</p>
-            <div className="field"><label>What are you showing it?</label>
+            <p className="small">Gib ihr einen Namen und erledige die Arbeit dann einmal mit MIA. Was du sagst und jedes Werkzeug,
+              das genutzt wird, wird mitgeschrieben. Danach lässt sich daraus ein wiederholbares Vorgehen und ein Spezialist machen.</p>
+            <div className="field"><label>Was zeigst du MIA?</label>
               <input className="input" autoFocus value={form.title} placeholder="e.g. Angebot für einen Kunden erstellen"
                 onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
-            <div className="field"><label>What counts as done? (optional)</label>
+            <div className="field"><label>Wann gilt es als erledigt? (optional)</label>
               <textarea className="textarea" value={form.goal} placeholder="e.g. Das fertige Angebot liegt als PDF im Workspace"
                 onChange={(e) => setForm({ ...form, goal: e.target.value })} /></div>
           </div>

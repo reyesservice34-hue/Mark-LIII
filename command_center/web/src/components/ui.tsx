@@ -23,13 +23,17 @@ export function Panel({ title, icon, actions, children, className = "", flush = 
 }
 
 // Anzeigenamen für Zustände. Nur die Beschriftung ändert sich; `tone()` und die Werte der API bleiben.
-const STATUS_LABEL: Record<string, string> = {
+export const STATUS_LABEL: Record<string, string> = {
   running: "Läuft", planning: "Plant", queued: "Wartend", waiting_for_approval: "Wartet auf Freigabe", paused: "Pausiert",
   completed: "Erledigt", failed: "Fehlgeschlagen", cancelled: "Abgebrochen", executing: "Arbeitet", thinking: "Denkt",
   waiting: "Wartet", idle: "Bereit", offline: "Offline", error: "Fehler", warn: "Warnung", warning: "Warnung",
   success: "Erfolg", healthy: "Gesund", ok: "OK", pending: "Offen", approved: "Genehmigt", rejected: "Abgelehnt",
   expired: "Abgelaufen", connected: "Verbunden",
+  // Zustände, die n8n selbst meldet
+  crashed: "Abgestürzt", canceled: "Abgebrochen", new: "Neu", unknown: "Unbekannt", succeeded: "Erfolg",
 };
+
+export const statusLabel = (s?: string) => STATUS_LABEL[(s || "").toLowerCase()] ?? (s || "").replace(/_/g, " ");
 
 export function Badge({ status, children, className = "" }: { status?: string; children?: ReactNode; className?: string }) {
   const t = tone(status);
@@ -76,12 +80,12 @@ export function EmptyState({ icon, title, children }: { icon?: ReactNode; title:
 
 export function ErrorState({ error, retry }: { error: { message?: string; status?: number } | string | null; retry?: () => void }) {
   if (!error) return null;
-  const msg = typeof error === "string" ? error : error.message || "Something went wrong";
+  const msg = typeof error === "string" ? error : error.message || "Etwas ist schiefgelaufen";
   return (
     <div className="error-state" role="alert">
       <AlertTriangle size={16} style={{ flex: "none", marginTop: 2 }} />
       <div className="grow">{msg}</div>
-      {retry && <button className="btn sm" onClick={retry}>Retry</button>}
+      {retry && <button className="btn sm" onClick={retry}>Erneut versuchen</button>}
     </div>
   );
 }
@@ -99,7 +103,7 @@ export function Modal({ title, onClose, children, foot, wide = false }: { title:
   return (
     <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" role="dialog" aria-modal="true" style={wide ? { width: "min(960px, 100%)" } : undefined}>
-        <div className="modal-head"><h2>{title}</h2><button className="btn icon ghost sm" onClick={onClose} aria-label="Close"><X /></button></div>
+        <div className="modal-head"><h2>{title}</h2><button className="btn icon ghost sm" onClick={onClose} aria-label="Schließen"><X /></button></div>
         <div className="modal-body">{children}</div>
         {foot && <div className="modal-foot">{foot}</div>}
       </div>

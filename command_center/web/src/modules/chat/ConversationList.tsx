@@ -23,7 +23,7 @@ export function ConversationList({ items, activeId, onNew, onSearch, onRename, o
         {items.length === 0 && <EmptyState title={query ? "Keine Treffer" : "Keine Sitzungen"}>{query ? "Versuche einen anderen Suchbegriff." : "Starte eine Sitzung. MIA speichert den Verlauf auf dem Server."}</EmptyState>}
         {items.map((c) => (
           <Link key={c.id} to={`/chat/${c.id}`} className={`conv-item ${c.id === activeId ? "active" : ""}`} onMouseLeave={() => setMenu(null)}>
-            <div className="row between"><span className="title truncate">{c.title === "New conversation" ? "Neue Sitzung" : c.title}</span>
+            <div className="row between"><span className="title truncate">{c.title === "Neue Unterhaltung" ? "Neue Sitzung" : c.title}</span>
               <span className="row" style={{ gap: 2 }} onClick={(e) => e.preventDefault()}>
                 {menu === c.id ? <>
                   <button className="btn icon ghost sm" title="Umbenennen" onClick={() => onRename(c)}><Pencil /></button>

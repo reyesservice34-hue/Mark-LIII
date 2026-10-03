@@ -354,3 +354,19 @@ button.link:hover { text-decoration: underline; }
   .list-item.clickable > .grow { flex: 1 1 calc(100% - 110px); min-width: 0; }
   .list-item.clickable > .badge { margin-left: 94px; }
 }
+
+/* Tabellenzellen mit der Klasse "row" (Icon + Name, Aktionsknöpfe) bleiben echte Tabellenzellen:
+   als Flex-Container verschoben sie die Trennlinien der Zeilen. */
+.table td.row { display: table-cell; vertical-align: middle; white-space: nowrap; }
+.table td.row > svg { vertical-align: middle; margin-right: 8px; }
+.table td.row > .btn { vertical-align: middle; margin-left: 2px; }
+.table td.row[style*="flex-end"] { text-align: right; white-space: nowrap; }
+.table td.num { white-space: nowrap; }
+
+/* Protokoll auf dem Handy: oben Zeit, Stufe, Quelle; darunter die Meldung in voller Breite. */
+@media (max-width: 760px) {
+  .log-table, .log-table tbody { display: block; }
+  .log-table tr { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 4px 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  .log-table td { display: block; padding: 0; border: 0; width: auto !important; }
+  .log-table td:last-child { grid-column: 1 / -1; line-height: 1.5; }
+}

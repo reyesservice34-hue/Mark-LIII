@@ -63,7 +63,7 @@ export default function AgentsOfficePage() {
                     </div>
                     <div className="small muted">{a.current_activity || "Keine laufende Tätigkeit"}</div>
                     <div className="row" style={{ justifyContent: "space-between" }}>
-                      <span className="small">Queue: <strong>{a.queue}</strong></span>
+                      <span className="small">Warteschlange: <strong>{a.queue}</strong></span>
                       <span className="small muted">{a.tools_resolved.filter((t) => t.available).length} Werkzeuge verfügbar</span>
                     </div>
                   </div>

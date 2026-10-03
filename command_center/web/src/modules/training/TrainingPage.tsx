@@ -43,7 +43,7 @@ export default function TrainingPage() {
   const checkProvider = async (id: string) => {
     setChecking(id);
     try { await api.post(`/api/integrations/${id}/check`); integrations.reload(); }
-    catch (e: any) { toast({ title: "Check fehlgeschlagen", body: e.message, tone: "err" }); }
+    catch (e: any) { toast({ title: "Prüfung fehlgeschlagen", body: e.message, tone: "err" }); }
     finally { setChecking(null); }
   };
 

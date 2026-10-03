@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
-import { dateTime, relative, time } from "@/lib/format";
+import { dateTime, prioLabel, relative, time } from "@/lib/format";
 import { ListChecks, Plus } from "@/lib/icons";
 import { Badge, EmptyState, ErrorState, KeyValue, Modal, Panel, Skeleton } from "@/components/ui";
 import { toast } from "@/lib/toast";
@@ -32,13 +32,13 @@ export default function TasksPage() {
   const create = async () => {
     try {
       const r = await api.post("/api/tasks", form);
-      toast({ title: "Task created", body: r.task.title, tone: "ok" });
+      toast({ title: "Aufgabe angelegt", body: r.task.title, tone: "ok" });
       setCreating(false); setParams({}); setForm({ title: "", description: "", priority: "normal", assigned_agent: "", start: true });
       nav(`/tasks/${r.task.id}`);
-    } catch (e: any) { toast({ title: "Could not create task", body: e.message, tone: "err" }); }
+    } catch (e: any) { toast({ title: "Aufgabe konnte nicht angelegt werden", body: e.message, tone: "err" }); }
   };
   const act = async (id: string, action: "cancel" | "retry") => {
-    try { await api.post(`/api/tasks/${id}/${action}`); detail.reload(); list.reload(); } catch (e: any) { toast({ title: `${action} failed`, body: e.message, tone: "err" }); }
+    try { await api.post(`/api/tasks/${id}/${action}`); detail.reload(); list.reload(); } catch (e: any) { toast({ title: `${action === "cancel" ? "Abbrechen" : "Wiederholen"} fehlgeschlagen`, body: e.message, tone: "err" }); }
   };
   // Löschen ist endgültig und braucht deshalb eine Rückfrage, die den Titel
   // nennt — „Aufgabe gelöscht" ohne zu wissen welche, ist keine Bestätigung.
@@ -112,9 +112,9 @@ export default function TasksPage() {
           <Panel title={t ? t.title : "Aufgabe"} actions={<button className="btn sm ghost" onClick={() => nav("/tasks")}>Schließen</button>}>
             {detail.error ? <ErrorState error={detail.error} /> : !t ? <Skeleton rows={6} /> : (
               <div className="stack" style={{ gap: 14 }}>
-                <div className="row wrap"><Badge status={t.status} /><span className="badge muted">{t.priority}</span><span className="badge">{t.assigned_agent || "nicht zugewiesen"}</span>{t.parent_id && <a className="small" href={`/tasks/${t.parent_id}`}>↑ übergeordnete Aufgabe</a>}</div>
+                <div className="row wrap"><Badge status={t.status} /><span className="badge muted">{prioLabel(t.priority)}</span><span className="badge">{t.assigned_agent || "nicht zugewiesen"}</span>{t.parent_id && <a className="small" href={`/tasks/${t.parent_id}`}>↑ übergeordnete Aufgabe</a>}</div>
                 {t.description && <p className="small" style={{ whiteSpace: "pre-wrap" }}>{t.description}</p>}
-                <KeyValue items={[["Task ID", <code>{t.id}</code>], ["Created by", t.created_by || "—"], ["Created", dateTime(t.created_at)], ["Started", t.started_at ? dateTime(t.started_at) : "—"], ["Completed", t.completed_at ? dateTime(t.completed_at) : "—"], ["Conversation", t.conversation_id ? <a href={`/chat/${t.conversation_id}`}>open chat</a> : "—"], ["Run", t.run_id ? <code>{t.run_id}</code> : "—"]]} />
+                <KeyValue items={[["Aufgaben-ID", <code>{t.id}</code>], ["Angelegt von", t.created_by || "—"], ["Angelegt", dateTime(t.created_at)], ["Gestartet", t.started_at ? dateTime(t.started_at) : "—"], ["Abgeschlossen", t.completed_at ? dateTime(t.completed_at) : "—"], ["Unterhaltung", t.conversation_id ? <a href={`/chat/${t.conversation_id}`}>Chat öffnen</a> : "—"], ["Lauf", t.run_id ? <code>{t.run_id}</code> : "—"]]} />
                 {t.error && <ErrorState error={t.error} />}
                 {t.output && <div><div className="label" style={{ marginBottom: 6 }}>Ergebnis</div><pre className="md" style={{ whiteSpace: "pre-wrap", maxHeight: 260, overflow: "auto" }}>{t.output}</pre></div>}
                 {can("operator") && <div className="row wrap">
@@ -128,7 +128,7 @@ export default function TasksPage() {
                 </div>}
                 {t.subtasks?.length > 0 && <div><div className="label" style={{ marginBottom: 6 }}>Teilaufgaben</div><div className="panel"><TaskTimeline tasks={t.subtasks} grouped={false} /></div></div>}
                 {t.approvals?.length > 0 && <div><div className="label" style={{ marginBottom: 6 }}>Freigaben</div>{t.approvals.map((a: any) => <div key={a.id} className="row small" style={{ gap: 8 }}><Badge status={a.status} /><a href={`/approvals/${a.id}`}>{a.action} → {a.target}</a></div>)}</div>}
-                {t.files?.length > 0 && <div><div className="label" style={{ marginBottom: 6 }}>Files</div>{t.files.map((f: any) => <div key={f.id} className="small"><a href={`${api.base}/api/files/download?path=${encodeURIComponent(f.path)}`}>{f.path}</a></div>)}</div>}
+                {t.files?.length > 0 && <div><div className="label" style={{ marginBottom: 6 }}>Dateien</div>{t.files.map((f: any) => <div key={f.id} className="small"><a href={`${api.base}/api/files/download?path=${encodeURIComponent(f.path)}`}>{f.path}</a></div>)}</div>}
                 <div><div className="label" style={{ marginBottom: 6 }}>Protokoll</div>
                   {t.logs.length === 0 ? <span className="small muted">keine Einträge</span> : <div className="stack" style={{ gap: 4, maxHeight: 260, overflow: "auto" }}>{t.logs.map((l: any) => <div key={l.id} className="small row" style={{ alignItems: "flex-start" }}><span className="tiny muted num" style={{ flex: "none", width: 64 }}>{time(l.ts)}</span><Badge status={l.level === "WARNING" ? "warning" : l.level === "ERROR" ? "error" : "info"}>{l.level}</Badge><span style={{ wordBreak: "break-word" }}>{l.message}</span></div>)}</div>}
                 </div>
@@ -161,13 +161,13 @@ export default function TasksPage() {
       {creating && (
         <Modal title="Neue Aufgabe" onClose={() => { setCreating(false); setParams({}); }} foot={<><button className="btn" onClick={() => setCreating(false)}>Abbrechen</button><button className="btn primary" onClick={create} disabled={!form.title.trim()}>{form.start ? "Anlegen & starten" : "Anlegen"}</button></>}>
           <div className="stack">
-            <div className="field"><label>Title</label><input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} autoFocus /></div>
-            <div className="field"><label>Description / instructions</label><textarea className="textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+            <div className="field"><label>Titel</label><input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} autoFocus /></div>
+            <div className="field"><label>Beschreibung / Anweisungen</label><textarea className="textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
             <div className="grid cols-2">
-              <div className="field"><label>Priority</label><select className="select" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option>low</option><option>normal</option><option>high</option><option>critical</option></select></div>
-              <div className="field"><label>Agent</label><select className="select" value={form.assigned_agent} onChange={(e) => setForm({ ...form, assigned_agent: e.target.value })}><option value="">MIA (master)</option>{(agents.data?.agents || []).filter((a) => a.kind !== "master").map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+              <div className="field"><label>Priorität</label><select className="select" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option value="low">niedrig</option><option value="normal">normal</option><option value="high">hoch</option><option value="critical">kritisch</option></select></div>
+              <div className="field"><label>Agent</label><select className="select" value={form.assigned_agent} onChange={(e) => setForm({ ...form, assigned_agent: e.target.value })}><option value="">MIA (Hauptagent)</option>{(agents.data?.agents || []).filter((a) => a.kind !== "master").map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
             </div>
-            <label className="row small"><input type="checkbox" checked={form.start} onChange={(e) => setForm({ ...form, start: e.target.checked })} /> Start immediately</label>
+            <label className="row small"><input type="checkbox" checked={form.start} onChange={(e) => setForm({ ...form, start: e.target.checked })} /> Sofort starten</label>
           </div>
         </Modal>
       )}

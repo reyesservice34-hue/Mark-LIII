@@ -33,22 +33,22 @@ export function ApprovalDialog() {
     setBusy(true);
     try {
       await api.post(`/api/approvals/${current.id}/${approve ? "approve" : "reject"}`, { note });
-      toast({ title: approve ? "Approved" : "Rejected", body: current.action, tone: approve ? "ok" : "warn" });
+      toast({ title: approve ? "Genehmigt" : "Abgelehnt", body: current.action, tone: approve ? "ok" : "warn" });
       setNote("");
-    } catch (e: any) { toast({ title: "Decision failed", body: e.message, tone: "err" }); }
+    } catch (e: any) { toast({ title: "Entscheidung fehlgeschlagen", body: e.message, tone: "err" }); }
     finally { setBusy(false); }
   };
 
   return (
     <Modal title={<span className="row"><ShieldCheck size={16} style={{ color: "var(--warn)" }} />Approval required{queue.length > 1 && <span className="badge warn">{queue.length} pending</span>}</span>} onClose={() => setQueue((q) => q.slice(1).concat(q[0]))}
       foot={<>
-        <button className="btn danger" disabled={busy} onClick={() => decide(false)}>Reject</button>
-        <button className="btn success" disabled={busy} onClick={() => decide(true)} autoFocus>Approve</button>
+        <button className="btn danger" disabled={busy} onClick={() => decide(false)}>Ablehnen</button>
+        <button className="btn success" disabled={busy} onClick={() => decide(true)} autoFocus>Genehmigen</button>
       </>}>
       <ApprovalDetails a={current} />
       <div className="field" style={{ marginTop: 14 }}>
-        <label htmlFor="apr-note">Note (optional, recorded in the audit trail)</label>
-        <input id="apr-note" className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why you decided this way" />
+        <label htmlFor="apr-note">Notiz (optional, wird im Prüfprotokoll festgehalten)</label>
+        <input id="apr-note" className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Warum du so entschieden hast" />
       </div>
     </Modal>
   );
@@ -63,14 +63,14 @@ export function ApprovalDetails({ a }: { a: Approval }) {
         <span className="small muted">requested {relative(a.created_at)} · expires {relative(a.expires_at)}</span>
       </div>
       <KeyValue items={[
-        ["Requested action", <code>{a.action}</code>],
-        ["Reason", a.reason || "—"],
-        ["Affected system / target", <code>{a.target || "—"}</code>],
-        ["Requested by agent", a.agent_id ? <code>{a.agent_id}</code> : <span className="muted">— (user action)</span>],
-        ["On behalf of", a.requested_by],
-        ["Approval code", <code>{a.code}</code>],
-        ...(a.task_id ? [["Task", <a href={`/tasks/${a.task_id}`}>{a.task_id}</a>] as [any, any]] : []),
-        ...(a.decided_by ? [["Decided by", `${a.decided_by}${a.decision_note ? ` — ${a.decision_note}` : ""}`] as [any, any]] : []),
+        ["Angeforderte Aktion", <code>{a.action}</code>],
+        ["Grund", a.reason || "—"],
+        ["Betroffenes System / Ziel", <code>{a.target || "—"}</code>],
+        ["Angefordert vom Agenten", a.agent_id ? <code>{a.agent_id}</code> : <span className="muted">— (Aktion eines Nutzers)</span>],
+        ["Im Auftrag von", a.requested_by],
+        ["Freigabe-Code", <code>{a.code}</code>],
+        ...(a.task_id ? [["Aufgabe", <a href={`/tasks/${a.task_id}`}>{a.task_id}</a>] as [any, any]] : []),
+        ...(a.decided_by ? [["Entschieden von", `${a.decided_by}${a.decision_note ? ` — ${a.decision_note}` : ""}`] as [any, any]] : []),
       ]} />
       {a.payload && Object.keys(a.payload).length > 0 && (
         <details><summary className="small muted" style={{ cursor: "pointer" }}>Full request payload</summary>

@@ -36,19 +36,19 @@ export default function FilesPage() {
   const upload = async (list: FileList | null) => {
     if (!list?.length) return;
     setUploading(true);
-    try { for (const f of Array.from(list)) { const form = new FormData(); form.append("file", f); form.append("path", path || "uploads"); await api.upload("/api/files/upload", form); } toast({ title: "Upload complete", tone: "ok" }); dir.reload(); }
-    catch (e: any) { toast({ title: "Upload failed", body: e.message, tone: "err" }); }
+    try { for (const f of Array.from(list)) { const form = new FormData(); form.append("file", f); form.append("path", path || "uploads"); await api.upload("/api/files/upload", form); } toast({ title: "Hochladen abgeschlossen", tone: "ok" }); dir.reload(); }
+    catch (e: any) { toast({ title: "Hochladen fehlgeschlagen", body: e.message, tone: "err" }); }
     finally { setUploading(false); if (fileInput.current) fileInput.current.value = ""; }
   };
-  const mkdir = async () => { const name = window.prompt("Folder name"); if (name) { try { await api.post("/api/files/mkdir", { path: `${path ? path + "/" : ""}${name}` }); dir.reload(); } catch (e: any) { toast({ title: "Failed", body: e.message, tone: "err" }); } } };
-  const rename = async (e: Entry) => { const name = window.prompt("New name", e.name); if (name && name !== e.name) { try { await api.post("/api/files/rename", { path: e.path, new_name: name }); dir.reload(); } catch (err: any) { toast({ title: "Rename failed", body: err.message, tone: "err" }); } } };
-  const move = async (e: Entry) => { const dest = window.prompt("Move to folder (relative to workspace)", path); if (dest != null) { try { await api.post("/api/files/move", { path: e.path, destination: dest }); dir.reload(); } catch (err: any) { toast({ title: "Move failed", body: err.message, tone: "err" }); } } };
-  const remove = async (e: Entry) => { if (window.confirm(`Move “${e.name}” to trash?`)) { try { await api.post("/api/files/delete", { path: e.path }); dir.reload(); } catch (err: any) { toast({ title: "Delete failed", body: err.message, tone: "err" }); } } };
+  const mkdir = async () => { const name = window.prompt("Ordnername"); if (name) { try { await api.post("/api/files/mkdir", { path: `${path ? path + "/" : ""}${name}` }); dir.reload(); } catch (e: any) { toast({ title: "Fehlgeschlagen", body: e.message, tone: "err" }); } } };
+  const rename = async (e: Entry) => { const name = window.prompt("Neuer Name", e.name); if (name && name !== e.name) { try { await api.post("/api/files/rename", { path: e.path, new_name: name }); dir.reload(); } catch (err: any) { toast({ title: "Umbenennen fehlgeschlagen", body: err.message, tone: "err" }); } } };
+  const move = async (e: Entry) => { const dest = window.prompt("Verschieben nach (Ordner relativ zum Arbeitsbereich)", path); if (dest != null) { try { await api.post("/api/files/move", { path: e.path, destination: dest }); dir.reload(); } catch (err: any) { toast({ title: "Verschieben fehlgeschlagen", body: err.message, tone: "err" }); } } };
+  const remove = async (e: Entry) => { if (window.confirm(`„${e.name}“ in den Papierkorb verschieben?`)) { try { await api.post("/api/files/delete", { path: e.path }); dir.reload(); } catch (err: any) { toast({ title: "Löschen fehlgeschlagen", body: err.message, tone: "err" }); } } };
   const open = async (e: Entry) => {
     if (e.is_dir) { setQ(""); setPath(e.path); return; }
     if (e.mime.startsWith("image/") || e.mime === "application/pdf") { setPreview({ entry: e }); return; }
     try { const r = await api.get(`/api/files/preview?path=${encodeURIComponent(e.path)}`); setPreview({ entry: e, content: r.content, truncated: r.truncated }); }
-    catch (err: any) { toast({ title: "Preview failed", body: err.message, tone: "err" }); }
+    catch (err: any) { toast({ title: "Vorschau fehlgeschlagen", body: err.message, tone: "err" }); }
   };
   const crumbs = path ? path.split("/") : [];
 
@@ -63,7 +63,7 @@ export default function FilesPage() {
       dir.reload();
       recent.reload();
     } catch (err: any) {
-      setTerminalRuns((runs) => [...runs, { command, cwd: path, output: err.message || "Terminal command failed", exit_code: null, timed_out: false }].slice(-50));
+      setTerminalRuns((runs) => [...runs, { command, cwd: path, output: err.message || "Terminal-Befehl fehlgeschlagen", exit_code: null, timed_out: false }].slice(-50));
     } finally {
       setTerminalBusy(false);
     }
@@ -74,7 +74,7 @@ export default function FilesPage() {
       <div className="page-head">
         <div><div className="eyebrow">Arbeitsbereich · {recent.data ? `${recent.data.usage.files} Dateien · ${bytes(recent.data.usage.bytes)}` : ""}</div><h1>Dateien</h1></div>
         <div className="actions">
-          <div className="row" style={{ gap: 6 }}><Search size={14} style={{ color: "var(--text-3)" }} /><input ref={searchInput} className="input" style={{ width: 220 }} placeholder="Nach Name suchen" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search files" /></div>
+          <div className="row" style={{ gap: 6 }}><Search size={14} style={{ color: "var(--text-3)" }} /><input ref={searchInput} className="input" style={{ width: 220 }} placeholder="Nach Name suchen" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Dateien suchen" /></div>
           {can("operator") && <><input ref={fileInput} type="file" multiple hidden onChange={(e) => upload(e.target.files)} /><button className="btn" onClick={mkdir}><FolderPlus />Ordner</button><button className="btn primary" onClick={() => fileInput.current?.click()} disabled={uploading}>{uploading ? <span className="spinner" /> : <Upload />}Hochladen</button></>}
         </div>
       </div>
@@ -100,10 +100,10 @@ export default function FilesPage() {
               <button className="btn icon ghost" onClick={() => setTerminalRuns([])} disabled={!terminalRuns.length || terminalBusy} title="Terminal leeren"><Trash2 /></button>
             </div>
           </Panel>}
-          <Panel title={<span className="row" style={{ gap: 4 }}><button className="btn sm ghost" onClick={() => { setQ(""); setPath(""); }}>workspace</button>{crumbs.map((c, i) => <span key={i} className="row" style={{ gap: 4 }}><span className="muted">/</span><button className="btn sm ghost" onClick={() => setPath(crumbs.slice(0, i + 1).join("/"))}>{c}</button></span>)}</span>} flush foot="Nur der eingerichtete Arbeitsbereich ist erreichbar; Gelöschtes landet in .trash darin.">
-            {(q ? search.loading && !search.data : dir.loading && !dir.data) ? <div className="panel-body"><Skeleton rows={5} /></div> : entries.length === 0 ? <EmptyState icon={<Folder size={26} />} title={q ? "No files match" : "Empty folder"}>{q ? "" : "Upload files here or let an agent create documents."}</EmptyState> : (
+          <Panel title={<span className="row" style={{ gap: 4 }}><button className="btn sm ghost" onClick={() => { setQ(""); setPath(""); }}>Arbeitsbereich</button>{crumbs.map((c, i) => <span key={i} className="row" style={{ gap: 4 }}><span className="muted">/</span><button className="btn sm ghost" onClick={() => setPath(crumbs.slice(0, i + 1).join("/"))}>{c}</button></span>)}</span>} flush foot="Nur der eingerichtete Arbeitsbereich ist erreichbar; Gelöschtes landet in .trash darin.">
+            {(q ? search.loading && !search.data : dir.loading && !dir.data) ? <div className="panel-body"><Skeleton rows={5} /></div> : entries.length === 0 ? <EmptyState icon={<Folder size={26} />} title={q ? "Keine passenden Dateien" : "Leerer Ordner"}>{q ? "" : "Hier Dateien hochladen oder einen Agenten Dokumente erstellen lassen."}</EmptyState> : (
               <table className="table">
-                <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th /></tr></thead>
+                <thead><tr><th>Name</th><th>Größe</th><th>Geändert</th><th /></tr></thead>
                 <tbody>
                   {!q && dir.data?.parent != null && <tr className="clickable" onClick={() => setPath(dir.data!.parent!)}><td colSpan={4} className="muted">..</td></tr>}
                   {entries.map((e) => (
@@ -111,7 +111,7 @@ export default function FilesPage() {
                       <td className="row">{e.is_dir ? <Folder size={15} style={{ color: "var(--accent)" }} /> : <FileText size={15} style={{ color: "var(--text-3)" }} />}<span>{q ? e.path : e.name}</span></td>
                       <td className="num small muted">{e.is_dir ? "—" : bytes(e.size)}</td><td className="small muted">{relative(e.modified_at)}</td>
                       <td className="row" style={{ justifyContent: "flex-end", gap: 2 }} onClick={(ev) => ev.stopPropagation()}>
-                        {!e.is_dir && <a className="btn icon ghost sm" href={dl(e)} title="Download"><Download /></a>}
+                        {!e.is_dir && <a className="btn icon ghost sm" href={dl(e)} title="Herunterladen"><Download /></a>}
                         {!e.is_dir && <button className="btn icon ghost sm" onClick={() => open(e)} title="Vorschau"><Eye /></button>}
                         {!e.is_dir && can("operator") && <button className="btn icon ghost sm" onClick={() => setVersionsFor(e)} title="Versionen"><RotateCcw /></button>}
                         {can("operator") && <><button className="btn icon ghost sm" onClick={() => rename(e)} title="Umbenennen"><Pencil /></button><button className="btn icon ghost sm" onClick={() => move(e)} title="Verschieben"><MoveRight /></button><button className="btn icon ghost sm" onClick={() => remove(e)} title="Löschen"><Trash2 /></button></>}
@@ -122,11 +122,11 @@ export default function FilesPage() {
           </Panel>
         </div>
         <Panel title="Zuletzt & erzeugt" icon={<FileText size={15} />} flush>
-          {!recent.data ? <div className="panel-body"><Skeleton /></div> : recent.data.files.length === 0 ? <EmptyState title="Noch nichts" /> : <div className="list">{recent.data.files.map((f) => { const flags: string[] = f.meta?.security?.flags || []; return <div key={f.id} className="list-item" style={{ padding: "8px 12px" }}><div className="grow small" style={{ minWidth: 0 }}><a className="truncate" style={{ display: "block", color: "inherit" }} href={`${api.base}/api/files/download?path=${encodeURIComponent(f.path)}`}>{f.path}</a><div className="tiny muted">{f.source} · {bytes(f.size)} · {relative(f.updated_at)}{f.task_id && <> · <a href={`/tasks/${f.task_id}`}>task</a></>}{!f.exists && <span style={{ color: "var(--warn)" }}> · missing</span>}</div>{flags.length > 0 && <div className="tiny" style={{ color: "var(--warn)", marginTop: 2 }} title={flags.join(" · ")}>⚠ {flags[0]}</div>}</div></div>; })}</div>}
+          {!recent.data ? <div className="panel-body"><Skeleton /></div> : recent.data.files.length === 0 ? <EmptyState title="Noch nichts" /> : <div className="list">{recent.data.files.map((f) => { const flags: string[] = f.meta?.security?.flags || []; return <div key={f.id} className="list-item" style={{ padding: "8px 12px" }}><div className="grow small" style={{ minWidth: 0 }}><a className="truncate" style={{ display: "block", color: "inherit" }} href={`${api.base}/api/files/download?path=${encodeURIComponent(f.path)}`}>{f.path}</a><div className="tiny muted">{f.source} · {bytes(f.size)} · {relative(f.updated_at)}{f.task_id && <> · <a href={`/tasks/${f.task_id}`}>task</a></>}{!f.exists && <span style={{ color: "var(--warn)" }}> · fehlt</span>}</div>{flags.length > 0 && <div className="tiny" style={{ color: "var(--warn)", marginTop: 2 }} title={flags.join(" · ")}>⚠ {flags[0]}</div>}</div></div>; })}</div>}
         </Panel>
       </div>
       {preview && (
-        <Modal title={preview.entry.name} onClose={() => setPreview(null)} wide foot={<a className="btn" href={dl(preview.entry)}><Download />Download</a>}>
+        <Modal title={preview.entry.name} onClose={() => setPreview(null)} wide foot={<a className="btn" href={dl(preview.entry)}><Download />Herunterladen</a>}>
           {preview.entry.mime.startsWith("image/") ? <img src={`${dl(preview.entry)}&inline=1`} alt={preview.entry.name} style={{ maxWidth: "100%", borderRadius: 8 }} /> :
             preview.entry.mime === "application/pdf" ? <iframe title={preview.entry.name} src={`${dl(preview.entry)}&inline=1`} style={{ width: "100%", height: "60vh", border: 0, borderRadius: 8, background: "#fff" }} /> :
               <pre className="md" style={{ maxHeight: "60vh", overflow: "auto", whiteSpace: "pre-wrap" }}>{preview.content}{preview.truncated && "\n…[truncated]"}</pre>}

@@ -68,3 +68,7 @@ export function tone(status?: string): "ok" | "warn" | "err" | "info" | "muted" 
   if (["offline", "error", "failed", "critical", "rejected", "expired", "cancelled", "canceled", "crashed"].includes(s)) return "err";
   return "muted";
 }
+
+/** Dringlichkeit einer Aufgabe auf Deutsch; die API-Werte bleiben englisch. */
+const PRIORITY_DE: Record<string, string> = { low: "niedrig", normal: "normal", high: "hoch", critical: "kritisch" };
+export const prioLabel = (p?: string) => PRIORITY_DE[(p || "").toLowerCase()] ?? (p || "");

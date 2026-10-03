@@ -15,7 +15,7 @@ function Protected({ children }: { children: ReactElement }) {
 }
 
 const NotFound = () => (
-  <div className="page"><div className="empty"><strong>Not found</strong><span>This route has no module.</span></div></div>
+  <div className="page"><div className="empty"><strong>Nicht gefunden</strong><span>Diese Adresse gehört zu keinem Modul.</span></div></div>
 );
 
 interface Entry { pattern: string; Comp: ComponentType }

@@ -64,7 +64,7 @@ export default function LogsPage() {
         <Panel title={`${rows.length} Einträge`} flush foot={next ? <button className="btn sm" onClick={() => load(true)} disabled={loading}>Ältere laden</button> : "Anfang der gespeicherten Protokolle"}>
           <div ref={listRef} style={{ maxHeight: "calc(100vh - 260px)", overflow: "auto" }}>
             {loading && rows.length === 0 ? <div className="panel-body"><Skeleton rows={6} /></div> : rows.length === 0 ? <EmptyState icon={<ScrollText size={26} />} title="Keine passenden Einträge" /> : (
-              <table className="table" style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
+              <table className="table log-table" style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
                 <tbody>{rows.map((l) => (
                   <tr key={l.id}>
                     <td className="muted" style={{ whiteSpace: "nowrap", width: 90 }} title={dateTime(l.ts)}>{time(l.ts)}</td>
@@ -76,10 +76,10 @@ export default function LogsPage() {
           </div>
         </Panel>
       ) : (
-        <Panel title="Prüfprotokoll" flush foot="Who did what, through which agent and tool, with what result. Audit rows are never trimmed.">
+        <Panel title="Prüfprotokoll" flush foot="Wer was getan hat, über welchen Agenten und welches Werkzeug, mit welchem Ergebnis. Prüfzeilen werden nie gekürzt.">
           {!audit.data ? <div className="panel-body"><Skeleton rows={6} /></div> : audit.data.events.length === 0 ? <EmptyState title="Keine Prüfereignisse" /> : (
             <table className="table" style={{ fontSize: 12.5 }}>
-              <thead><tr><th>When</th><th>Actor</th><th>Agent</th><th>Action</th><th>Tool</th><th>Target</th><th>Status</th><th>Result / error</th></tr></thead>
+              <thead><tr><th>Wann</th><th>Akteur</th><th>Agent</th><th>Aktion</th><th>Werkzeug</th><th>Ziel</th><th>Status</th><th>Ergebnis / Fehler</th></tr></thead>
               <tbody>{audit.data.events.map((a) => (
                 <tr key={a.id}><td className="muted num" style={{ whiteSpace: "nowrap" }}>{dateTime(a.ts)}</td><td>{a.actor_id}<div className="tiny muted">{a.actor_type}</div></td><td className="muted">{a.agent_id || "—"}</td><td><code>{a.action}</code></td><td className="muted">{a.tool || "—"}</td><td className="truncate" style={{ maxWidth: 220 }} title={a.target}>{a.target}</td><td><Badge status={a.status === "ok" ? "ok" : a.status === "denied" ? "warning" : a.status} /></td><td className="small truncate" style={{ maxWidth: 260, color: a.error ? "var(--err)" : undefined }} title={a.error || a.result}>{a.error || a.result}</td></tr>))}</tbody>
             </table>)}
