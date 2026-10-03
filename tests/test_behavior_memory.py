@@ -7,6 +7,8 @@ from memory import behavior_memory as bm
 @pytest.fixture(autouse=True)
 def tmp_rules(tmp_path, monkeypatch):
     monkeypatch.setattr(bm, "BEHAVIOR_PATH", tmp_path / "behavior" / "rules.jsonl")
+    monkeypatch.setattr(bm, "SEED_PATH", tmp_path / "keine_seed.md")
+    monkeypatch.setattr(bm, "_seeded", False)
     yield
 
 
@@ -105,3 +107,45 @@ def test_mirror_is_called_for_new_rule_and_delete(monkeypatch):
     rule = bm.add_rule("Antworte immer kurz und direkt")
     bm.delete_rule(rule["id"])
     assert [bool(c.get("deleted")) for c in calls] == [False, True]
+
+
+def _use_real_seed(monkeypatch):
+    from pathlib import Path
+    seed = Path(bm.__file__).resolve().parent / "behavior_seed.md"
+    monkeypatch.setattr(bm, "SEED_PATH", seed)
+    monkeypatch.setattr(bm, "_seeded", False)
+
+
+def test_real_seed_loads_core_rules_and_all_pass_the_filters(monkeypatch):
+    _use_real_seed(monkeypatch)
+    block = bm.consult("Hallo")
+    assert "Wahrheit vor Zustimmung" in block and "erfinden" in block
+    rules = bm.list_rules()
+    assert len(rules) == 21
+    assert sum(1 for r in rules if r["priority"] == 1) == 5
+
+
+def test_core_rules_apply_to_every_input_and_topic_rules_only_when_relevant(monkeypatch):
+    _use_real_seed(monkeypatch)
+    smalltalk = bm.consult("Wie spät ist es")
+    assert "Wahrheit vor Zustimmung" in smalltalk and "Geschäftsidee" not in smalltalk
+    idea = bm.consult("Ich habe eine neue Geschäftsidee für einen Handwerksservice")
+    assert "SOFORT TESTEN" in idea
+    assert len(idea) <= bm.PROMPT_MAX_CHARS + 250
+
+
+def test_seed_is_loaded_once_and_deleted_rules_stay_deleted(monkeypatch):
+    _use_real_seed(monkeypatch)
+    bm.consult("Hallo")
+    rule = next(r for r in bm.list_rules() if r["priority"] == 0)
+    assert bm.delete_rule(rule["id"])
+    monkeypatch.setattr(bm, "_seeded", False)  # neuer Prozess, gleiche Seed-Datei
+    bm.consult("Hallo")
+    assert rule["id"] not in {r["id"] for r in bm.list_rules()}
+    assert len(bm.list_rules()) == 20
+
+
+def test_trusted_import_may_mention_passwords_but_not_contain_secrets():
+    assert bm.add_rule("Nie ungefragt Passwörter speichern", trusted=True)
+    assert bm.add_rule("Nie ungefragt Passwörter speichern 2") is None
+    assert bm.add_rule("Nutze den Schlüssel sk-abcdefghijklmnop", trusted=True) is None

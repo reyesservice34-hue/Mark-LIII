@@ -42,8 +42,9 @@ BEHAVIOR_PATH = Path(os.environ.get("MIA_BEHAVIOR_PATH")
 _lock = Lock()
 
 MAX_RULE_CHARS = 300
-PROMPT_MAX_RULES = 5
-PROMPT_MAX_CHARS = 700
+PROMPT_MAX_RULES = 8
+PROMPT_MAX_CHARS = 1400
+SEED_PATH = Path(__file__).resolve().parent / "behavior_seed.md"
 PROMOTE_AFTER = 2          # Bestätigungen, bis ein Kandidat aktiv wird
 SIMILARITY_MERGE = 0.6     # Jaccard-Schwelle für "gleiche Regel"
 MIN_RELEVANCE = 1          # Wort-Treffer, ab denen eine nicht-globale Regel greift
@@ -68,6 +69,9 @@ _SCOPE_WORDS = {
     "website": ("website", "homepage", "webseite", "wordpress"),
     "voice": ("sprich", "sprachausgabe", "stimme", "vorlesen"),
     "kunden": ("kunde", "kunden", "kundin", "anfrage"),
+    "ideen": ("geschäftsidee", "geschaeftsidee", "geschäftsmodell", "gründung"),
+    "entscheidung": ("entscheidung", "entscheiden", "entscheidest"),
+    "persoenlich": ("gefühl", "gefuehl", "emotional", "zwischenmenschlich", "belastet"),
 }
 
 # Versuche, Sicherheits-/Absolute Regeln auszuhebeln – nie als Regel speichern.
@@ -79,7 +83,7 @@ _BLOCKED_RE = re.compile(
     re.I,
 )
 _SECRET_RE = re.compile(
-    r"api[_-]?key|token|passwor|passwd|secret|credential|cookie|private[_-]?key|"
+    r"api[_-]?key|token|passw[oö]r|kennwort|passwd|secret|credential|cookie|private[_-]?key|"
     r"sk-[A-Za-z0-9]{10,}|Bearer\s+\S+|BEGIN [A-Z ]*PRIVATE KEY",
     re.I,
 )
@@ -112,8 +116,14 @@ def _rule_id(text: str) -> str:
     return "rule:" + hashlib.sha256(norm.encode("utf-8")).hexdigest()[:12]
 
 
-def _safe(text: str) -> bool:
-    return bool(text) and not _SECRET_RE.search(text) and not _BLOCKED_RE.search(text)
+_SECRET_VALUE_RE = re.compile(r"sk-[A-Za-z0-9]{10,}|Bearer\s+\S+|BEGIN [A-Z ]*PRIVATE KEY", re.I)
+
+
+def _safe(text: str, trusted: bool = False) -> bool:
+    """Vertraute Quellen (Regeldatei des Eigentümers) dürfen Passwörter als THEMA nennen,
+    aber nie echte Geheimnisse enthalten oder Sicherheitsregeln aushebeln."""
+    secret = _SECRET_VALUE_RE if trusted else _SECRET_RE
+    return bool(text) and not secret.search(text) and not _BLOCKED_RE.search(text)
 
 
 # ── Speicher ─────────────────────────────────────────────────────────────────
@@ -185,10 +195,14 @@ def delete_rule(rule_id: str) -> bool:
 
 
 def add_rule(text: str, *, scope: str = "general", status: str = "active",
-             source: str = "user", evidence: str = "") -> dict | None:
-    """Regel speichern bzw. mit ähnlicher bestehender zusammenführen."""
+             source: str = "user", evidence: str = "", priority: int = 0,
+             trusted: bool = False) -> dict | None:
+    """Regel speichern bzw. mit ähnlicher bestehender zusammenführen.
+
+    priority=1 markiert Kernregeln, die bei jeder Eingabe gelten.
+    """
     text = " ".join(str(text or "").split())[:MAX_RULE_CHARS]
-    if not _safe(text):
+    if not _safe(text, trusted):
         return None
     state = _load_all()
     existing = state.get(_rule_id(text))
@@ -204,12 +218,13 @@ def add_rule(text: str, *, scope: str = "general", status: str = "active",
             row["status"] = "active"
         if status == "active" and existing.get("status") != "active":
             row["text"] = text  # ausdrückliche Formulierung ersetzt den Kandidaten
+        row["priority"] = max(int(row.get("priority", 0)), priority)
         row["updated"] = _now()
     else:
         row = {
             "id": _rule_id(text), "text": text, "scope": scope, "status": status,
             "source": source, "evidence": evidence[:200], "confirmations": 1,
-            "created": _now(), "updated": _now(),
+            "priority": priority, "created": _now(), "updated": _now(),
         }
     _append(row)
     return row
@@ -219,25 +234,62 @@ def add_rule(text: str, *, scope: str = "general", status: str = "active",
 _BULLET_RE = re.compile(r"^\s*(?:[-*•–]|\d+[.)])\s+(.+)$")
 
 
-def import_rules(text: str, source: str = "file") -> dict:
+def import_rules(text: str, source: str = "file", trusted: bool = False,
+                 skip_existing: bool = False) -> dict:
     """Regeldatei einlesen: jede Aufzählungszeile (-, *, •, 1.) wird eine aktive Regel.
 
-    Überschriften und Fließtext werden übersprungen; Geheimnisse und Versuche,
-    Sicherheitsregeln auszuhebeln, verwirft add_rule wie überall.
+    "- [kern] …" markiert eine Kernregel (gilt bei jeder Eingabe). Überschriften und
+    Fließtext werden übersprungen; Geheimnisse und Versuche, Sicherheitsregeln
+    auszuhebeln, verwirft add_rule wie überall.
     """
     imported = skipped = 0
+    existing = _load_all() if skip_existing else {}
     for line in str(text or "").splitlines():
         m = _BULLET_RE.match(line)
         if not m:
             continue
         rule = m.group(1).strip().strip("*_ ")
+        priority = 0
+        if rule.lower().startswith("[kern]"):
+            rule, priority = rule[6:].strip(), 1
         if len(rule) < 8:
             continue
-        if add_rule(rule, scope=_detect_scope(rule), status="active", source=source):
+        if skip_existing and _rule_id(rule[:MAX_RULE_CHARS]) in existing:
+            continue
+        if add_rule(rule, scope=_detect_scope(rule), status="active", source=source,
+                    priority=priority, trusted=trusted):
             imported += 1
         else:
             skipped += 1
     return {"imported": imported, "skipped": skipped}
+
+
+_seeded = False
+
+
+def ensure_seed() -> None:
+    """Mitgelieferte Grundregeln (behavior_seed.md) einmal je Dateistand laden.
+
+    Eine Marker-Datei neben rules.jsonl merkt sich den Datei-Hash; vom Nutzer gelöschte
+    Regeln kommen deshalb erst zurück, wenn die Seed-Datei selbst geändert wurde.
+    """
+    global _seeded
+    if _seeded:
+        return
+    _seeded = True
+    try:
+        if not SEED_PATH.exists():
+            return
+        raw = SEED_PATH.read_text(encoding="utf-8")
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+        marker = BEHAVIOR_PATH.with_suffix(".seeded")
+        if marker.exists() and marker.read_text(encoding="utf-8").strip() == digest:
+            return
+        import_rules(raw, source="seed", trusted=True, skip_existing=True)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(digest, encoding="utf-8")
+    except Exception as exc:
+        print(f"[Behavior] seed failed: {exc}")
 
 
 # ── Lernen ───────────────────────────────────────────────────────────────────
@@ -280,13 +332,21 @@ def learn_from_turn(user_text: str) -> dict | None:
 # ── Abruf ────────────────────────────────────────────────────────────────────
 def consult(user_text: str, limit: int = PROMPT_MAX_RULES,
             max_chars: int = PROMPT_MAX_CHARS) -> str:
-    """Passende aktive Regeln als Prompt-Block; leer, wenn nichts greift."""
+    """Passende aktive Regeln als Prompt-Block; leer, wenn nichts greift.
+
+    Kernregeln (priority=1) stehen immer zuerst; danach folgen die zur Anfrage passenden.
+    """
+    ensure_seed()
     active = list_rules("active")
     if not active:
         return ""
     qwords = _words(user_text)
+    core = sorted((r for r in active if int(r.get("priority", 0)) >= 1),
+                  key=lambda r: r.get("created", ""))
     scored: list[tuple[int, int, dict]] = []
     for r in active:
+        if int(r.get("priority", 0)) >= 1:
+            continue
         rwords = _words(r.get("text", "")) | _words(r.get("evidence", ""))
         hits = len(qwords & rwords)
         if not qwords or r.get("scope", "general") == "general" or hits >= MIN_RELEVANCE:
@@ -296,10 +356,12 @@ def consult(user_text: str, limit: int = PROMPT_MAX_RULES,
     scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
 
     lines, used = [], 0
-    for _, _, r in scored[:limit]:
+    for r in core + [t[2] for t in scored]:
+        if len(lines) >= limit:
+            break
         line = f"- {r['text']}"
         if used + len(line) > max_chars:
-            break
+            continue  # zu lange Regel überspringen, kürzere dürfen noch passen
         lines.append(line)
         used += len(line) + 1
     if not lines:
