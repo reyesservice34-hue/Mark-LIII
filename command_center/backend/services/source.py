@@ -49,7 +49,9 @@ MAX_LIST = 400
 # sondern Geheimnisse und Zustand — und ein Werkzeug, das die .env schreiben
 # darf, kann jeden Schlüssel des Servers ausleiten.
 VERBOTEN = (".env", ".git/", "data/", "node_modules/", "__pycache__/",
-            "config/api_keys.json", "backend/static/")
+            "config/api_keys.json", "backend/static/",
+            "command_center/.env", "command_center/data/", "command_center/config/api_keys.json",
+            "command_center/backend/static/", "command_center/web/node_modules/")
 
 EXTERNE_NUR_LESEN_PFADE = ("Mark-LIII", "root/Mark-LIII")
 
@@ -86,23 +88,27 @@ def unavailable_reason() -> str:
 def _pruefe_pfad(rel: str) -> str:
     """Einen Pfad auf das Arbeitsverzeichnis festnageln — vor jedem Zugriff."""
     rel = (rel or "").strip().lstrip("/")
-    if not rel:
+    if not rel or "\x00" in rel:
         raise SourceError("Es fehlt der Pfad der Datei.")
-    if any(rel == prefix or rel.startswith(prefix + "/")
-           for prefix in EXTERNE_NUR_LESEN_PFADE):
-        raise SourceError(
-            f"{rel} gehört zum getrennten Projekt Mark-LIII und ist in MIA nur lesbar. "
-            "Das ist keine fehlende Root- oder Ausführungsberechtigung. Nutze zum Lesen "
-            "source.read bzw. filesystem.read; Änderungen müssen im Projekt selbst erfolgen.")
     root = source_dir()
     if root is None:
         raise SourceError(unavailable_reason())
     ziel = (root / rel).resolve()
     try:
-        ziel.relative_to(root)
+        posix = ziel.relative_to(root).as_posix()
     except ValueError:
         raise SourceError(f"{rel} liegt außerhalb des Quelltexts — abgelehnt.") from None
-    posix = ziel.relative_to(root).as_posix()
+    # Alle Prüfungen laufen auf dem aufgelösten Pfad (wie cc_autonomy.allows_path),
+    # damit `./x`, `a/../x` oder Symlinks keine Liste umgehen.
+    if any(posix == prefix or posix.startswith(prefix + "/")
+           for prefix in EXTERNE_NUR_LESEN_PFADE):
+        raise SourceError(
+            f"{posix} gehört zum getrennten Projekt Mark-LIII und ist in MIA nur lesbar. "
+            "Das ist keine fehlende Root- oder Ausführungsberechtigung. Nutze zum Lesen "
+            "source.read bzw. filesystem.read; Änderungen müssen im Projekt selbst erfolgen.")
+    teile = posix.split("/")
+    if any(t == ".git" or t == ".env" or t.startswith(".env.") for t in teile):
+        raise SourceError(f"{posix} ist gesperrt (Git-Interna bzw. .env-Datei).")
     for tabu in VERBOTEN:
         if posix == tabu.rstrip("/") or posix.startswith(tabu):
             raise SourceError(
@@ -222,11 +228,27 @@ class SourceService:
             raise SourceError("Der Inhalt ist zu groß für eine Quelltextdatei.")
         await self._sauber(posix)
 
-        datei = source_dir() / posix                     # type: ignore[operator]
+        root = source_dir()
+        datei = root / posix                             # type: ignore[operator]
         neu = not datei.exists()
+        tmp: Path | None = None
         try:
             datei.parent.mkdir(parents=True, exist_ok=True)
-            datei.write_text(inhalt, encoding="utf-8")
+            # TOCTOU: Elternpfad nach dem mkdir erneut auflösen und prüfen, dann
+            # atomar über eine Temp-Datei im selben Ordner ersetzen. os.replace
+            # ersetzt einen Symlink am Ziel selbst, statt ihm zu folgen.
+            try:
+                datei.parent.resolve().relative_to(root)  # type: ignore[arg-type]
+            except ValueError:
+                raise SourceError(f"{posix} liegt außerhalb des Quelltexts — abgelehnt.") from None
+            if datei.is_symlink():
+                raise SourceError(f"{posix} ist ein Symlink — Schreiben abgelehnt.")
+            tmp = datei.parent / f".{datei.name}.{os.getpid()}.tmp"
+            tmp.write_text(inhalt, encoding="utf-8")
+            if datei.exists():
+                os.chmod(tmp, datei.stat().st_mode & 0o777)
+            os.replace(tmp, datei)
+            tmp = None
         except PermissionError as exc:
             raise SourceError(
                 f"Schreibzugriff auf {posix} wurde vom Betriebssystem abgelehnt. "
@@ -234,6 +256,9 @@ class SourceService:
                 "ein Ausführungsverbot. Prüfe Eigentümer und Gruppenrechte von "
                 f"{datei.parent}; führe die Datei nicht in einem anderen Ordner aus. "
                 f"Technisches Detail: {exc}") from None
+        finally:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
 
         code, out = await self._git("add", "--", posix)
         if code != 0:

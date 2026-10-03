@@ -7,8 +7,8 @@ services:
       LOCAL_LLM_MODEL: qwen2.5:7b
       SPEACHES_URL: http://mia-speaches-kerstin:8000
       STT_MODEL: Systran/faster-whisper-base
-      TTS_MODEL: speaches-ai/piper-de_DE-thorsten-medium
-      TTS_VOICE: thorsten
+      TTS_MODEL: speaches-ai/piper-de_DE-kerstin-low
+      TTS_VOICE: kerstin
     ports:
       - "127.0.0.1:8006:8000"
     extra_hosts:

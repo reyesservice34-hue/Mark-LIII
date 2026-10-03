@@ -330,7 +330,7 @@ class McpRegistry:
                 category=f"mcp:{slug}",
                 # Fremder Code auf einem fremden Rechner: hoch eingestuft, bis
                 # der Betreiber dieses Servers ausdrücklich etwas anderes sagt.
-                risk="high" if needs_approval else "medium",
+                risk="high",
                 requires_approval=needs_approval,
                 source=f"mcp:{slug}",
                 handler=handler,

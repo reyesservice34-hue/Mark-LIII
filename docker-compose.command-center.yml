@@ -28,6 +28,7 @@ services:
     environment:
       JARVIS_CC_DATA_DIR: /data
       JARVIS_CC_WORKSPACE_DIR: /data/workspace
+      JARVIS_PUBLIC_URL: https://jarvis.jarvis-reyes.de
       # 2026-09-29 (user, explicit): match main.py's configured Gemini Live voice
       # (memory/config_manager.py voice_name="Aoede") instead of this service's
       # own default ("Puck") — same MIA must sound the same everywhere.
@@ -76,17 +77,25 @@ services:
       - ./command_center/backend/ai/chain.py:/app/command_center/backend/ai/chain.py:ro
       - ./command_center/backend/ai/openai_compat.py:/app/command_center/backend/ai/openai_compat.py:ro
       - ./command_center/backend/orchestrator/runtime.py:/app/command_center/backend/orchestrator/runtime.py:ro
+      # 2026-10-03: freellm-Anbieter (config.py) und Sicherheitsfixes (Secret-Maskierung, cc_autonomy-Allow-list, MCP-Risiko)
+      - ./command_center/backend/config.py:/app/command_center/backend/config.py:ro
+      - ./command_center/backend/services/approvals.py:/app/command_center/backend/services/approvals.py:ro
+      - ./command_center/backend/services/cc_autonomy.py:/app/command_center/backend/services/cc_autonomy.py:ro
+      - ./command_center/backend/services/mcp.py:/app/command_center/backend/services/mcp.py:ro
       # 2026-09-29: Portierung main.py-Tools (v2-Plan) — neues Modul, muss mitgemountet werden
       - ./command_center/backend/orchestrator/mark_liii_tools.py:/app/command_center/backend/orchestrator/mark_liii_tools.py:ro
       - ./command_center/backend/app.py:/app/command_center/backend/app.py:ro
       - ./command_center/backend/db.py:/app/command_center/backend/db.py:ro
       - ./command_center/backend/services/auto_learning.py:/app/command_center/backend/services/auto_learning.py:ro
+      - ./command_center/backend/services/memory_sources.py:/app/command_center/backend/services/memory_sources.py:ro
       - ./command_center/backend/services/selfext.py:/app/command_center/backend/services/selfext.py:ro
       - ./command_center/backend/services/source.py:/app/command_center/backend/services/source.py:ro
       - ./command_center/backend/services/core_evolution.py:/app/command_center/backend/services/core_evolution.py:ro
       - ./command_center/backend/services/self_healing.py:/app/command_center/backend/services/self_healing.py:ro
       - ./command_center/backend/orchestrator/agent_registry.py:/app/command_center/backend/orchestrator/agent_registry.py:ro
       - ./command_center/backend/orchestrator/builtin_tools.py:/app/command_center/backend/orchestrator/builtin_tools.py:ro
+      # PDF/Excel/einfache Grafiken im Chat erzeugen (2026-10-02, braucht reportlab/openpyxl/Pillow im Image)
+      - ./command_center/backend/services/doc_render.py:/app/command_center/backend/services/doc_render.py:ro
       - ./command_center/backend/app.py:/app/command_center/backend/app.py:ro
       - ./command_center/backend/db.py:/app/command_center/backend/db.py:ro
       - ./command_center/backend/services/learning.py:/app/command_center/backend/services/learning.py:ro
@@ -98,6 +107,10 @@ services:
       - ./command_center/backend/services/reminders.py:/app/command_center/backend/services/reminders.py:ro
       - ./command_center/backend/services/local_warmup.py:/app/command_center/backend/services/local_warmup.py:ro
       - ./command_center/backend/services/files.py:/app/command_center/backend/services/files.py:ro
+      # Dateiversionierung: .versions/ + file_versions-Tabelle, Endpunkte dafuer (2026-10-02)
+      - ./command_center/backend/modules/files/__init__.py:/app/command_center/backend/modules/files/__init__.py:ro
+      # Dateisicherheitspruefung: Magic-Bytes, Makros, ZIP-Slip, XXE vor jedem Upload/Schreiben (2026-10-02)
+      - ./command_center/backend/services/file_security.py:/app/command_center/backend/services/file_security.py:ro
       # MIA Windows/PowerShell Bridge (2026-09-22)
       - ./command_center/backend/services/installer.py:/app/command_center/backend/services/installer.py:ro
       - ./command_center/backend/modules/desktop/__init__.py:/app/command_center/backend/modules/desktop/__init__.py:ro
@@ -110,6 +123,9 @@ services:
       - ./command_center/backend/modules/auth/__init__.py:/app/command_center/backend/modules/auth/__init__.py:ro
       # Google-Kalender lesen UND schreiben (2026-09-20), Zeit in Berlin. Ebenfalls ohne Neubau eingehaengt.
       - ./command_center/backend/services/calendar_service.py:/app/command_center/backend/services/calendar_service.py:ro
+      # Kalender: Geburtstag als eigenes Feld, unabhaengig von category (2026-10-02)
+      - ./plugins/_calendar_core.py:/app/plugins/_calendar_core.py:ro
+      - ./command_center/backend/services/classify.py:/app/command_center/backend/services/classify.py:ro
       - ./command_center/backend/modules/calendar/__init__.py:/app/command_center/backend/modules/calendar/__init__.py:ro
       - ./command_center/backend/modules/heartbeat/__init__.py:/app/command_center/backend/modules/heartbeat/__init__.py:ro
       # Buchhalter-Agent (2026-09-20): Lexware-Client und -Werkzeuge, Belegleser, Anhaenge aus Mails, Postfach-Ueberwachung.
@@ -118,6 +134,12 @@ services:
       - ./command_center/backend/services/email_service.py:/app/command_center/backend/services/email_service.py:ro
       - ./command_center/backend/orchestrator/lexware_tools.py:/app/command_center/backend/orchestrator/lexware_tools.py:ro
       - ./command_center/backend/modules/buchhaltung/__init__.py:/app/command_center/backend/modules/buchhaltung/__init__.py:ro
+      # Lexware-Agent jetzt echt registriert, Buchhaltungs-Scheduler findet ihn (2026-10-02)
+      - ./command_center/backend/modules/teach/__init__.py:/app/command_center/backend/modules/teach/__init__.py:ro
+      # Agenten Office: Board-Uebersicht + Rechte pro Agent und fuer Mia (2026-10-02)
+      - ./command_center/backend/modules/agents_office/__init__.py:/app/command_center/backend/modules/agents_office/__init__.py:ro
+      # Lexware jetzt in der zentralen Integrationen-Uebersicht sichtbar (2026-10-02)
+      - ./command_center/backend/adapters/integrations.py:/app/command_center/backend/adapters/integrations.py:ro
       # Spracherkennung mit Wortvorrat-Hinweis (2026-09-20)
       - ./command_center/backend/services/voice_service.py:/app/command_center/backend/services/voice_service.py:ro
       # Standort/Puenktlichkeit (2026-09-20)
@@ -125,6 +147,8 @@ services:
       - ./command_center/backend/modules/meldungen/__init__.py:/app/command_center/backend/modules/meldungen/__init__.py:ro
       - ./command_center/backend/services/notifications.py:/app/command_center/backend/services/notifications.py:ro
       - ./command_center/backend/services/phone.py:/app/command_center/backend/services/phone.py:ro
+      - ./command_center/backend/services/whatsapp.py:/app/command_center/backend/services/whatsapp.py:ro
+      - ./command_center/backend/modules/whatsapp/__init__.py:/app/command_center/backend/modules/whatsapp/__init__.py:ro
       - ./command_center/backend/modules/__init__.py:/app/command_center/backend/modules/__init__.py:ro
       # Der lokale Kalender-Spiegel gehoert aufs dauerhafte Volume: sonst ist er nach jedem Neustart leer und alle
       # Kategorien werden neu per Sprachmodell bestimmt (kostet Geld und dauert).

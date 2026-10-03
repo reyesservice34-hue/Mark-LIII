@@ -88,7 +88,39 @@ def _gemini():
                           model=_model_for("gemini", "GEMINI_MODEL", "gemini-flash-latest"))
 
 
-_FACTORIES = {"anthropic": _anthropic, "openai": _openai, "local": _local, "gemini": _gemini}
+def _freellm():
+    """freellmapi router (unified key, /v1 proxy over free providers), with the
+    local Ollama as last-resort fallback when LOCAL_LLM_URL is configured."""
+    from .chain import ChainProvider
+    from .openai_compat import OpenAICompatProvider
+    url = os.environ.get("FREELLM_URL", "").strip()
+    key = os.environ.get("FREELLM_API_KEY", "").strip()
+    # Missing and empty both mean "not configured" -> build_provider returns None.
+    if not url:
+        raise KeyError("FREELLM_URL")
+    if not key:
+        raise KeyError("FREELLM_API_KEY")
+    primary = OpenAICompatProvider(
+        provider_id="freellm",
+        base_url=url,
+        api_key=key,
+        model=_model_for("freellm", "FREELLM_MODEL", "auto:smart"))
+    primary.include_usage = True
+    provs, labels = [primary], ["freellmapi"]
+    if os.environ.get("LOCAL_LLM_URL"):
+        # Deliberately not _model_for("local", ...): with JARVIS_AI_PROVIDER=freellm
+        # the JARVIS_AI_MODEL override belongs to the primary only.
+        provs.append(OpenAICompatProvider(
+            provider_id="local",
+            base_url=os.environ["LOCAL_LLM_URL"],
+            api_key=os.environ.get("LOCAL_LLM_API_KEY", ""),
+            model=os.environ.get("LOCAL_LLM_MODEL", "").strip() or "llama3.2"))
+        labels.append("Ollama")
+    return ChainProvider(provs, labels)
+
+
+_FACTORIES = {"anthropic": _anthropic, "openai": _openai, "local": _local, "gemini": _gemini,
+              "freellm": _freellm}
 
 
 def build_provider(name: str) -> LLMProvider | None:

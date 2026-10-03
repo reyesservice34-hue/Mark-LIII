@@ -88,7 +88,7 @@ class AutoLearningService:
             self.state.services["notifications"].notify(
                 category="agent", severity="success", title="MIA hat eine Arbeitsweise gelernt",
                 body=f"Nach {count} erfolgreichen Wiederholungen: {promoted_skill}. Als Skill und Procedure gespeichert.",
-                link="/teach")
+                link="/teach", meta={"call": True})
             out.update({"promoted_skill": promoted_skill, "procedure_id": procedure_id})
 
         if count >= 5 and not specialist_notified:
@@ -98,7 +98,7 @@ class AutoLearningService:
                 category="agent", severity="info", title="Spezialist sinnvoll",
                 body=(f"MIA hat denselben Ablauf {count}× erfolgreich ausgeführt ({signature[:180]}). "
                       "Die Procedure ist stabil genug, um daraus bei Bedarf einen Spezialagenten abzuleiten."),
-                link="/teach")
+                link="/teach", meta={"call": True})
             out["specialist_candidate"] = True
         return out
 

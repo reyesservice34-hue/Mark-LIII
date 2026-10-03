@@ -348,6 +348,26 @@ class ComposioIntegration(IntegrationAdapter):
         return await ComposioService().health()
 
 
+class LexwareIntegration(IntegrationAdapter):
+    """Buchhaltung/Lexware Office — derselbe Client, den der Lexware-Agent benutzt.
+
+    Ein echter Aufruf (Firmenprofil), nicht nur "Schlüssel gesetzt": Ein falscher oder abgelaufener
+    Schlüssel soll hier als Fehler erscheinen, nicht als "configured".
+    """
+
+    async def check(self) -> dict:
+        from ..services.lexware import Lexware, LexwareError
+        lx = Lexware()
+        if not lx.configured():
+            return {"status": "not_configured", "detail": lx.unavailable_reason()}
+        try:
+            profile = await lx.profile()
+        except LexwareError as e:
+            return {"status": "offline", "detail": str(e)}
+        name = profile.get("companyName") or "Firma ohne Namen"
+        return {"status": "healthy", "detail": f"verbunden als {name}"}
+
+
 class DesktopChannelIntegration(IntegrationAdapter):
     """A capability the server borrows from a paired desktop.
 
@@ -453,6 +473,9 @@ DEFAULT_ADAPTERS: list[IntegrationAdapter] = [
                         ["hosted OAuth for a few hundred services", "tool catalogue", "execute a tool"],
                         required_env=["COMPOSIO_API_KEY"],
                         optional_env=["COMPOSIO_USER_ID", "COMPOSIO_BASE_URL"], icon="plug"),
+    LexwareIntegration("lexware", "Lexware Office", "finance",
+                       ["Belege lesen/anlegen", "Kontakte", "Dubletten", "Umsatzsteuer-Entwurf"],
+                       required_env=["LEXWARE_API_KEY"], icon="file-text"),
     DesktopChannelIntegration("whatsapp", "WhatsApp (through the paired PC)", "communication",
                               ["voice notes in your own voice", "text messages"],
                               action="whatsapp", icon="message-circle"),

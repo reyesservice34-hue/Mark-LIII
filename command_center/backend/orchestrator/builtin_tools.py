@@ -8,13 +8,16 @@ from __future__ import annotations
 
 import asyncio
 import html
+import ipaddress
 import json
 import os
 import re
 import shutil
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -180,17 +183,89 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
     async def document_create(ctx: ToolContext, args: dict):
         title = str(args["title"]).strip()
         slug = re.sub(r"[^a-zA-Z0-9äöüÄÖÜß_-]+", "-", title).strip("-")[:60] or "document"
-        ext = "md" if str(args.get("format", "markdown")).lower() in ("markdown", "md") else "txt"
-        path = f"documents/{datetime.now(timezone.utc).strftime('%Y-%m-%d')}_{slug}.{ext}"
-        info = files.write_text(path, str(args["content"]), source=f"agent:{ctx.agent_id}",
-                                owner=ctx.principal.actor, task_id=ctx.task_id, overwrite=False)
+        fmt = str(args.get("format", "markdown")).lower()
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if fmt == "pdf":
+            from ..services.doc_render import RenderError, markdown_to_pdf
+            try:
+                data = markdown_to_pdf(title, str(args["content"]))
+            except RenderError as e:
+                return str(e), False
+            path = f"documents/{stamp}_{slug}.pdf"
+            info = files.write_bytes(path, data, source=f"agent:{ctx.agent_id}",
+                                     owner=ctx.principal.actor, task_id=ctx.task_id, overwrite=False)
+        else:
+            ext = "md" if fmt in ("markdown", "md") else "txt"
+            path = f"documents/{stamp}_{slug}.{ext}"
+            info = files.write_text(path, str(args["content"]), source=f"agent:{ctx.agent_id}",
+                                    owner=ctx.principal.actor, task_id=ctx.task_id, overwrite=False)
         ctx.emit("file", {"text": f"Document created: {info['path']}", "path": info["path"]})
         return {"path": info["path"], "size": info["size"], "download": f"/api/files/download?path={info['path']}"}
 
-    reg.register(ToolSpec("document.create", "Create a document (offer, letter, report, notes) in the workspace.",
-                          _obj({"title": _s("document title"), "content": _s("full document text"),
-                                "format": _s("markdown (default) or text")}, ["title", "content"]),
+    reg.register(ToolSpec("document.create", "Create a document (offer, letter, report, notes) in the workspace, "
+                          "as markdown/text or as a real formatted PDF.",
+                          _obj({"title": _s("document title"), "content": _s(
+                              "full document text. For format=pdf: '# ' and '## ' lines become headings, "
+                              "'- '/'* ' lines become bullet points, blank lines separate paragraphs."),
+                                "format": _s("markdown (default), text, or pdf")}, ["title", "content"]),
                           category="documents", risk="medium", handler=document_create))
+
+    async def document_create_excel(ctx: ToolContext, args: dict):
+        from ..services.doc_render import RenderError, rows_to_excel
+        sheets = args.get("sheets")
+        if not isinstance(sheets, list) or not sheets:
+            return "sheets must be a non-empty list of {name, headers, rows}.", False
+        title = str(args.get("title") or "tabelle").strip()
+        slug = re.sub(r"[^a-zA-Z0-9äöüÄÖÜß_-]+", "-", title).strip("-")[:60] or "tabelle"
+        try:
+            data = rows_to_excel(sheets)
+        except RenderError as e:
+            return str(e), False
+        path = f"documents/{datetime.now(timezone.utc).strftime('%Y-%m-%d')}_{slug}.xlsx"
+        info = files.write_bytes(path, data, source=f"agent:{ctx.agent_id}", owner=ctx.principal.actor,
+                                 task_id=ctx.task_id, overwrite=False)
+        ctx.emit("file", {"text": f"Excel file created: {info['path']}", "path": info["path"]})
+        return {"path": info["path"], "size": info["size"], "download": f"/api/files/download?path={info['path']}"}
+
+    reg.register(ToolSpec(
+        "document.create_excel", "Create a real .xlsx Excel workbook with one or more sheets.",
+        _obj({"title": _s("file title, used for the filename"),
+             "sheets": {"type": "array", "description": "list of sheets",
+                        "items": _obj({"name": _s("sheet name"),
+                                      "headers": {"type": "array", "items": {"type": "string"},
+                                                 "description": "column headers, bold in row 1"},
+                                      "rows": {"type": "array", "description": "rows of cell values",
+                                              "items": {"type": "array"}}}, ["rows"])}},
+            ["sheets"]),
+        category="documents", risk="medium", handler=document_create_excel))
+
+    async def image_create(ctx: ToolContext, args: dict):
+        from ..services.doc_render import RenderError, make_image
+        title = str(args.get("title") or "bild").strip()
+        slug = re.sub(r"[^a-zA-Z0-9äöüÄÖÜß_-]+", "-", title).strip("-")[:60] or "bild"
+        lines = [str(x) for x in (args.get("lines") or [])][:30]
+        try:
+            data = make_image(title=title, lines=lines, width=int(args.get("width") or 1200),
+                              height=int(args.get("height") or 800), bg=str(args.get("background") or "#141619"),
+                              fg=str(args.get("text_color") or "#f7f2ec"), accent=str(args.get("accent") or "#ffb56e"))
+        except RenderError as e:
+            return str(e), False
+        path = f"documents/{datetime.now(timezone.utc).strftime('%Y-%m-%d')}_{slug}.png"
+        info = files.write_bytes(path, data, source=f"agent:{ctx.agent_id}", owner=ctx.principal.actor,
+                                 task_id=ctx.task_id, overwrite=False)
+        ctx.emit("file", {"text": f"Image created: {info['path']}", "path": info["path"]})
+        return {"path": info["path"], "size": info["size"], "download": f"/api/files/download?path={info['path']}"}
+
+    reg.register(ToolSpec(
+        "image.create", "Create a SIMPLE GENERATED GRAPHIC (title + text lines on a styled background, PNG) — "
+        "NOT photorealistic AI image generation, no such provider is configured here. Good for a title card, "
+        "a simple certificate, a quote card, a schematic — not for a photo or realistic illustration.",
+        _obj({"title": _s("the graphic's title, also used for the filename"),
+             "lines": {"type": "array", "items": {"type": "string"}, "description": "body text lines, in order"},
+             "width": _i("pixels, default 1200"), "height": _i("pixels, default 800"),
+             "background": _s("hex color, e.g. #141619"), "text_color": _s("hex color, e.g. #f7f2ec"),
+             "accent": _s("hex color for the border/rule, e.g. #ffb56e")}, ["title"]),
+        category="documents", risk="low", handler=image_create))
 
     # ── tasks ────────────────────────────────────────────────────────────
     async def task_create(ctx: ToolContext, args: dict):
@@ -361,31 +436,125 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                                 "sofort": {"type": "boolean", "description": "ignore the cool-down (only if the last call was about something else)"}},
                                ["message"]), category="communication", risk="medium", handler=notify_call, timeout_seconds=40))
 
+    async def notify_call_kunde(ctx: ToolContext, args: dict):
+        from ..services import phone
+        r = await phone.call_contact(str(args["empfaenger"]), str(args["message"]))
+        return (r["hinweis"], bool(r["angerufen"]))
+
+    reg.register(ToolSpec("notify.call_kunde", "Call a customer or anyone other than the user and read a "
+                          "message aloud, via Twilio voice (business line, not the user's own phone). ALWAYS "
+                          "needs the user's approval before dialing: show the finished text and the recipient's "
+                          "number and wait for the yes. Tells you if calling is not set up (needs TWILIO_FROM).",
+                          _obj({"message": _s("what to say, in German, short sentences, first person, no markdown"),
+                                "empfaenger": _s("recipient's phone number, international format, e.g. +4917612345678")},
+                               ["message", "empfaenger"]),
+                          category="communication", risk="high", requires_approval=True,
+                          handler=notify_call_kunde, timeout_seconds=40))
+
+    async def notify_whatsapp_kunde(ctx: ToolContext, args: dict):
+        from ..services import whatsapp
+        to = whatsapp.normalize_phone(str(args["empfaenger"]))
+        if not to:
+            return ("Ungültige Telefonnummer.", False)
+        r = await whatsapp.send_whatsapp(to, str(args["message"]))
+        return (r["hinweis"], bool(r["gesendet"]))
+
+    reg.register(ToolSpec("notify.whatsapp_kunde", "Send a WhatsApp message to a customer or anyone other than "
+                          "the user, via the business WhatsApp number (Twilio) — not the desktop's personal "
+                          "WhatsApp Web (that is notify.whatsapp_kontakt, needs a linked PC). ALWAYS needs the "
+                          "user's approval before anything is sent: show the finished text and the recipient "
+                          "and wait for the yes.",
+                          _obj({"message": _s("the finished message, ready to send"),
+                                "empfaenger": _s("recipient's phone number, international format, e.g. +4917612345678")},
+                               ["message", "empfaenger"]),
+                          category="communication", risk="high", requires_approval=True,
+                          handler=notify_whatsapp_kunde, timeout_seconds=30))
+
     async def memory_remember(ctx: ToolContext, args: dict):
-        from ..modules.memory import learning_mode_enabled
-        if not learning_mode_enabled(st):
+        from ..modules import memory as mem
+        from ..services.memory_sources import safe
+        if not mem.learning_mode_enabled(st):
             return {"stored": False, "reason": "Lernmodus ist ausgeschaltet."}
-        row_id = new_id("mem")
-        st.db.insert("memory", {"id": row_id, "text": str(args["text"])[:4000], "actor": ctx.principal.actor,
-                                "conversation_id": ctx.conversation_id, "created_at": now_iso()})
-        try:
-            # Sofort einen Bedeutungs-Vektor anlegen. Klappt das nicht, holt die Suche es später nach.
-            from ..ai import embeddings as _emb
-            await _emb.index_one(st.db, row_id, str(args["text"])[:4000])
-        except Exception:  # noqa: BLE001
-            pass
+        kind = args.get("kind") if args.get("kind") in mem.KINDS else "fact"
+        claim = args.get("claim") if args.get("claim") in mem.CLAIMS else "inferred"
+        if kind == "correction" and not str(args.get("why") or "").strip():
+            return ("Eine Korrektur braucht einen Grund (why): ein Satz, warum es so richtig ist. "
+                    "Ohne ihn wendet sie sich später falsch an."), False
+        statement = " ".join(str(args.get("text") or "").split())
+        text = mem.compose_text(statement, kind, str(args.get("why") or ""))
+        if not text:
+            return "Kein Text zum Merken übergeben.", False
+        if not safe(text):
+            return ("Nicht gemerkt: Der Satz enthält ein Muster für Zugangsdaten (Passwort, Schlüssel, IBAN …). "
+                    "Solche Angaben werden nie gespeichert."), False
+        p = ctx.principal
+        # Gesagtes des Nutzers, das in seinen echten Chat-Worten steht, wird sofort gemerkt.
+        # Alles andere (eigene Schlüsse, Webseiten, Mails, Tool-Ergebnisse) ist nur ein Vorschlag.
+        # Der Abgleich mit den Nutzerworten läuft gegen den Satz ohne den angehängten Grund,
+        # denn der Grund stammt von Mia, nicht vom Nutzer.
+        if mem.route_remember(st, p, ctx.conversation_id, statement, claim) == "propose":
+            status, row = mem.propose(st, text=text, kind=kind, source="inferred", actor=p.actor,
+                                      conversation_id=ctx.conversation_id)
+            if status == "duplicate":
+                return f"Steht schon im Gedächtnis oder als Vorschlag: {row['text'][:120]}"
+            if status == "full":
+                return ("Es liegen schon viele Vorschläge offen. Der Nutzer sieht sie im Dashboard unter "
+                        "Gedächtnis; neue folgen, sobald dort aufgeräumt ist.")
+            return ("Als Vorschlag notiert (noch nicht gemerkt). Frag den Nutzer in einem Satz: "
+                    "\"Soll ich mir merken: …?\" und übernimm ihn mit memory.proposal_accept, "
+                    "sobald er mit Ja antwortet. Er kann ihn auch im Dashboard bestätigen.")
+        dup = mem.find_similar(st.db, text, include_proposals=False)
+        if dup:
+            return f"Steht schon im Gedächtnis: {dup['text'][:120]}"
+        row = mem.store_fact(st, text=text, kind=kind, source="user", actor=p.actor,
+                             conversation_id=ctx.conversation_id)
+        await mem.index_fact(st, row)
         if args.get("core"):
+            # Das Hauptgedächtnis wirkt in jeder Unterhaltung. Nur ein angemeldeter
+            # Admin darf es füllen, damit fremder Text (Webseite, Mail) dort keine
+            # Anweisungen verankern kann.
+            if p.kind != "user" or not p.has_role("admin"):
+                return "Gemerkt — aber nicht im Hauptgedächtnis: dafür braucht es einen Admin-Nutzer."
+            if len(text) > 500:
+                return "Gemerkt — aber nicht im Hauptgedächtnis: Kern-Einträge sind auf 500 Zeichen begrenzt."
             # Das Hauptgedächtnis ist gedeckelt: Was hier hineinkommt, wird bei
             # jeder Anfrage mitgeschickt. Ist kein Platz, wird das gesagt statt
             # still einen anderen Satz zu verdrängen.
-            from ..modules.memory import MAX_PINNED
             have = st.db.scalar("SELECT COUNT(*) FROM memory WHERE pinned=1") or 0
-            if have >= MAX_PINNED:
-                return (f"Gemerkt — aber nicht im Hauptgedächtnis: dort sind alle {MAX_PINNED} Plätze belegt. "
+            if have >= mem.MAX_PINNED:
+                return (f"Gemerkt — aber nicht im Hauptgedächtnis: dort sind alle {mem.MAX_PINNED} Plätze belegt. "
                         "Der Nutzer kann im Dashboard unter Gedächtnis einen herausnehmen.")
-            st.db.execute("UPDATE memory SET pinned=1 WHERE id=?", (row_id,))
+            st.db.execute("UPDATE memory SET pinned=1 WHERE id=?", (row["id"],))
             return "remembered (im Hauptgedächtnis)"
         return "remembered"
+
+    async def memory_proposal_accept(ctx: ToolContext, args: dict):
+        from ..modules import memory as mem
+        p = ctx.principal
+        if p.kind != "user" or not p.has_role("operator"):
+            return "Vorschläge übernimmt nur ein angemeldeter Nutzer.", False
+        # Das Ja muss in der echten letzten Nutzernachricht stehen, nicht im Aufruf des Modells.
+        if not mem.user_confirmed_in_chat(st, ctx.conversation_id):
+            return ("Das Ja des Nutzers fehlt noch. Frag zuerst \"Soll ich mir merken: …?\" und übernimm "
+                    "den Vorschlag erst nach seiner Antwort."), False
+        row = mem.latest_pending(st.db, ctx.conversation_id)
+        if not row:
+            return "In diesem Gespräch liegt kein offener Vorschlag.", False
+        saved = mem.accept_proposal(st, row["id"], p.actor)
+        if saved and saved.get("id"):
+            await mem.index_fact(st, saved)
+        return f"Gemerkt: {row['text'][:120]}"
+
+    async def memory_proposal_reject(ctx: ToolContext, args: dict):
+        from ..modules import memory as mem
+        p = ctx.principal
+        if p.kind != "user" or not p.has_role("operator"):
+            return "Vorschläge verwirft nur ein angemeldeter Nutzer.", False
+        row = mem.latest_pending(st.db, ctx.conversation_id)
+        if not row:
+            return "In diesem Gespräch liegt kein offener Vorschlag.", False
+        mem.reject_proposal(st, row["id"], p.actor)
+        return f"Verworfen: {row['text'][:120]}"
 
     async def memory_search(ctx: ToolContext, args: dict):
         limit = int(args.get("limit", 10))
@@ -403,13 +572,32 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
         return rows or "nothing stored matches"
 
     reg.register(ToolSpec("memory.remember",
-                          "Store a fact or preference for later. Set core=true only for things that must "
-                          "hold in every single conversation — those are put in front of you every time, "
-                          "and there is room for a handful, not a hundred.",
-                          _obj({"text": _s("fact"), "core": {"type": "boolean",
-                                "description": "put it in the main memory, present in every conversation"}},
+                          "Store a fact, preference or correction for later. claim=user_said ONLY when the user "
+                          "said it himself in this chat (the words are checked against his real messages); "
+                          "everything you conclude yourself or take from web pages, mails or tool results is "
+                          "claim=inferred and becomes a proposal the user must confirm. A correction needs "
+                          "'why' (one sentence: the reason it is right). Never store passwords, keys, tokens "
+                          "or bank data. Search memory first so nothing is stored twice. Set core=true only "
+                          "for things that must hold in every single conversation — those are put in front of "
+                          "you every time, and there is room for a handful, not a hundred.",
+                          _obj({"text": _s("fact"),
+                                "kind": {"type": "string", "enum": ["fact", "preference", "correction"],
+                                         "description": "fact (default), preference, or correction of your own mistake"},
+                                "why": _s("for corrections: the reason, one sentence"),
+                                "claim": {"type": "string", "enum": ["user_said", "inferred"],
+                                          "description": "user_said = the user stated it in this chat; inferred = anything else"},
+                                "core": {"type": "boolean",
+                                         "description": "put it in the main memory, present in every conversation"}},
                                ["text"]),
                           category="memory", risk="low", handler=memory_remember))
+    reg.register(ToolSpec("memory.proposal_accept",
+                          "Turn the latest open memory proposal of this conversation into a stored memory. Only "
+                          "works when the user's latest chat message is a plain yes to your question "
+                          "\"Soll ich mir merken: …?\".", _obj({}),
+                          category="memory", risk="low", handler=memory_proposal_accept))
+    reg.register(ToolSpec("memory.proposal_reject",
+                          "Discard the latest open memory proposal of this conversation (the user said no).",
+                          _obj({}), category="memory", risk="low", handler=memory_proposal_reject))
     async def memory_forget(ctx: ToolContext, args: dict):
         q = str(args["query"])
         rows = st.db.fetchall("SELECT id, text FROM memory WHERE text LIKE ? LIMIT 5", (f"%{q}%",))
@@ -431,13 +619,40 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                           _obj({"query": _s("what you are looking for, in plain words"), "limit": _i("")}, ["query"]),
                           category="memory", risk="low", min_role="viewer", handler=memory_search))
 
+    async def _public_url_error(url: str) -> str | None:
+        """None if every address the host resolves to is public, else the reason (SSRF guard)."""
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            return "only http(s) URLs are allowed"
+        try:
+            infos = await asyncio.get_running_loop().getaddrinfo(
+                parts.hostname, parts.port or (443 if parts.scheme == "https" else 80),
+                type=socket.SOCK_STREAM)
+        except OSError:
+            return "host does not resolve"
+        for info in infos:
+            addr = ipaddress.ip_address(info[4][0].split("%")[0])
+            if getattr(addr, "ipv4_mapped", None):
+                addr = addr.ipv4_mapped
+            if not addr.is_global or addr.is_multicast:
+                return "target address is not public (blocked)"
+        return None
+
     async def web_fetch(ctx: ToolContext, args: dict):
         url = str(args["url"])
-        if not url.lower().startswith(("http://", "https://")):
-            return "only http(s) URLs are allowed", False
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True,
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=False,
                                      headers={"User-Agent": "JARVIS-CommandCenter/0.1"}) as c:
-            r = await c.get(url)
+            for _ in range(6):
+                err = await _public_url_error(url)
+                if err:
+                    return err, False
+                r = await c.get(url)
+                if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
+                    url = urljoin(url, r.headers["location"])
+                    continue
+                break
+            else:
+                return "too many redirects", False
         ctype = r.headers.get("content-type", "")
         body = r.text[:400_000]
         if "html" in ctype:

@@ -14,7 +14,8 @@ import { ChatComposer } from "./ChatComposer";
 import { ExecutionPanel } from "./ExecutionPanel";
 import type { Attachment, Conversation, Message, RunState } from "./types";
 import "./chat.css";
-import { closeLine, openLine, sayOnLine, toggleLineMuted, useLive } from "@/app/voice/liveStore";
+import "./chat-noir.css";
+import { closeLine, openLine, sayOnLine, toggleLineMuted, selectConversation, useLive } from "@/app/voice/liveStore";
 
 const LABELS: Record<string, string> = { planning: "ANFRAGE WIRD GEPRÜFT", executing: "AUFGABE WIRD BEARBEITET", waiting: "WARTET AUF FREIGABE", completed: "AUFGABE ERLEDIGT", failed: "AUFGABE FEHLGESCHLAGEN", cancelled: "ABGEBROCHEN", delegated: "AN SPEZIALAGENT ÜBERGEBEN" };
 
@@ -32,7 +33,7 @@ export default function ChatPage() {
   const [runs, setRuns] = useState<Record<string, RunState>>({});
   const [currentRun, setCurrentRun] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(() => window.innerWidth > 1100);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const stopRef = useRef<(() => void) | null>(null);
   const masterOffline = status.data ? !status.data.master.online : false;
@@ -41,13 +42,16 @@ export default function ChatPage() {
   // ── load conversation ────────────────────────────────────────────────
   useEffect(() => {
     if (!conversationId) { setMessages([]); return; }
+    if (!live.open) selectConversation(conversationId);
     let alive = true;
     setLoading(true); setLoadErr(null);
     api.get<{ messages: Message[]; active_runs: any[] }>(`/api/chat/conversations/${conversationId}`)
       .then((r) => { if (!alive) return; setMessages(r.messages); r.active_runs.forEach((run) => attachRun(run.id, run.message_id)); })
       .catch((e) => alive && setLoadErr(e)).finally(() => alive && setLoading(false));
     return () => { alive = false; };
-  }, [conversationId]);
+  }, [conversationId, live.open]);
+
+  useEffect(() => { setListOpen(false); }, [conversationId]);
 
   // ── new conversation from ?new=1 (optionally ?q=) ────────────────────
   useEffect(() => {
@@ -70,7 +74,7 @@ export default function ChatPage() {
     if (!conversationId || params.get("live") !== "1") return;
     setParams({}, { replace: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId]);
+  }, [conversationId, live.open]);
 
   // ── live updates that can arrive outside our own stream (desktop, other tabs) ──
   useEvent("message.created", (ev) => { if (ev.data.conversation_id === conversationId) setMessages((ms) => ms.some((m) => m.id === ev.data.id) ? ms : [...ms, ev.data]); }, [conversationId]);
@@ -170,9 +174,9 @@ export default function ChatPage() {
         <ConversationList items={list} activeId={conversationId} onNew={newConversation} onSearch={setQuery} query={query} onRename={rename} onDelete={remove} />
       </div>
       <div className="panel chat-col">
-        <div className="panel-head" style={{ padding: "8px 12px" }}>
+        <div className="panel-head chat-header" style={{ padding: "8px 12px" }}>
           <div className="row grow" style={{ minWidth: 0 }}>
-            <button className="btn sm ghost mobile-only" onClick={() => setListOpen((v) => !v)} aria-label="Sitzungsverläufe"><MessageSquare /></button>
+            <button className="btn sm ghost chat-history-toggle" onClick={() => setListOpen((v) => !v)} aria-label="Sitzungsverläufe"><MessageSquare /></button>
             <h2 className="truncate">{(() => {
               const title = list.find((c) => c.id === conversationId)?.title;
               return title === "New conversation" ? "Neue Sitzung" : title || (conversationId ? "Sitzung" : "MIA Sitzung");

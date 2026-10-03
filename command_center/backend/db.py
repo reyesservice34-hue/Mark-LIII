@@ -142,6 +142,14 @@ CREATE TABLE IF NOT EXISTS files (
   owner TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'upload', task_id TEXT,
   meta TEXT NOT NULL DEFAULT '{}'
 );
+-- 2026-10-02: Dateiversionierung — vor jedem Überschreiben wird die alte Fassung unter .versions/
+-- gesichert, statt verloren zu gehen. Ein Eintrag je gesicherter alter Fassung, nicht je Datei.
+CREATE TABLE IF NOT EXISTS file_versions (
+  id TEXT PRIMARY KEY, path TEXT NOT NULL, version_path TEXT NOT NULL,
+  size INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_file_versions_path ON file_versions(path, created_at);
 CREATE TABLE IF NOT EXISTS logs (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, ts TEXT NOT NULL, level TEXT NOT NULL,
   source TEXT NOT NULL, message TEXT NOT NULL, task_id TEXT, agent_id TEXT, run_id TEXT,
@@ -164,6 +172,15 @@ CREATE TABLE IF NOT EXISTS memory (
   id TEXT PRIMARY KEY, text TEXT NOT NULL, actor TEXT NOT NULL DEFAULT '',
   conversation_id TEXT, created_at TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0
 );
+-- Vorschläge: Was Mia selbst schließt oder aus fremdem Text (Web, Mail, Tool)
+-- ableitet, landet erst hier und wird erst mit dem Ja des Nutzers zum Gedächtnis.
+CREATE TABLE IF NOT EXISTS memory_proposals (
+  id TEXT PRIMARY KEY, text TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'fact',
+  source TEXT NOT NULL DEFAULT 'inferred', actor TEXT NOT NULL DEFAULT '',
+  conversation_id TEXT, status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL, decided_at TEXT, decided_by TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_memory_proposals_status ON memory_proposals(status, created_at);
 CREATE TABLE IF NOT EXISTS learning_records (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
   problem TEXT NOT NULL DEFAULT '', lesson TEXT NOT NULL DEFAULT '',
@@ -289,6 +306,15 @@ CREATE TABLE IF NOT EXISTS knowledge (
   enabled INTEGER NOT NULL DEFAULT 1, uses INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by TEXT NOT NULL DEFAULT ''
 );
+
+-- 2026-10-02: WhatsApp-Verknüpfung — welche Telefonnummer zu welchem MIA-Nutzer gehört.
+-- Das ist die eigentliche Zugriffsgrenze, nicht die Twilio-Signatur: die Signatur beweist
+-- nur "das ist wirklich Twilio", nicht "das ist eine berechtigte Person". Eine Nummer ohne
+-- Eintrag hier erreicht nie einen echten Agentenlauf.
+CREATE TABLE IF NOT EXISTS whatsapp_links (
+  phone_number TEXT PRIMARY KEY, user_id TEXT NOT NULL, conversation_id TEXT,
+  disabled INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, created_by TEXT NOT NULL DEFAULT ''
+);
 """
 
 
@@ -334,7 +360,10 @@ class Database:
     # eine bestehende Tabelle nicht an, also fehlt die neue Spalte auf jedem
     # Server, der schon lief — und der Fehler kommt erst beim ersten Zugriff.
     ADDED_COLUMNS: dict[str, dict[str, str]] = {
-        "memory": {"pinned": "INTEGER NOT NULL DEFAULT 0"},
+        # source: Herkunft (user, confirmed, dashboard, unknown); kind: fact, preference, correction.
+        "memory": {"pinned": "INTEGER NOT NULL DEFAULT 0",
+                   "source": "TEXT NOT NULL DEFAULT 'unknown'",
+                   "kind": "TEXT NOT NULL DEFAULT 'fact'"},
         # core_evolution.py und core_watchdog.py schreiben diese Spalten; das
         # ursprüngliche CREATE TABLE kannte sie nicht, verify() scheiterte daher
         # an jeder Datenbank mit "no column named baseline_sha".
@@ -363,10 +392,29 @@ class Database:
                 if name not in have:
                     self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
 
+    # Herkunft der Automatik-Schreiber. Ein Trigger statt Code in jedem Schreiber:
+    # So wird auch markiert, was aus Modulen kommt, die im Container nicht einzeln
+    # eingebunden sind, und jede künftige Quelle landet höchstens als 'unknown'.
+    _MEMORY_SOURCE_CASE = ("CASE actor WHEN 'mia-retention' THEN 'chat-auto' "
+                           "WHEN 'jarvis-mail' THEN 'mail' ELSE 'unknown' END")
+
+    def _tag_memory_sources(self) -> None:
+        try:
+            self._conn.execute(
+                "CREATE TRIGGER IF NOT EXISTS memory_source_tag AFTER INSERT ON memory "
+                "WHEN NEW.source = 'unknown' BEGIN "
+                f"UPDATE memory SET source = {self._MEMORY_SOURCE_CASE} WHERE id = NEW.id; END")
+            self._conn.execute(
+                f"UPDATE memory SET source = {self._MEMORY_SOURCE_CASE} "
+                "WHERE source = 'unknown' AND actor IN ('mia-retention', 'jarvis-mail')")
+        except sqlite3.Error:
+            pass  # Herkunftsmarken sind Zusatz; ein Fehler hier darf den Start nicht verhindern
+
     def _migrate(self) -> None:
         with self._lock:
             self._conn.executescript(SCHEMA)
             self._ensure_columns()
+            self._tag_memory_sources()
             row = self._conn.execute("SELECT version FROM schema_version").fetchone()
             if row is None:
                 self._conn.execute("INSERT INTO schema_version(version) VALUES (?)", (SCHEMA_VERSION,))

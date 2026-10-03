@@ -18,12 +18,15 @@ kommen — deshalb ist das eine ein Textfeld und das andere eine Liste.
 """
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ...auth import Principal
 from ...db import new_id, now_iso
 from ...deps import AppState, current_principal, get_state, require_role
+from ...services.memory_sources import terms
 from .. import ModuleSpec
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
@@ -54,6 +57,159 @@ def learning_mode_enabled(state: AppState) -> bool:
     return bool(state.db.get_setting(LEARNING_MODE_KEY, False))
 
 
+# ── Merk-Regeln ──────────────────────────────────────────────────────────
+# Mia lernt aus Gesprächen, aber nicht blind. Was der Nutzer ausdrücklich sagt,
+# darf sie sofort merken. Was sie selbst schließt oder aus fremdem Text (Web,
+# Mail, Tool-Ergebnis) ableitet, wird nur ein Vorschlag und erst mit dem Ja des
+# Nutzers zum Gedächtnis. Ob etwas "ausdrücklich gesagt" wurde, entscheidet nicht
+# das Modell, sondern ein Abgleich mit den echten Nutzernachrichten im Chat.
+KINDS = ("fact", "preference", "correction")
+CLAIMS = ("user_said", "inferred")
+MAX_PENDING = 30                 # offene Vorschläge insgesamt
+MAX_PENDING_PER_CONVERSATION = 8
+PROPOSAL_TTL_DAYS = 30
+SIMILAR = 0.7                    # ab dieser Wortüberlappung gilt ein Satz als schon gemerkt
+GROUNDED = 0.6                   # so viel vom Satz muss in den Nutzerworten vorkommen
+
+_YES = re.compile(r"^\W*(ja|jo|jep|jap|ok|okay|klar|gerne|gern|genau|stimmt|passt|bitte|mach das|"
+                  r"merk dir das|merk das|speicher das|speichere das)\b", re.I)
+_NO = re.compile(r"\b(nein|nee|nicht|kein|keine|stopp|vergiss)\b", re.I)
+
+
+def _norm(text: str) -> str:
+    return " ".join(str(text or "").split())
+
+
+def compose_text(text: str, kind: str, why: str = "") -> str:
+    """Eine Korrektur trägt ihren Grund im Satz, sonst wendet sie sich später falsch an."""
+    text, why = _norm(text), _norm(why)
+    if kind == "correction" and why and "grund:" not in text.lower():
+        text = f"{text} (Grund: {why})"
+    return text[:2000]
+
+
+def recent_user_texts(state: AppState, conversation_id: str | None, n: int = 3) -> list[str]:
+    if not conversation_id:
+        return []
+    try:
+        msgs = state.services["chat"].messages(conversation_id, limit=12)
+    except Exception:  # noqa: BLE001 — ohne Verlauf gilt nichts als ausdrücklich gesagt
+        return []
+    return [str(m.get("content", "")) for m in msgs if m.get("role") == "user"][-n:]
+
+
+def grounded_in_user_words(state: AppState, conversation_id: str | None, text: str) -> bool:
+    mine = terms(text)
+    if len(mine) < 2:
+        return False
+    said: set[str] = set()
+    for t in recent_user_texts(state, conversation_id):
+        said |= terms(t)
+    return len(mine & said) / len(mine) >= GROUNDED
+
+
+def user_confirmed_in_chat(state: AppState, conversation_id: str | None) -> bool:
+    """Die letzte Nutzernachricht ist ein kurzes Ja (und kein "ja, aber nicht so")."""
+    texts = recent_user_texts(state, conversation_id, 1)
+    if not texts:
+        return False
+    t = texts[-1].strip()
+    return len(t) <= 80 and bool(_YES.match(t)) and not _NO.search(t)
+
+
+def find_similar(db, text: str, include_proposals: bool = True) -> dict | None:
+    mine, flat = terms(text), _norm(text).lower()
+    pools = [("SELECT id, text FROM memory", ())]
+    if include_proposals:
+        pools.append(("SELECT id, text FROM memory_proposals WHERE status='pending'", ()))
+    for sql, params in pools:
+        for r in db.fetchall(sql, params):
+            if _norm(r["text"]).lower() == flat:
+                return r
+            other = terms(r["text"])
+            if len(mine) >= 3 and other and len(mine & other) / len(mine | other) >= SIMILAR:
+                return r
+    return None
+
+
+def route_remember(state: AppState, principal, conversation_id: str | None, text: str, claim: str) -> str:
+    """'store' nur für Gesagtes eines angemeldeten Nutzers, das in seinen Worten steht; sonst 'propose'."""
+    if (claim == "user_said" and principal.kind == "user" and principal.has_role("operator")
+            and grounded_in_user_words(state, conversation_id, text)):
+        return "store"
+    return "propose"
+
+
+def store_fact(state: AppState, *, text: str, kind: str, source: str, actor: str,
+               conversation_id: str | None, pinned: bool = False) -> dict:
+    row = {"id": new_id("mem"), "text": text, "actor": actor, "conversation_id": conversation_id,
+           "created_at": now_iso(), "pinned": 1 if pinned else 0, "source": source, "kind": kind}
+    state.db.insert("memory", row)
+    return row
+
+
+async def index_fact(state: AppState, row: dict) -> None:
+    try:  # Bedeutungs-Vektor sofort anlegen; klappt es nicht, holt die Suche es später nach
+        from ...ai import embeddings as _emb
+        await _emb.index_one(state.db, row["id"], row["text"])
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def pending_proposals(db, limit: int = 50) -> list[dict]:
+    db.execute("UPDATE memory_proposals SET status='expired', decided_at=? WHERE status='pending' "
+               "AND datetime(created_at) < datetime('now', ?)", (now_iso(), f"-{PROPOSAL_TTL_DAYS} days"))
+    return db.fetchall("SELECT * FROM memory_proposals WHERE status='pending' "
+                       "ORDER BY created_at DESC LIMIT ?", (max(1, min(limit, 200)),))
+
+
+def propose(state: AppState, *, text: str, kind: str, source: str, actor: str,
+            conversation_id: str | None) -> tuple[str, dict | None]:
+    """('proposed'|'duplicate'|'full', Zeile). Die Obergrenzen halten Spam durch fremden Text klein."""
+    pending_proposals(state.db, 1)  # räumt Abgelaufene ab
+    dup = find_similar(state.db, text)
+    if dup:
+        return "duplicate", dup
+    total = state.db.scalar("SELECT COUNT(*) FROM memory_proposals WHERE status='pending'") or 0
+    mine = state.db.scalar("SELECT COUNT(*) FROM memory_proposals WHERE status='pending' "
+                           "AND conversation_id IS ?", (conversation_id,)) or 0
+    if total >= MAX_PENDING or mine >= MAX_PENDING_PER_CONVERSATION:
+        return "full", None
+    row = {"id": new_id("prop"), "text": text, "kind": kind, "source": source, "actor": actor,
+           "conversation_id": conversation_id, "status": "pending", "created_at": now_iso()}
+    state.db.insert("memory_proposals", row)
+    state.bus.publish("memory.proposal", {"id": row["id"], "kind": kind, "source": source})
+    return "proposed", row
+
+
+def latest_pending(db, conversation_id: str | None) -> dict | None:
+    pending_proposals(db, 1)
+    return db.fetchone("SELECT * FROM memory_proposals WHERE status='pending' AND conversation_id IS ? "
+                       "ORDER BY created_at DESC LIMIT 1", (conversation_id,))
+
+
+def accept_proposal(state: AppState, proposal_id: str, actor: str) -> dict | None:
+    row = state.db.fetchone("SELECT * FROM memory_proposals WHERE id=? AND status='pending'", (proposal_id,))
+    if not row:
+        return None
+    if find_similar(state.db, row["text"], include_proposals=False):
+        mem = state.db.fetchone("SELECT * FROM memory WHERE text=?", (row["text"],)) or {"text": row["text"]}
+    else:
+        mem = store_fact(state, text=row["text"], kind=row["kind"], source="confirmed",
+                         actor=row["actor"] or actor, conversation_id=row["conversation_id"])
+    state.db.update("memory_proposals", proposal_id,
+                    {"status": "accepted", "decided_at": now_iso(), "decided_by": actor})
+    return mem
+
+
+def reject_proposal(state: AppState, proposal_id: str, actor: str) -> bool:
+    if not state.db.fetchone("SELECT id FROM memory_proposals WHERE id=? AND status='pending'", (proposal_id,)):
+        return False
+    state.db.update("memory_proposals", proposal_id,
+                    {"status": "rejected", "decided_at": now_iso(), "decided_by": actor})
+    return True
+
+
 @router.get("")
 async def overview(limit: int = 200, q: str = "", state: AppState = Depends(get_state),
                    _: Principal = Depends(current_principal)):
@@ -71,6 +227,7 @@ async def overview(limit: int = 200, q: str = "", state: AppState = Depends(get_
         "max_core": MAX_PINNED,
         "total": state.db.scalar("SELECT COUNT(*) FROM memory") or 0,
         "learning_mode": learning_mode_enabled(state),
+        "proposals": pending_proposals(state.db),
     }
 
 
@@ -115,7 +272,8 @@ async def add_fact(body: Fact, state: AppState = Depends(get_state),
         raise HTTPException(status_code=400,
                             detail=f"Das Hauptgedächtnis fasst {MAX_PINNED} Sätze. Erst einen herausnehmen.")
     row = {"id": new_id("mem"), "text": body.text.strip(), "actor": principal.actor,
-           "conversation_id": None, "created_at": now_iso(), "pinned": 1 if pinned else 0}
+           "conversation_id": None, "created_at": now_iso(), "pinned": 1 if pinned else 0,
+           "source": "dashboard", "kind": "fact"}
     state.db.insert("memory", row)
     state.log.audit(actor_type="user", actor_id=principal.actor, action="memory.add",
                     target=row["id"], status="ok")
@@ -196,6 +354,29 @@ async def clear_facts(confirm: str = "", state: AppState = Depends(get_state),
     state.log.audit(actor_type="user", actor_id=principal.actor, action="memory.clear",
                     status="ok", meta={"removed": n})
     return {"removed": n}
+
+
+@router.post("/proposals/{proposal_id}/accept")
+async def accept_proposal_route(proposal_id: str, state: AppState = Depends(get_state),
+                                principal: Principal = Depends(require_role("operator"))):
+    mem = accept_proposal(state, proposal_id, principal.actor)
+    if mem is None:
+        raise HTTPException(status_code=404, detail="Diesen Vorschlag gibt es nicht mehr.")
+    if mem.get("id"):
+        await index_fact(state, mem)
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="memory.proposal_accept",
+                    target=proposal_id, status="ok")
+    return {"fact": mem}
+
+
+@router.post("/proposals/{proposal_id}/reject")
+async def reject_proposal_route(proposal_id: str, state: AppState = Depends(get_state),
+                                principal: Principal = Depends(require_role("operator"))):
+    if not reject_proposal(state, proposal_id, principal.actor):
+        raise HTTPException(status_code=404, detail="Diesen Vorschlag gibt es nicht mehr.")
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="memory.proposal_reject",
+                    target=proposal_id, status="ok")
+    return {"ok": True}
 
 
 # ── Wissensspeicher ──────────────────────────────────────────────────────

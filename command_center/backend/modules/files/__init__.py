@@ -135,16 +135,29 @@ async def upload(file: UploadFile = File(...), path: str = Form(""), state: AppS
         if not chunk:
             break
         data.append(chunk)
-    info = _wrap(lambda: files.save_upload(file.filename or "upload", iter(data), subdir=path or "uploads",
-                                           owner=principal.actor))
+    try:
+        info = files.save_upload(file.filename or "upload", iter(data), subdir=path or "uploads",
+                                 owner=principal.actor)
+    except WorkspaceError as e:
+        state.log.audit(actor_type="user", actor_id=principal.actor, action="file.upload",
+                        target=file.filename or "upload", status="denied", error=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = {"size": info["size"]}
+    if info.get("meta", {}).get("security", {}).get("flags"):
+        meta["security_flags"] = info["meta"]["security"]["flags"]
     state.log.audit(actor_type="user", actor_id=principal.actor, action="file.upload", target=info["path"],
-                    status="ok", meta={"size": info["size"]})
+                    status="ok", meta=meta)
     return {"file": info}
 
 
 @router.post("/write")
 async def write(body: WriteBody, state: AppState = Depends(get_state), principal: Principal = Depends(require_role("operator"))):
-    info = _wrap(lambda: state.services["files"].write_text(body.path, body.content, source="user", owner=principal.actor))
+    try:
+        info = state.services["files"].write_text(body.path, body.content, source="user", owner=principal.actor)
+    except WorkspaceError as e:
+        state.log.audit(actor_type="user", actor_id=principal.actor, action="file.write",
+                        target=body.path, status="denied", error=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     state.log.audit(actor_type="user", actor_id=principal.actor, action="file.write", target=info["path"], status="ok")
     return {"file": info}
 
@@ -168,6 +181,21 @@ async def move(body: MoveBody, state: AppState = Depends(get_state), principal: 
     state.log.audit(actor_type="user", actor_id=principal.actor, action="file.move", target=body.path, status="ok",
                     result=entry["path"])
     return {"entry": entry}
+
+
+@router.get("/versions")
+async def versions(path: str, state: AppState = Depends(get_state), _: Principal = Depends(current_principal)):
+    return {"versions": _wrap(lambda: state.services["files"].versions(path))}
+
+
+@router.post("/versions/{version_id}/restore")
+async def restore_version(version_id: str, state: AppState = Depends(get_state),
+                          principal: Principal = Depends(require_role("operator"))):
+    info = _wrap(lambda: state.services["files"].restore_version(version_id, owner=principal.actor))
+    state.log.audit(actor_type="user", actor_id=principal.actor, action="file.version.restore",
+                    target=info["path"], status="ok", meta={"version_id": version_id})
+    state.bus.publish("file.changed", info)
+    return {"file": info}
 
 
 @router.post("/delete")

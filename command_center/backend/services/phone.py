@@ -73,3 +73,44 @@ async def call(text: str, *, force: bool = False) -> dict:
         return {"angerufen": False, "hinweis": f"Twilio hat den Anruf abgelehnt (HTTP {code})."}
     _last_call = time.monotonic()
     return {"angerufen": True, "hinweis": "Anruf ausgelöst."}
+
+
+# ── Anrufe bei Dritten (Kunden) ───────────────────────────────────────────────
+# Bewusst getrennt von call(): call() ruft NUR die eine hinterlegte Nummer (Sicherheitsbremse,
+# siehe Moduldoc oben) — call_contact() darf jede Nummer anrufen, die ihr übergeben wird, weil sie
+# nur über das freigabepflichtige Werkzeug notify.call_kunde erreichbar ist (risk="high",
+# requires_approval=True in orchestrator/builtin_tools.py). Eigene Abkühlzeit je Zielnummer, damit
+# ein Kunde unabhängig vom eigenen Notfall-Anruf nicht mehrfach hintereinander angerufen wird.
+_last_contact_call: dict[str, float] = {}
+
+
+def missing_contact() -> list[str]:
+    return [k for k in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM") if not _env(k)]
+
+
+def configured_contact() -> bool:
+    return not missing_contact()
+
+
+async def call_contact(to: str, text: str, *, force: bool = False) -> dict:
+    """Ruft `to` (E.164, z.B. +4917612345678) an und liest `text` vor. Wirft nie,
+    gibt {"angerufen": bool, "hinweis": str} zurück."""
+    if not configured_contact():
+        return {"angerufen": False, "hinweis": "Anruf nicht eingerichtet, es fehlt: " + ", ".join(missing_contact())}
+    to = to.strip()
+    if not to.startswith("+") or not to[1:].replace(" ", "").isdigit():
+        return {"angerufen": False, "hinweis": "Nummer muss im internationalen Format stehen (z.B. +4917612345678)."}
+    cooldown = float(_env("JARVIS_CC_CALL_COOLDOWN_MIN", "10") or 10) * 60
+    last = _last_contact_call.get(to, 0.0)
+    if not force and time.monotonic() - last < cooldown and last:
+        return {"angerufen": False, "hinweis": "Diese Nummer wurde gerade erst angerufen, kein zweiter Anruf innerhalb der Abkühlzeit."}
+    sid, tok = _env("TWILIO_ACCOUNT_SID"), _env("TWILIO_AUTH_TOKEN")
+    try:
+        code, body = await _post(f"{API}/Accounts/{sid}/Calls.json", (sid, tok),
+                                 {"To": to, "From": _env("TWILIO_FROM"), "Twiml": twiml(text)})
+    except Exception as e:  # noqa: BLE001
+        return {"angerufen": False, "hinweis": f"Twilio nicht erreichbar: {type(e).__name__}"}
+    if code >= 300:
+        return {"angerufen": False, "hinweis": f"Twilio hat den Anruf abgelehnt (HTTP {code})."}
+    _last_contact_call[to] = time.monotonic()
+    return {"angerufen": True, "hinweis": "Anruf ausgelöst."}

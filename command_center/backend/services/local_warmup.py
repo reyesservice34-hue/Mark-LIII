@@ -35,6 +35,10 @@ class LocalWarmup:
         expensive part — the actual prefix cache warmth run_once() built is a smaller
         loss now that the master routes to main.py's brain for replies rather than this
         provider directly."""
+        from pathlib import Path
+        route = Path("/repo/config/mia_route.json")
+        if route.exists() and __import__("json").loads(route.read_text()).get("provider") == "openrouter":
+            return {"skipped": "MIA verwendet die kostenlose Online-Route"}
         provider = self._provider()
         if provider is None:
             return {"skipped": "kein lokaler Anbieter"}
@@ -53,7 +57,7 @@ class LocalWarmup:
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 r = await client.post(base.removesuffix("/v1") + "/api/generate",
-                                      json={"model": provider.info.model, "prompt": "", "keep_alive": -1})
+                                      json={"model": provider.info.model, "prompt": "", "keep_alive": -1, **({"options": {"num_ctx": 8192, "num_thread": 8}} if provider.info.model == "qwen3:1.7b" else {})})
             return r.status_code == 200
         except httpx.HTTPError:
             return False

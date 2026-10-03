@@ -25,7 +25,7 @@ from pathlib import Path
 _DEPS_OK = False
 try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-    from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
     import uvicorn
     _DEPS_OK = True
 except ImportError:
@@ -1131,7 +1131,7 @@ class DashboardServer:
             # conversation history here), not just standing facts from memory/long_term.json.
             _history_in = body.get("history") or []
             _history = [{"role": str(m.get("role", "user")), "content": str(m.get("content", ""))}
-                       for m in _history_in if isinstance(m, dict) and str(m.get("content", "")).strip()][-6:]
+                       for m in _history_in if isinstance(m, dict) and str(m.get("content", "")).strip()][-20:]
             # Deterministic local project-file access: an explicit Mark-LIII path
             # must be read before MIA answers; do not make a small local model guess.
             import re as _re
@@ -1157,17 +1157,55 @@ class DashboardServer:
                 from core.local_brain import chat as _local_chat
                 from memory.memory_manager import record_conversation_turn as _record_turn
 
-                def _run():
+                def _run(on_delta=None, cancel_event=None):
                     clear_text = text
-                    answer, _ = _local_chat(clear_text, history=_history or None, skip_clarify=True)
+                    answer, _ = _local_chat(clear_text, history=_history or None, skip_clarify=True, on_delta=on_delta, cancel_event=cancel_event)
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise RuntimeError("Antwort wurde abgebrochen.")
                     # Text and Live Voice now write the same exact durable turn
                     # format. record_conversation_turn also updates the cognitive state.
                     try:
-                        _record_turn(clear_text, answer, "de-DE")
+                        from core.memory_sources import wanted_scope, scope_of, safe
+                        _stored_text = clear_text
+                        _scope = wanted_scope(clear_text, _history)
+                        _known_scope = scope_of(clear_text) != "unknown" or any(scope_of(m.get("content", "")) != "unknown" for m in _history if m.get("role") == "user")
+                        if _known_scope and scope_of(clear_text) == "unknown":
+                            _stored_text = {"private": "Privat: ", "business": "Geschäftlich: ", "general": "[Bereich:allgemein] "}.get(_scope, "") + clear_text
+                        if safe(_stored_text) and safe(answer):
+                            _record_turn(_stored_text, answer, "de-DE")
                     except Exception as _mem_exc:
                         print(f"[Memory] text-chat turn persistence skipped: {_mem_exc}")
                     return clear_text, answer
 
+                if body.get("stream") is True:
+                    async def streamed_reply():
+                        import threading as _threading
+                        stopped = _threading.Event()
+                        queue = asyncio.Queue()
+                        loop = asyncio.get_running_loop()
+                        def push(delta):
+                            loop.call_soon_threadsafe(queue.put_nowait, {"delta": delta})
+                        async def produce():
+                            try:
+                                _, answer = await asyncio.to_thread(_run, push, stopped)
+                                await queue.put({"done": True, "answer": answer})
+                            except Exception as exc:
+                                print(f"[MIA_LATENCY] stream_failure={type(exc).__name__}", flush=True)
+                                await queue.put({"error": "MIA konnte die lokale Antwort nicht abschließen. Bitte erneut versuchen."})
+                            finally:
+                                await queue.put(None)
+                        producer = asyncio.create_task(produce())
+                        try:
+                            while True:
+                                event = await queue.get()
+                                if event is None:
+                                    break
+                                yield json.dumps(event, ensure_ascii=False) + "\n"
+                        finally:
+                            if not producer.done():
+                                stopped.set()
+                                producer.cancel()
+                    return StreamingResponse(streamed_reply(), media_type="application/x-ndjson")
                 clear_text, answer = await asyncio.to_thread(_run)
             except Exception as e:
                 return JSONResponse({"error": f"local-chat failed: {e}"}, status_code=500)
@@ -1302,20 +1340,27 @@ class DashboardServer:
             return FileResponse(str(path), filename=path.name)
 
         @app.get("/api/project-file")
-        async def project_file(path: str = "", token: str = ""):
-            # 2026-09-29: serves a file MIA created/downloaded (downloads/, learned_repos/,
-            # or anywhere else inside this repo) so the Command Center bridge can fetch and
-            # actually show it in the chat, instead of the user only ever seeing a text path.
-            # Same query-token auth pattern as /uploads/{filename} above.
-            tok = token.strip()
+        async def project_file(req: Request, path: str = "", token: str = ""):
+            # 2026-09-29: serves a file MIA created/downloaded so the Command Center bridge
+            # can fetch and show it in the chat. 2026-10-03 (Finding 5/6): token preferably via
+            # Authorization: Bearer (query token kept only for older clients), and only the
+            # allow-listed roots below are served, never config/, brain/, secrets or .env.
+            tok = req.headers.get("authorization", "").removeprefix("Bearer ").strip() or token.strip()
             if not tok or tok not in self._tokens:
                 _log_event("warning", "auth_failed", where="project_file", reason="invalid_token")
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             try:
                 target = (BASE_DIR / path).resolve()
-                target.relative_to(BASE_DIR.resolve())
+                rel = target.relative_to(BASE_DIR.resolve())
             except (ValueError, RuntimeError, OSError):
                 return JSONResponse({"error": "Refused: path outside the project"}, status_code=400)
+            low = rel.as_posix().lower()
+            if (not rel.parts or rel.parts[0] not in ("downloads", "learned_repos")
+                    or any(b in low for b in (".env", "secret", "token", "password", "passwd",
+                                              "credential", ".pem", ".key", "id_rsa", "session",
+                                              ".git", "auth"))):
+                _log_event("warning", "auth_failed", where="project_file", reason="path_not_allowed")
+                return JSONResponse({"error": "Refused: path not allowed"}, status_code=403)
             if not target.is_file():
                 return JSONResponse({"error": "Not found"}, status_code=404)
             return FileResponse(str(target), filename=target.name)

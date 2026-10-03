@@ -56,3 +56,5 @@
 
 @media (max-width: 1100px) { .chat-layout, .chat-layout.no-list { grid-template-columns: minmax(0, 1fr); } .chat-layout .side { display: none; } .chat-layout .side.open { display: flex; position: fixed; inset: var(--topbar-h) 0 var(--mobile-nav-h); z-index: 30; background: var(--bg-0); padding: 12px; } }
 @media (max-width: 860px) { .chat-layout { height: calc(100vh - var(--topbar-h) - var(--mobile-nav-h) - 28px); } .messages { padding: 12px; } .msg-meta .btn { opacity: 1; } }
+
+@media (max-width:1100px) { .chat-layout.no-panel, .chat-layout.no-list.no-panel { grid-template-columns:minmax(0,1fr); } }

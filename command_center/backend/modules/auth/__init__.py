@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -91,29 +92,49 @@ async def create_browser_pairing(request: Request, state: AppState = Depends(get
     secret = secrets.token_urlsafe(32)
     digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
     expires = now + timedelta(minutes=5)
-    state.db.insert("browser_pairings", {"id": digest, "user_id": principal.id, "created_at": now_iso(),
+    state.db.insert("browser_pairings", {"id": digest, "user_id": principal.id, "created_at": now.isoformat(),
                                          "expires_at": expires.isoformat(), "created_by": principal.actor})
-    base = str(request.base_url).rstrip("/")
+    base = os.environ.get("JARVIS_PUBLIC_URL", "").strip().rstrip("/") or str(request.base_url).rstrip("/")
     pair_url = f"{base}/api/auth/pair/{secret}"
     state.log.audit(actor_type="user", actor_id=principal.actor, action="auth.pairing.create",
                     status="ok", meta={"expires_minutes": 5})
     return {"pair_url": pair_url, "expires_at": expires.isoformat()}
 
 
+def _expired_pairing_page() -> HTMLResponse:
+    return HTMLResponse("<!doctype html><meta name='viewport' content='width=device-width'><title>MIA</title>"
+                        "<body style='background:#05070b;color:#eee;font-family:system-ui;display:grid;place-items:center;height:100vh'>"
+                        "<div style='text-align:center'><h2>QR-Code abgelaufen</h2><p>Erzeuge im MIA Command Center einen neuen Code.</p></div></body>",
+                        status_code=410)
+
+
 @router.get("/pair/{secret}")
+async def preview_browser_pairing(secret: str, state: AppState = Depends(get_state)):
+    """Show a confirmation page without consuming the link; QR scanners often prefetch GET URLs."""
+    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    row = state.db.fetchone("SELECT expires_at FROM browser_pairings WHERE id=?", (digest,))
+    if not row or datetime.fromisoformat(row["expires_at"]) < datetime.now(timezone.utc):
+        return _expired_pairing_page()
+    return HTMLResponse(
+        "<!doctype html><meta name='viewport' content='width=device-width'><title>MIA koppeln</title>"
+        "<body style='margin:0;background:#05070b;color:#eee;font-family:system-ui;display:grid;place-items:center;height:100vh'>"
+        "<form method='post' style='text-align:center;padding:28px'><h2>MIA mit diesem Handy koppeln?</h2>"
+        "<p>Die Kopplung gilt nur für dieses Gerät und wird einmalig bestätigt.</p>"
+        "<button style='font:inherit;font-weight:700;padding:14px 24px;border:0;border-radius:12px;background:#21d4fd;color:#031018'>"
+        "Jetzt koppeln</button></form></body>"
+    )
+
+
+@router.post("/pair/{secret}")
 async def consume_browser_pairing(secret: str, request: Request, state: AppState = Depends(get_state)):
-    """Consume a one-time QR link and establish the normal HttpOnly browser session."""
+    """Consume a confirmed one-time link and establish the normal HttpOnly browser session."""
     digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
     row = state.db.fetchone("SELECT * FROM browser_pairings WHERE id=?", (digest,))
     now = datetime.now(timezone.utc)
     if not row or datetime.fromisoformat(row["expires_at"]) < now:
         if row:
             state.db.execute("DELETE FROM browser_pairings WHERE id=?", (digest,))
-        return HTMLResponse("<!doctype html><meta name='viewport' content='width=device-width'><title>MIA</title>"
-                            "<body style='background:#05070b;color:#eee;font-family:system-ui;display:grid;place-items:center;height:100vh'>"
-                            "<div style='text-align:center'><h2>QR-Code abgelaufen</h2><p>Erzeuge im MIA Command Center einen neuen Code.</p></div></body>",
-                            status_code=410)
-    # One-time means consume before creating the session. A refresh cannot reuse it.
+        return _expired_pairing_page()
     state.db.execute("DELETE FROM browser_pairings WHERE id=?", (digest,))
     raw, csrf = state.auth.create_session(row["user_id"], user_agent=request.headers.get("user-agent", ""),
                                           ip=client_ip(request, state.settings.trust_proxy) or "unknown")

@@ -12,3 +12,6 @@ pypdf>=4.0                # PDF attachment text extraction (optional)
 websockets>=12.0          # OpenAI Realtime fallback's upstream socket (uvicorn[standard] pulls it in too,
                           # but the relay depends on it directly, so it is named here)
 google-genai>=2.8.0       # the live voice line's default upstream — Gemini Live (free-tier friendly)
+reportlab>=4.0             # document.create (format=pdf): real PDF layout, not a text file renamed
+openpyxl>=3.1              # document.create_excel: real .xlsx workbooks
+Pillow>=10.0                # image.create: simple generated graphics (no photorealistic AI image provider is configured)

@@ -4,7 +4,7 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { relative, dateTime } from "@/lib/format";
-import { Bot, RefreshCw, Icon, Pencil, Trash2 } from "@/lib/icons";
+import { RefreshCw, Icon, Pencil, Trash2 } from "@/lib/icons";
 import { Badge, EmptyState, ErrorState, KeyValue, Modal, Panel, Skeleton, StatusIndicator } from "@/components/ui";
 import { toast } from "@/lib/toast";
 import { AgentCard, type Agent } from "./AgentCard";
@@ -15,7 +15,6 @@ export default function AgentsPage() {
   const { can } = useAuth();
   const list = useApi<{ agents: Agent[]; master: any }>("/api/agents", { refreshOn: ["agent.status", "run.started", "run.finished"] });
   const detail = useApi<{ agent: Agent & { instructions: string; runs: any[]; tasks: any[] } }>(agentId ? `/api/agents/${agentId}` : null, { refreshOn: ["agent.status", "run.finished", "task.*"] });
-  const tools = useApi<{ tools: any[]; categories: string[] }>("/api/tools");
   const [assign, setAssign] = useState<Agent | null>(null);
   const [form, setForm] = useState({ title: "", description: "", priority: "normal" });
   const [checking, setChecking] = useState(false);
@@ -67,16 +66,6 @@ export default function AgentsPage() {
       <div className="grid" style={{ gridTemplateColumns: a ? "minmax(0, 1fr) minmax(360px, 480px)" : "1fr" }}>
         <div className="stack" style={{ gap: 16 }}>
           {!list.data ? <Skeleton rows={3} height={60} /> : <div className="grid auto">{list.data.agents.map((ag) => <AgentCard key={ag.id} agent={ag} onClick={() => nav(`/agents/${ag.id}`)} />)}</div>}
-          <Panel title="Tool registry" icon={<Bot size={15} />} flush foot={tools.data ? `${tools.data.tools.filter((t) => t.available).length} of ${tools.data.tools.length} tools available · approval required from risk “${(tools.data as any).approval_threshold || "high"}”` : undefined}>
-            {!tools.data ? <div className="panel-body"><Skeleton /></div> : (
-              <table className="table">
-                <thead><tr><th>Tool</th><th>Category</th><th>Risk</th><th>Role</th><th>Availability</th><th className="num">Calls</th></tr></thead>
-                <tbody>{tools.data.tools.map((t) => (
-                  <tr key={t.name} title={t.description}><td><code>{t.name}</code>{t.requires_approval && <span className="badge warn" style={{ marginLeft: 6 }}>approval</span>}</td><td className="muted">{t.category}</td><td><Badge status={t.risk === "high" || t.risk === "critical" ? "error" : t.risk === "medium" ? "warning" : "ok"}>{t.risk}</Badge></td><td className="muted">{t.permissions[0]}</td>
-                    <td>{t.available ? <StatusIndicator status="ok" label="available" /> : <span className="row"><StatusIndicator status="offline" /><span className="small muted">{t.reason}</span></span>}</td><td className="num">{t.calls}{t.errors ? <span style={{ color: "var(--err)" }}> / {t.errors} err</span> : ""}</td></tr>
-                ))}</tbody>
-              </table>)}
-          </Panel>
         </div>
         {agentId && (
           <Panel title={a ? <span className="row"><Icon name={a.icon} size={15} />{a.name}</span> : "Agent"} actions={<button className="btn sm ghost" onClick={() => nav("/agents")}>Close</button>}>

@@ -387,7 +387,8 @@ class CalendarService:
         return [asdict(e) for e in events], ("n8n" if self.bridge.configured() else "local")
 
     async def create(self, *, title: str, when: str, at: str = "", duration: str | int = 60,
-                     location: str = "", notes: str = "", category: str = "") -> tuple[dict, str, str]:
+                     location: str = "", notes: str = "", category: str = "",
+                     is_birthday: bool | None = None) -> tuple[dict, str, str]:
         """Returns (event, backend, spoken note about the backend)."""
         self._require()
         date_part, time_part = split_datetime(when)
@@ -401,16 +402,21 @@ class CalendarService:
         when_time = parse_time(time_part)
         minutes = parse_duration(duration)
         seen = ""
-        if not category:                      # „Was, wie, wo“ selbst erkennen
+        if not category or is_birthday is None:   # „Was, wie, wo“ selbst erkennen
             found: dict = {}
             if self.classifier:
                 try:
                     found = await asyncio.wait_for(self.classifier(title, f"{when} {at}".strip(), notes, location), 20)
                 except Exception:  # noqa: BLE001
                     found = {}
-            from .classify import rule_category
-            category = found.get("category") or rule_category(title, notes)
+            from .classify import rule_category, rule_is_birthday
+            if not category:
+                category = found.get("category") or rule_category(title, notes)
+            if is_birthday is None:
+                is_birthday = found.get("is_birthday") if "is_birthday" in found else rule_is_birthday(title, notes)
             bits = [{"tour": "Tour", "ich": "mein Termin", "privat": "privat"}.get(category, category)]
+            if is_birthday:
+                bits.append("Geburtstag")
             if not location and found.get("location"):
                 location = found["location"]; bits.append("Ort " + location)
             extra = []
@@ -422,14 +428,21 @@ class CalendarService:
                 notes = (notes + "\n" if notes else "") + " · ".join(extra) + " (von Jarvis erkannt)"
             seen = " Erkannt: " + ", ".join(bits) + "."
         event = build_event(title, when_date, when_time, minutes, location=location, notes=notes,
-                            category=category)
+                            category=category, is_birthday=bool(is_birthday))
         if self._write_google():
             created = await self.google.create(event)
             return asdict(created), "google", ""
         if self._write_bridge():
-            # Zuerst Google. Nur was dort wirklich angekommen ist, steht danach auch hier — nie umgekehrt.
-            created = await self.bridge.create(event)
-            m = self._mirror(created, event.category)
+            # Zuerst Google. Falls die externe Brücke ausfällt, darf der Nutzer den Termin trotzdem nicht verlieren:
+            # lokal speichern und in der Antwort klar sagen, dass Google noch nicht synchronisiert ist.
+            try:
+                created = await self.bridge.create(event)
+            except Exception:
+                created = self.local.create(event)
+                return (asdict(created), "local",
+                        "Google ist gerade nicht erreichbar. Der Termin wurde sicher lokal gespeichert."
+                        + seen + self._clash_note(created))
+            m = self._mirror(created, event.category, event.is_birthday)
             return asdict(m), "n8n", "Im Google Kalender eingetragen." + seen + self._clash_note(m)
         created = self.local.create(event)
         return (asdict(created), "local",
@@ -452,7 +465,7 @@ class CalendarService:
         return [asdict(e) for e in out], ("n8n" if self.bridge.configured() else "local")
 
     def update(self, uid: str, *, title=None, when=None, at=None, duration=None, location=None, notes=None,
-               category=None) -> dict:
+               category=None, is_birthday=None) -> dict:
         """Eigenen Termin ändern. Google-Termine sind nur lesbar."""
         self._require()
         events = self.local._load()
@@ -478,6 +491,8 @@ class CalendarService:
             ev.notes = notes.strip()
         if category is not None:
             ev.category = category.strip().lower()
+        if is_birthday is not None:
+            ev.is_birthday = bool(is_birthday)
         self.local._save(events)
         try:
             if ev.file:
@@ -504,12 +519,13 @@ class CalendarService:
         """Schreiben nach Google über die n8n-Brücke: CALENDAR_WRITE_BACKEND=n8n und eine Schreib-URL."""
         return _env("CALENDAR_WRITE_BACKEND", "local").lower() in ("n8n", "bridge") and self.bridge.can_write()
 
-    def _mirror(self, ev: "Event", category: str = "") -> "Event":
+    def _mirror(self, ev: "Event", category: str = "", is_birthday: bool | None = None) -> "Event":
         """Einen Google-Termin sofort im lokalen Spiegel ablegen oder ersetzen — die Seite zeigt ihn ohne Warten
         auf den nächsten Abgleich. Der Abgleich bleibt die Wahrheit und korrigiert alles, was hier abweicht."""
         m = Event(uid="g-" + (ev.remote_id or ev.uid), title=ev.title, start=ev.start, end=ev.end,
                   location=ev.location, notes=ev.notes, backend="google", remote_id=ev.remote_id,
-                  category=category or ev.category)
+                  category=category or ev.category,
+                  is_birthday=ev.is_birthday if is_birthday is None else is_birthday)
         events = [e for e in self.local._load() if e.uid != m.uid]
         events.append(m)
         events.sort(key=lambda x: x.start)
@@ -536,13 +552,13 @@ class CalendarService:
         return ev.backend == "google" and bool(ev.remote_id) and self._write_bridge()
 
     async def update_any(self, uid: str, *, title=None, when=None, at=None, duration=None, location=None,
-                         notes=None, category=None) -> dict:
+                         notes=None, category=None, is_birthday=None) -> dict:
         """Termin ändern — Google-Termine in Google, eigene lokale Termine lokal."""
         self._require()
         ev = next((e for e in self.local._load() if e.uid == uid), None)
         if ev is None or not self._bridge_event(ev):
             return self.update(uid, title=title, when=when, at=at, duration=duration, location=location,
-                               notes=notes, category=category)
+                               notes=notes, category=category, is_birthday=is_birthday)
         start, length = ev.start_dt(), ev.end_dt() - ev.start_dt()
         moved = bool(when or at or duration is not None)
         if when or at:
@@ -562,11 +578,13 @@ class CalendarService:
             fields["start"] = start.isoformat(timespec="seconds")
             fields["end"] = (start + length).isoformat(timespec="seconds")
         keep = ev.category if category is None else category.strip().lower()
-        if not fields:                        # nur die Farbe/Kategorie: das gibt es nur hier, nicht in Google
+        keep_bday = ev.is_birthday if is_birthday is None else bool(is_birthday)
+        if not fields:                        # nur die Farbe/Kategorie/Geburtstag: das gibt es nur hier, nicht in Google
             ev.category = keep
-            self._mirror(ev, keep)
+            ev.is_birthday = keep_bday
+            self._mirror(ev, keep, keep_bday)
             return asdict(ev)
-        return asdict(self._mirror(await self.bridge.update(ev.remote_id, **fields), keep))
+        return asdict(self._mirror(await self.bridge.update(ev.remote_id, **fields), keep, keep_bday))
 
     async def delete_any(self, uid: str) -> dict:
         """Termin löschen — Google-Termine in Google, eigene lokale Termine lokal."""
@@ -606,19 +624,25 @@ class CalendarService:
             for e in await self.bridge.list(days=min(31, days - off), offset=off):
                 uid = "g-" + (e.remote_id or e.uid)
                 cat = prev[uid].category if uid in prev and prev[uid].category not in ("", "google") else ""
-                if not cat:
-                    from .classify import rule_category
-                    cat = rule_category(e.title, "")
+                bday = prev[uid].is_birthday if uid in prev else None
+                if not cat or bday is None:
+                    from .classify import rule_category, rule_is_birthday
+                    if not cat:
+                        cat = rule_category(e.title, "")
+                    if bday is None:
+                        bday = rule_is_birthday(e.title, "")
                     if self.classifier and budget > 0:
                         budget -= 1
                         try:
-                            cat = (await asyncio.wait_for(self.classifier(e.title, e.start, "", e.location), 20)).get("category") or cat
+                            found = await asyncio.wait_for(self.classifier(e.title, e.start, "", e.location), 20)
+                            cat = found.get("category") or cat
+                            bday = found.get("is_birthday") if "is_birthday" in found else bday
                         except Exception:  # noqa: BLE001
                             pass
                 fresh[uid] = Event(uid=uid, title=e.title, start=e.start, end=e.end, location=e.location,
                                    notes=e.notes or ("" if self._write_bridge() else "Aus dem Google Kalender übernommen (nur lesbar)."),
                                    backend="google",
-                                   remote_id=e.remote_id, category=cat)
+                                   remote_id=e.remote_id, category=cat, is_birthday=bool(bday))
         own = [e for e in self.local._load() if e.backend != "google"]
         merged = sorted([*own, *fresh.values()], key=lambda x: x.start)
         self.local._save(merged)

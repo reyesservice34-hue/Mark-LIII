@@ -29,6 +29,7 @@ class EventCreate(BaseModel):
     location: str = ""
     notes: str = ""
     category: str = ""                                  # tour | ich | privat
+    is_birthday: bool | None = None                      # None = MIA erkennt es selbst
 
 
 class EventUpdate(BaseModel):
@@ -39,6 +40,7 @@ class EventUpdate(BaseModel):
     location: str | None = None
     notes: str | None = None
     category: str | None = None
+    is_birthday: bool | None = None
 
 
 class EventMove(BaseModel):
@@ -77,7 +79,8 @@ async def create_event(body: EventCreate, state: AppState = Depends(get_state),
     try:
         event, backend, note = await cal.create(title=body.title, when=body.when, at=body.at,
                                                 duration=body.duration, location=body.location,
-                                                notes=body.notes, category=body.category)
+                                                notes=body.notes, category=body.category,
+                                                is_birthday=body.is_birthday)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(e))
     state.log.audit(actor_type="user", actor_id=principal.actor, action="calendar.create",

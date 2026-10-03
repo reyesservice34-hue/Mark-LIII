@@ -102,6 +102,7 @@ class Settings:
             "openai": bool(_env("OPENAI_API_KEY")),
             "gemini": bool(_env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")),
             "local": bool(_env("LOCAL_LLM_URL")),
+            "freellm": bool(_env("FREELLM_URL") and _env("FREELLM_API_KEY")),
         }
         if explicit:
             return explicit if candidates.get(explicit) else ""

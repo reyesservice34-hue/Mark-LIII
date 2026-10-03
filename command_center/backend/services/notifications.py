@@ -40,6 +40,11 @@ class NotificationService:
     def _maybe_push(self, out: dict, meta: dict) -> None:
         """Wichtiges zusätzlich aufs Handy (ntfy): Warnungen, Fehler, Freigaben und alles, was ein Agent ausdrücklich meldet.
 
+        Anruf (phone.call): bei severity="critical", oder wenn der Aufrufer explizit meta={"call": True} setzt
+        (z. B. Erinnerungen, autonomes Lernen — 2026-10-02, auf Wunsch, auch unterhalb von "critical"). Mit
+        meta={"call": False} lässt sich ein Anruf für eine einzelne Meldung immer unterdrücken. Ohne eingerichtete
+        Sprachnummer (TWILIO_FROM/JARVIS_CC_CALL_TO) passiert ohnehin nichts (phone.configured()).
+
         Nicht doppelt: Meldungen der Kategorie „system“ (Herzschlag, Standort) schicken ihren Push selbst. Ohne laufende Ereignisschleife
         (Tests, Skripte) oder ohne eingerichtetes Thema passiert nichts. Abschalten: JARVIS_CC_PUSH_MIN=off.
         """
@@ -58,7 +63,7 @@ class NotificationService:
         try:
             from ..modules.heartbeat import push
             loop.create_task(push("Jarvis: " + out["title"][:70], out["body"] or out["title"], out["severity"]))
-            if out["severity"] == "critical" and meta.get("call") is not False:
+            if (out["severity"] == "critical" or meta.get("call") is True) and meta.get("call") is not False:
                 from . import phone
                 if phone.auto_min() != "off" and phone.configured():          # dringend: zusätzlich anrufen (mit Abkühlzeit)
                     loop.create_task(phone.call(f'{out["title"]}. {out["body"]}'.strip()))

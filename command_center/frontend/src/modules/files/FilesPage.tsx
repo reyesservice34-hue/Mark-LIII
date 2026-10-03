@@ -4,7 +4,7 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { bytes, relative } from "@/lib/format";
-import { Folder, FileText, Upload, FolderPlus, Download, Trash2, Pencil, MoveRight, Search, Eye, Terminal, Play } from "@/lib/icons";
+import { Folder, FileText, Upload, FolderPlus, Download, Trash2, Pencil, MoveRight, Search, Eye, Terminal, Play, RotateCcw } from "@/lib/icons";
 import { EmptyState, ErrorState, Modal, Panel, Skeleton } from "@/components/ui";
 import { toast } from "@/lib/toast";
 
@@ -19,6 +19,7 @@ export default function FilesPage() {
   const search = useApi<{ results: Entry[] }>(q ? `/api/files/search?q=${encodeURIComponent(q)}` : null);
   const recent = useApi<{ files: any[]; usage: any }>("/api/files/recent?limit=12", { refreshOn: ["file.changed"] });
   const [preview, setPreview] = useState<{ entry: Entry; content?: string; truncated?: boolean } | null>(null);
+  const [versionsFor, setVersionsFor] = useState<Entry | null>(null);
   const [uploading, setUploading] = useState(false);
   const [terminalInput, setTerminalInput] = useState("");
   const [terminalBusy, setTerminalBusy] = useState(false);
@@ -112,6 +113,7 @@ export default function FilesPage() {
                       <td className="row" style={{ justifyContent: "flex-end", gap: 2 }} onClick={(ev) => ev.stopPropagation()}>
                         {!e.is_dir && <a className="btn icon ghost sm" href={dl(e)} title="Download"><Download /></a>}
                         {!e.is_dir && <button className="btn icon ghost sm" onClick={() => open(e)} title="Preview"><Eye /></button>}
+                        {!e.is_dir && can("operator") && <button className="btn icon ghost sm" onClick={() => setVersionsFor(e)} title="Versionen"><RotateCcw /></button>}
                         {can("operator") && <><button className="btn icon ghost sm" onClick={() => rename(e)} title="Rename"><Pencil /></button><button className="btn icon ghost sm" onClick={() => move(e)} title="Move"><MoveRight /></button><button className="btn icon ghost sm" onClick={() => remove(e)} title="Delete"><Trash2 /></button></>}
                       </td>
                     </tr>))}
@@ -120,7 +122,7 @@ export default function FilesPage() {
           </Panel>
         </div>
         <Panel title="Recent & generated" icon={<FileText size={15} />} flush>
-          {!recent.data ? <div className="panel-body"><Skeleton /></div> : recent.data.files.length === 0 ? <EmptyState title="Nothing yet" /> : <div className="list">{recent.data.files.map((f) => <div key={f.id} className="list-item" style={{ padding: "8px 12px" }}><div className="grow small" style={{ minWidth: 0 }}><a className="truncate" style={{ display: "block", color: "inherit" }} href={`${api.base}/api/files/download?path=${encodeURIComponent(f.path)}`}>{f.path}</a><div className="tiny muted">{f.source} · {bytes(f.size)} · {relative(f.updated_at)}{f.task_id && <> · <a href={`/tasks/${f.task_id}`}>task</a></>}{!f.exists && <span style={{ color: "var(--warn)" }}> · missing</span>}</div></div></div>)}</div>}
+          {!recent.data ? <div className="panel-body"><Skeleton /></div> : recent.data.files.length === 0 ? <EmptyState title="Nothing yet" /> : <div className="list">{recent.data.files.map((f) => { const flags: string[] = f.meta?.security?.flags || []; return <div key={f.id} className="list-item" style={{ padding: "8px 12px" }}><div className="grow small" style={{ minWidth: 0 }}><a className="truncate" style={{ display: "block", color: "inherit" }} href={`${api.base}/api/files/download?path=${encodeURIComponent(f.path)}`}>{f.path}</a><div className="tiny muted">{f.source} · {bytes(f.size)} · {relative(f.updated_at)}{f.task_id && <> · <a href={`/tasks/${f.task_id}`}>task</a></>}{!f.exists && <span style={{ color: "var(--warn)" }}> · missing</span>}</div>{flags.length > 0 && <div className="tiny" style={{ color: "var(--warn)", marginTop: 2 }} title={flags.join(" · ")}>⚠ {flags[0]}</div>}</div></div>; })}</div>}
         </Panel>
       </div>
       {preview && (
@@ -130,6 +132,47 @@ export default function FilesPage() {
               <pre className="md" style={{ maxHeight: "60vh", overflow: "auto", whiteSpace: "pre-wrap" }}>{preview.content}{preview.truncated && "\n…[truncated]"}</pre>}
         </Modal>
       )}
+      {versionsFor && <VersionsModal entry={versionsFor} onClose={() => setVersionsFor(null)}
+        onRestored={() => { setVersionsFor(null); dir.reload(); recent.reload(); }} />}
     </div>
+  );
+}
+
+interface Ver { id: string; path: string; version_path: string; size: number; created_at: string; source: string; owner: string; exists: boolean }
+
+function VersionsModal({ entry, onClose, onRestored }: { entry: Entry; onClose: () => void; onRestored: () => void }) {
+  const { data, error, loading } = useApi<{ versions: Ver[] }>(`/api/files/versions?path=${encodeURIComponent(entry.path)}`);
+  const [busy, setBusy] = useState<string | null>(null);
+  const restore = async (v: Ver) => {
+    if (!window.confirm(`„${entry.name}" auf den Stand von ${new Date(v.created_at).toLocaleString("de-DE")} zurücksetzen? Der aktuelle Stand wird dabei selbst als Version gesichert.`)) return;
+    setBusy(v.id);
+    try { await api.post(`/api/files/versions/${v.id}/restore`, {}); toast({ title: "Wiederhergestellt", body: entry.name, tone: "ok" }); onRestored(); }
+    catch (e: any) { toast({ title: "Ging nicht", body: e.message, tone: "err" }); }
+    finally { setBusy(null); }
+  };
+  return (
+    <Modal title={`Versionen — ${entry.name}`} onClose={onClose} foot={<button className="btn" onClick={onClose}>Schließen</button>}>
+      <ErrorState error={error} />
+      {loading && !data ? <Skeleton rows={3} /> : !data || data.versions.length === 0 ? (
+        <EmptyState title="Keine älteren Versionen">Diese Datei wurde noch nie überschrieben.</EmptyState>
+      ) : (
+        <div className="list">
+          {data.versions.map((v) => (
+            <div key={v.id} className="list-item" style={{ padding: "8px 0", justifyContent: "space-between" }}>
+              <div className="small" style={{ minWidth: 0 }}>
+                <div>{new Date(v.created_at).toLocaleString("de-DE")}</div>
+                <div className="tiny muted">{bytes(v.size)} · {v.source || "unbekannt"}{v.owner ? ` · ${v.owner}` : ""}{!v.exists && <span style={{ color: "var(--warn)" }}> · fehlt</span>}</div>
+              </div>
+              <div className="row" style={{ gap: 6 }}>
+                <a className="btn icon ghost sm" href={`${api.base}/api/files/download?path=${encodeURIComponent(v.version_path)}`} title="Herunterladen"><Download /></a>
+                {v.exists && <button className="btn sm" onClick={() => restore(v)} disabled={busy === v.id}>
+                  {busy === v.id ? "…" : "Wiederherstellen"}
+                </button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }

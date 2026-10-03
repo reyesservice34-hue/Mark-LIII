@@ -10,6 +10,7 @@ go through the same door.
 from __future__ import annotations
 
 import asyncio
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -20,6 +21,28 @@ from .notifications import NotificationService
 from .tasks import TaskService
 
 RISKS = ("low", "medium", "high", "critical")
+
+# Finding 9: notes, reasons and payloads can carry pasted credentials. Mask them
+# before they reach the audit log, notifications or the read API.
+_SECRET_RE = re.compile(
+    r"(?i)(?:\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"
+    r"|\bsk-[A-Za-z0-9_-]{8,}"
+    r"|\b(?:password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*\S+"
+    r"|\b[A-Fa-f0-9]{32,}\b"
+    r"|\b[A-Za-z0-9+/_-]{40,}={0,2})")
+
+_DECIDE_ROLES = ("operator", "admin")
+
+
+def redact(value):
+    """Mask secret-looking tokens in strings, recursively through dicts/lists."""
+    if isinstance(value, str):
+        return _SECRET_RE.sub("[redacted]", value)
+    if isinstance(value, dict):
+        return {k: redact(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact(v) for v in value]
+    return value
 
 
 class ApprovalService:
@@ -87,7 +110,13 @@ class ApprovalService:
             self._waiters.pop(approval_id, None)
 
     # ── decide ───────────────────────────────────────────────────────────
-    def decide(self, approval_id: str, *, approve: bool, decided_by: str, note: str = "") -> dict | None:
+    def decide(self, approval_id: str, *, approve: bool, decided_by: str, note: str = "",
+               role: str | None = None) -> dict | None:
+        # Finding 12: when a caller passes its role, enforce it here too (defence in depth
+        # behind the router's require_role). None keeps trusted internal callers working.
+        if role is not None and role not in _DECIDE_ROLES:
+            raise PermissionError("Requires role 'operator'")
+        note = redact(note or "")
         approval = self.get(approval_id)
         if not approval or approval["status"] != "pending":
             return approval
@@ -108,7 +137,7 @@ class ApprovalService:
         if approval["task_id"]:
             task = self.tasks.get(approval["task_id"])
             if task and task["status"] == "WAITING_FOR_APPROVAL":
-                self.tasks.set_status(approval["task_id"], "RUNNING" if approve else "RUNNING",
+                self.tasks.set_status(approval["task_id"], "RUNNING",
                                       note=f"Approval {status}: {approval['action']}")
         fut = self._waiters.get(approval_id)
         if fut and not fut.done():

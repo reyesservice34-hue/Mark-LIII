@@ -80,6 +80,7 @@ services:
       - ./command_center/backend/app.py:/app/command_center/backend/app.py:ro
       - ./command_center/backend/db.py:/app/command_center/backend/db.py:ro
       - ./command_center/backend/services/auto_learning.py:/app/command_center/backend/services/auto_learning.py:ro
+      - ./command_center/backend/services/memory_sources.py:/app/command_center/backend/services/memory_sources.py:ro
       - ./command_center/backend/services/selfext.py:/app/command_center/backend/services/selfext.py:ro
       - ./command_center/backend/services/source.py:/app/command_center/backend/services/source.py:ro
       - ./command_center/backend/services/core_evolution.py:/app/command_center/backend/services/core_evolution.py:ro

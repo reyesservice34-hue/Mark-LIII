@@ -18,10 +18,10 @@ from typing import Callable
 from fastapi import APIRouter
 
 DEFAULT_MODULES = [
-    "auth", "health", "events", "chat", "agents", "tasks", "teach", "workflows", "automations",
+    "auth", "health", "events", "chat", "agents", "agents_office", "tasks", "teach", "workflows", "automations",
     "server", "desktop", "files", "integrations", "logs", "notifications", "approvals", "analytics",
-    "settings", "gateway", "voice", "live", "extensions", "memory", "calendar", "heartbeat", "maillearn", "buchhaltung", "standort", "meldungen",
-    "knowledge_sync",
+    "settings", "gateway", "voice", "live", "extensions", "memory", "mia_core", "calendar", "training", "heartbeat", "maillearn", "buchhaltung", "standort", "meldungen",
+    "knowledge_sync", "whatsapp",
 ]
 
 

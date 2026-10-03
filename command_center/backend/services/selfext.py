@@ -260,8 +260,9 @@ class SelfExtension:
             description=str(decl.get("description", ""))[:600],
             input_schema=decl.get("input_schema") or {"type": "object", "properties": {}},
             category="self",
-            risk=str(decl.get("risk", "medium")),
-            min_role=str(decl.get("min_role", "operator")),
+            # Selbst geschriebener Code darf sein Risiko nicht selbst herunterstufen.
+            risk="high",
+            min_role="admin",
             handler=handler,
             available=True,
             source="self",

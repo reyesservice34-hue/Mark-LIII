@@ -39,27 +39,12 @@ def _cos(a: list[float], b: list[float]) -> float:
 
 
 def search_knowledge(query: str, limit: int = 4) -> str:
-    idx = _load()
-    if not idx:
-        return "Wissensindex nicht vorhanden - build_knowledge_index.py wurde noch nicht ausgefuehrt."
-    q = str(query or "").strip()
-    if not q:
-        return "Kein Suchbegriff angegeben."
-    try:
-        qv = _embed(q, idx["model"])
-    except Exception as e:
-        return f"Wissenssuche fehlgeschlagen (Embedding): {e}"
-    scored = sorted(((_cos(qv, e["vec"]), e) for e in idx["entries"]), key=lambda t: t[0], reverse=True)
-    top = [e for s, e in scored[:limit] if s > 0.3]
-    if not top:
-        return f"Nichts Passendes zu '{q}' im Wissensbestand gefunden."
-    out = [f"Wissensbestand zu '{q}' ({len(top)} Treffer):"]
-    for e in top:
-        # Chunks kuerzen: auf dieser CPU-only Hardware kostet jeder Prompt-Token
-        # spuerbar Zeit - 4 volle Chunks (~3.6k Zeichen) liessen die finale
-        # Antwort in den 120s-Timeout laufen.
-        out.append(f"--- aus {e['file']} ---\n{e['text'][:600]}")
-    return "\n".join(out)
+    # Use the same scoped, secret-filtered local source path as ordinary chat.
+    from core.memory_sources import local_sources, wanted_scope
+    from core.local_brain import _CONVERSATION_SCOPE
+    scope = wanted_scope(query)
+    if scope == "general": scope = _CONVERSATION_SCOPE.get()
+    return local_sources(query, scope) or "Keine passende freigegebene Wissensquelle im gewählten Bereich gefunden."
 
 
 def stats() -> str:

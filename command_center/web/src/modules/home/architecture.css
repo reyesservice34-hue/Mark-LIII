@@ -1,0 +1,204 @@
+/* Der Aufbau als Zeichnung. Senkrecht, weil der Weg einer Anweisung senkrecht
+   verläuft: vom Nutzer nach unten zu den Werkzeugen und als Stimme zurück. */
+.arch { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 18px 14px 22px; }
+
+.arch-layer { display: flex; flex-direction: column; align-items: center; width: 100%; }
+
+.arch-box {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  min-width: 240px; max-width: 100%; padding: 9px 18px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--bg-raised, rgba(255,255,255,0.03));
+  text-align: center;
+}
+.arch-title { font-size: 11px; letter-spacing: .09em; font-weight: 600; }
+.arch-detail { font-size: 11px; color: var(--fg-muted); max-width: 46ch;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Der Zustand kommt vom Server, nicht aus dem Stylesheet. */
+.arch-box.ok { border-color: rgba(70,200,140,0.45); box-shadow: inset 0 0 0 1px rgba(70,200,140,0.12); }
+.arch-box.warn { border-color: rgba(255,180,84,0.5); }
+.arch-box.err { border-color: rgba(255,93,108,0.5); }
+.arch-box.ok .arch-title { color: var(--ok, #46c88c); }
+.arch-box.warn .arch-title { color: var(--warn); }
+.arch-box.err .arch-title { color: var(--err); }
+
+.arch-link { width: 1px; height: 16px; background: var(--line); display: block; }
+
+.arch-nodes { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 8px;
+  max-width: 900px; }
+.arch-node { display: flex; align-items: baseline; gap: 6px; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--line); font-size: 11px; background: var(--bg); }
+.arch-node-title { font-weight: 500; }
+.arch-node-detail { color: var(--fg-muted); }
+.arch-node.ok { border-color: rgba(70,200,140,0.35); }
+.arch-node.warn { border-color: rgba(255,180,84,0.4); }
+.arch-node.err { border-color: rgba(255,93,108,0.4); opacity: .75; }
+
+@media (max-width: 720px) {
+  .arch-box { min-width: 0; width: 100%; }
+  .arch-detail { max-width: 100%; }
+}
+
+/* ── Der Kern auf der Startseite ─────────────────────────────────────────
+   Eine Reihe, kein Kasten: Sie soll zwischen Sprachkonsole und den Kacheln
+   liegen wie eine Statuszeile, nicht wie ein weiteres Modul. Anklickbar,
+   weil dahinter der ganze Aufbau steckt. */
+.core-strip {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%;
+  margin: 14px 0 2px; padding: 9px 14px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg-raised, rgba(255,255,255,0.02));
+  color: inherit; font: inherit; text-align: left;
+  transition: border-color .15s ease, background .15s ease;
+}
+.core-strip:hover { border-color: var(--accent); background: rgba(90,169,255,0.06); }
+.core-strip.loading { cursor: default; }
+.core-strip-label { display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
+  letter-spacing: .09em; color: var(--fg-muted); text-transform: uppercase; }
+
+.core-chip { display: inline-flex; align-items: baseline; gap: 7px; padding: 3px 11px;
+  border-radius: 999px; border: 1px solid var(--line); font-size: 11px; background: var(--bg); }
+.core-chip .dot { width: 6px; height: 6px; border-radius: 50%; align-self: center; }
+.core-chip.ok .dot { background: var(--ok, #46c88c); }
+.core-chip.warn .dot { background: var(--warn); }
+.core-chip.err .dot { background: var(--err); }
+.core-chip.ok { border-color: rgba(70,200,140,0.3); }
+.core-chip.warn { border-color: rgba(255,180,84,0.35); }
+.core-chip.err { border-color: rgba(255,93,108,0.4); }
+.core-chip-title { font-weight: 500; letter-spacing: .04em; }
+.core-chip-detail { color: var(--fg-muted); max-width: 30ch; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+
+.core-strip-more { margin-left: auto; font-size: 11px; color: var(--accent); white-space: nowrap; }
+
+@media (max-width: 720px) {
+  .core-chip-detail { display: none; }
+  .core-strip-more { margin-left: 0; }
+}
+
+/* ── Denkapparat und Schnellbefehle ──────────────────────────────────────
+   Zwei Raster, die sich gleich verhalten: kleine Zellen, klare Zustände,
+   keine Überschriften, die nichts sagen. */
+.deck-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px; padding: 14px; }
+.deck-cell { display: grid; grid-template-columns: 8px 1fr; grid-template-rows: auto auto;
+  column-gap: 9px; row-gap: 2px; align-items: center; padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--line-2); background: var(--bg-3); }
+.deck-cell .dot { grid-row: 1 / 3; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-4); }
+.deck-cell.ok .dot { background: var(--ok, #46c88c); }
+.deck-cell.live .dot { background: #ff9d2e; box-shadow: 0 0 10px rgba(255,157,46,.8);
+  animation: deck-beat 2s ease-in-out infinite; }
+.deck-cell.off { opacity: .55; }
+.deck-cell.live { border-color: rgba(255,157,46,.45); background: rgba(255,157,46,.06); }
+.deck-name { font-size: 12.5px; font-weight: 500; }
+.deck-state { font-size: 11px; color: var(--text-3); }
+@keyframes deck-beat { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+.quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px; padding: 14px; }
+.quick { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-radius: 10px;
+  border: 1px solid var(--line-2); background: var(--bg-3); color: var(--text-2);
+  font: inherit; font-size: 13px; cursor: pointer; text-align: left;
+  transition: border-color .15s ease, color .15s ease, transform .1s ease; }
+.quick:hover { border-color: #ff9d2e; color: var(--text); }
+.quick:active { transform: translateY(1px); }
+.quick svg { color: #ff9d2e; flex: none; }
+
+@media (prefers-reduced-motion: reduce) { .deck-cell.live .dot { animation: none; } }
+
+/* ── Hauptgedächtnis ─────────────────────────────────────────────────────
+   Bewusst wie eine Tafel und nicht wie eine Tabelle: Was hier steht, gilt
+   immer, und das soll man sehen, bevor man es liest. */
+.core-list { list-style: none; margin: 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.core-list li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 9px;
+  border: 1px solid rgba(255,157,46,.28); background: rgba(255,157,46,.05); font-size: 13.5px; }
+.core-mark { width: 6px; height: 6px; border-radius: 50%; background: #ff9d2e; flex: none;
+  box-shadow: 0 0 8px rgba(255,157,46,.7); }
+.core-text { flex: 1 1 auto; min-width: 0; }
+.core-list .btn { flex: none; }
+.core-badge { display: inline-flex; align-items: center; margin-right: 6px; color: #ff9d2e;
+  vertical-align: -1px; }
+
+
+/* ── MIA als digitaler Organismus ─────────────────────────────────────────
+   Die Silhouette ist die verständliche Sicht; die Karten daneben tragen die
+   echten Serverzustände. Keine Farbe ist rein dekorativ. */
+.body-map {
+  display: grid;
+  grid-template-columns: minmax(250px, .85fr) minmax(320px, 1.4fr);
+  gap: 22px;
+  align-items: center;
+  padding: 4px 2px 24px;
+}
+.body-figure {
+  position: relative;
+  width: min(100%, 330px);
+  height: 500px;
+  margin: 0 auto;
+  filter: drop-shadow(0 0 24px rgba(255,157,46,.08));
+}
+.body-head, .body-torso, .body-arm, .body-leg {
+  position: absolute;
+  display: block;
+  border: 1px solid rgba(255,157,46,.32);
+  background: linear-gradient(180deg, rgba(255,157,46,.09), rgba(255,157,46,.025));
+}
+.body-head { width: 78px; height: 88px; border-radius: 48% 48% 44% 44%;
+  left: calc(50% - 39px); top: 10px; }
+.body-torso { width: 132px; height: 226px; border-radius: 44% 44% 28% 28%;
+  left: calc(50% - 66px); top: 105px; }
+.body-arm { width: 42px; height: 226px; border-radius: 24px; top: 113px;
+  transform-origin: top center; }
+.body-arm.left { left: 48px; transform: rotate(8deg); }
+.body-arm.right { right: 48px; transform: rotate(-8deg); }
+.body-leg { width: 52px; height: 180px; border-radius: 16px 16px 25px 25px; top: 317px; }
+.body-leg.left { left: calc(50% - 57px); transform: rotate(2deg); }
+.body-leg.right { right: calc(50% - 57px); transform: rotate(-2deg); }
+.body-spine { position: absolute; width: 2px; height: 292px; top: 80px; left: 50%;
+  background: linear-gradient(180deg, transparent, rgba(255,157,46,.8), transparent);
+  box-shadow: 0 0 12px rgba(255,157,46,.45); }
+.organ-pin { position: absolute; z-index: 3; display: flex; align-items: center; gap: 6px;
+  color: var(--text-2); font-size: 10px; font-weight: 650; letter-spacing: .06em;
+  text-transform: uppercase; white-space: nowrap; }
+.organ-pulse { width: 12px; height: 12px; border: 2px solid currentColor; border-radius: 50%;
+  background: var(--bg); box-shadow: 0 0 10px currentColor; }
+.organ-pin.ok { color: var(--ok); }
+.organ-pin.warn { color: var(--warn); }
+.organ-pin.err { color: var(--err); }
+.organ-brain { top: 42px; left: 50%; transform: translateX(-50%); flex-direction: column; gap: 3px; }
+.organ-senses { top: 82px; left: 58%; }
+.organ-heart { top: 155px; left: 53%; }
+.organ-memory { top: 224px; left: 54%; }
+.organ-nervous { top: 282px; left: 51%; }
+.organ-hands { top: 246px; right: 1px; flex-direction: row-reverse; }
+.organ-immune { top: 345px; left: 53%; }
+.organ-heart .organ-pulse { animation: organ-heartbeat 1.4s ease-in-out infinite; }
+.organ-nervous .organ-pulse { animation: organ-signal 2.2s linear infinite; }
+@keyframes organ-heartbeat { 0%,100% { transform: scale(1); } 15% { transform: scale(1.55); }
+  28% { transform: scale(1.08); } 40% { transform: scale(1.4); } 58% { transform: scale(1); } }
+@keyframes organ-signal { 0%,100% { opacity: .5; } 50% { opacity: 1; box-shadow: 0 0 18px currentColor; } }
+
+.organ-list { display: grid; gap: 8px; }
+.organ-card { display: grid; grid-template-columns: 10px 1fr; gap: 10px; align-items: start;
+  padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 11px; background: var(--bg-3); }
+.organ-card .dot { width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; background: var(--text-4); }
+.organ-card.ok .dot { background: var(--ok); box-shadow: 0 0 8px color-mix(in srgb, var(--ok) 70%, transparent); }
+.organ-card.warn .dot { background: var(--warn); }
+.organ-card.err .dot { background: var(--err); }
+.organ-card div { min-width: 0; display: grid; gap: 2px; }
+.organ-card strong { font-size: 13px; }
+.organ-card span { color: var(--text-2); font-size: 11.5px; }
+.organ-card small { color: var(--text-3); font-size: 10.5px; }
+.arch-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+  margin: 2px 2px 14px; padding-top: 18px; border-top: 1px solid var(--line-2); }
+.arch-heading span { font-size: 13px; font-weight: 650; }
+.arch-heading small { color: var(--text-3); }
+
+@media (max-width: 760px) {
+  .body-map { grid-template-columns: 1fr; }
+  .body-figure { height: 440px; transform: scale(.88); transform-origin: top center; margin-bottom: -50px; }
+  .arch-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .organ-heart .organ-pulse, .organ-nervous .organ-pulse { animation: none; }
+}

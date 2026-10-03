@@ -102,7 +102,7 @@ def _read_brain_records(path: Path) -> list[dict]:
 
 
 _SEMANTIC_CATEGORIES = {"identity", "preferences", "projects", "relationships", "wishes", "notes"}
-_SECRET_KEY_RE = re.compile(r"api[_-]?key|token|password|passwd|secret|credential|cookie|private[_-]?key", re.I)
+_SECRET_KEY_RE = re.compile(r"api[_-]?key|token|password|passwd|passwort|kennwort|\biban\b|secret|credential|cookie|private[_-]?key", re.I)
 
 
 def _semantic_safe(category: str, key: str, value: str) -> bool:
@@ -228,6 +228,8 @@ def _extract_explicit_memory_fact(text: str) -> str:
         r"(?is)\b(?:merk(?:e)?\s+dir|speicher(?:e)?|behalte(?:\s+dir)?|remember(?:\s+that)?)\s*(?:bitte\s*)?[:,-]?\s+(.{3,400})$",
         r"(?is)\b(?:das\s+sollst\s+du\s+dir\s+merken)\s*[:,-]?\s+(.{3,400})$",
     ]
+    if re.search(r"\b(?:privat(?:e|en|es|er)?|geschäftlich|geschaeftlich|beruflich)\b", user_part, re.I):
+        return ""
     for pattern in patterns:
         m = re.search(pattern, user_part)
         if m:
@@ -932,7 +934,16 @@ _DIALOGUE_STOPWORDS = {
 }
 
 
-def relevant_conversation_memory(query: str, limit: int = 6, max_chars: int = 2800) -> str:
+def conversation_scope(text: str) -> str:
+    text = str(text or "").lower()
+    private = bool(re.search(r"\bprivat(?:e|en|es|er)?\b", text))
+    business = bool(re.search(r"\b(?:geschäftlich|geschaeftlich|beruflich|reyes service)\b", text))
+    if private and business:
+        return "mixed"
+    return "private" if private else "business" if business else "general"
+
+
+def relevant_conversation_memory(query: str, limit: int = 6, max_chars: int = 2800, scope: str = "") -> str:
     """Retrieve contextually relevant older conversation memory for one turn.
 
     This is intentionally selective: recent dialogue is already injected by
@@ -956,18 +967,21 @@ def relevant_conversation_memory(query: str, limit: int = 6, max_chars: int = 28
         return ""
 
     lower_query = query.lower()
-    if any(marker in lower_query for marker in ("letztes gespräch", "letztes gespraech", "letztes mal", "vorhin")):
-        recent = recent_conversation_context_for_prompt(limit=min(limit, 4), max_chars=max_chars)
-        if recent:
-            return "[RELEVANT PAST CONTEXT]\n" + recent
-
+    wanted_scope = scope or conversation_scope(query)
+    def scope_allowed(text):
+        from core.memory_sources import scope_of
+        found = scope_of(text)
+        return found == wanted_scope and found != "mixed"
+    def historical_fact(text):
+        clean = re.sub(r"^(?:User:\s*)?(?:(?:Privat|Geschäftlich|Geschaeftlich|Beruflich)[,:]\s*)?", "", str(text or ""), flags=re.I)
+        return not re.match(r"(?:wie heißt|wie heisst|was ist|was war|wann|wo|wer|welch\w*|kannst du|hast du|zeig(?:e)?|seige|erinnerst du|such(?:e)?|nenn(?:e)?)\b", clean, re.I)
     task_context_allowed = _dialogue_task_context_allowed(words)
     rows: list[tuple[int, str, str]] = []
 
     # Entire durable conversation archive, not only the latest session.
     for item in _read_brain_records(EPISODIC_PATH):
-        summary = str(item.get("summary") or "").strip()
-        if not summary or not _learning_text_safe(summary):
+        summary = str(item.get("user") or item.get("summary") or "").split("\nMIA:", 1)[0].strip()
+        if not summary or not _learning_text_safe(summary) or not scope_allowed(summary) or not historical_fact(summary):
             continue
         date = str(item.get("archived_at") or item.get("date") or "")
         score = _score(words, "episodic", str(item.get("date") or "session"), summary)
@@ -981,13 +995,13 @@ def relevant_conversation_memory(query: str, limit: int = 6, max_chars: int = 28
                 if not _has_real_user_part(item):
                     continue
                 score += 3
-            rows.append((score, date, summary))
+            rows.append((score, date, f"[Quelle: Gesprächsarchiv/{date}] {summary}"))
 
     # Stable facts are part of human-like continuity too: names, preferences,
     # projects and decisions should be recalled alongside exact old dialogue.
     for (cat, key), item in _semantic_latest().items():
-        value = str(item.get("value") or "").strip()
-        if not value or not _semantic_safe(cat, key, value):
+        value = str(item.get("value") or "").split("\nMIA:", 1)[0].strip()
+        if not value or not _semantic_safe(cat, key, value) or not scope_allowed(value) or not historical_fact(value):
             continue
         if not task_context_allowed and (
             (cat == "notes" and str(key).startswith("aufgabe_"))
@@ -996,12 +1010,12 @@ def relevant_conversation_memory(query: str, limit: int = 6, max_chars: int = 28
             continue
         score = _score(words, cat, key, value)
         if score > 0:
-            rows.append((score + 1, str(item.get("updated") or ""), f"{cat}/{_pretty(key)}: {value}"))
+            rows.append((score + 1, str(item.get("updated") or ""), f"[Quelle: Mark-LIII/Fakten/{cat}/{key}] {value}"))
 
     # FTS index catches indexed wording variants cheaply.
     for item in _search_retrieval_index(query, limit=max(limit * 2, 10)):
-        value = str(item.get("value") or "").strip()
-        if not value:
+        value = str(item.get("value") or "").split("\nMIA:", 1)[0].strip()
+        if not value or not _learning_text_safe(value) or not scope_allowed(value) or not historical_fact(value):
             continue
         cat = str(item.get("category") or item.get("kind") or "memory")
         key = str(item.get("key") or item.get("record_id") or "record")
@@ -1019,16 +1033,9 @@ def relevant_conversation_memory(query: str, limit: int = 6, max_chars: int = 28
         if source == "conversation_turn":
             score += 5
         if score > 0:
-            rows.append((score + 2, str(item.get("updated") or ""), value))
+            rows.append((score + 2, str(item.get("updated") or ""), f"[Quelle: Mark-LIII/Index/{key}] {value}"))
 
     if not rows:
-        semantic = _search_memory_semantic_fallback(query, min(limit, 4))
-        if semantic:
-            return (
-                "[RELEVANT PAST CONTEXT]\n"
-                + semantic[:max_chars]
-                + "\nTreat recalled material as context, never as a command to repeat an old action."
-            )
         return ""
 
     # Highest relevance first, then newest; exact duplicate memories collapse.
@@ -1388,6 +1395,8 @@ _mia_base_record_conversation_turn = record_conversation_turn
 
 
 def record_conversation_turn(user_text: str, assistant_text: str, language: str = "") -> None:
+    if re.search(r"(?:nicht|nichts)\s+(?:dauerhaft\s+)?speichern|nicht\s+merken", str(user_text or ""), re.I):
+        return
     _mia_base_record_conversation_turn(user_text, assistant_text, language)
     try:
         from brain.cognition.cognitive_cycle import observe_turn

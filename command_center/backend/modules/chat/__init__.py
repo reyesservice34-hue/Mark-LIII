@@ -271,6 +271,8 @@ async def upload_attachment(file: UploadFile = File(...), state: AppState = Depe
     try:
         info = files.save_upload(file.filename or "upload", iter(data), subdir="uploads", owner=principal.actor)
     except WorkspaceError as e:
+        state.log.audit(actor_type="user", actor_id=principal.actor, action="file.upload",
+                        target=file.filename or "upload", status="denied", error=str(e))
         raise HTTPException(status_code=413, detail=str(e))
     return {"attachment": info}
 

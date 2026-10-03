@@ -1,0 +1,122 @@
+.training-categories {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.training-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  padding: 12px;
+  cursor: pointer;
+  transition: all var(--t-fast) var(--ease);
+}
+.training-card:hover { background: var(--bg-3); border-color: var(--line-2); }
+.training-card.active { background: var(--bg-3); border-color: var(--accent); }
+
+.training-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.training-card-head strong { flex: 1; }
+.training-card-head .chevron {
+  transition: transform var(--t-fast) var(--ease);
+  color: var(--text-3);
+}
+.training-card.active .chevron { transform: rotate(90deg); }
+
+.training-purpose {
+  font-size: 12.5px;
+  color: var(--text-2);
+  margin-bottom: 10px;
+  line-height: 1.35;
+}
+
+.training-stats {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+}
+.training-stats .stat { color: var(--text-3); }
+.training-stats strong { color: var(--text-1); font-weight: 600; }
+
+.training-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+}
+
+.training-item {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  background: var(--bg-0);
+}
+
+.training-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-family: var(--mono);
+}
+.training-item-head .name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.training-item-head .meta {
+  flex: none;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.training-log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+.log-entry {
+  border-left: 3px solid var(--line-2);
+  padding: 8px 10px;
+  background: var(--bg-0);
+  border-radius: var(--r-sm);
+}
+
+.log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.log-head .actor { font-weight: 600; color: var(--text-1); }
+.log-head .time { color: var(--text-3); }
+
+.log-msg {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.log-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.log-tags .badge {
+  font-size: 11px;
+  padding: 2px 6px;
+}

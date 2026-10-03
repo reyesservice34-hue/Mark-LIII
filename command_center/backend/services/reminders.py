@@ -33,5 +33,5 @@ class RemindersService:
         for r in due:
             self.notifications.notify(
                 category="task", severity="info", title="Reminder",
-                body=r["message"], user_id=r["user_id"], meta={"push": True})
+                body=r["message"], user_id=r["user_id"], meta={"push": True, "call": True})
             self.db.update("reminders", r["id"], {"fired": 1})

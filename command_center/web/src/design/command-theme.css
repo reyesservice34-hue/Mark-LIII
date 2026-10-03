@@ -1,0 +1,658 @@
+/* MIA Command Center — reference-aligned visual layer.
+   Routes, content, data loading and interaction handlers remain unchanged. */
+:root {
+  --sidebar-w: 208px;
+  --sidebar-w-collapsed: 68px;
+  --bg-0: #030507;
+  --bg-1: #070a0d;
+  --bg-2: #0b0f13;
+  --bg-3: #11161c;
+  --bg-4: #1a2027;
+  --glass: rgba(5, 8, 11, .62);
+  --glass-strong: rgba(4, 7, 10, .88);
+  --glass-soft: rgba(14, 18, 23, .54);
+  --line: rgba(222, 234, 244, .14);
+  --line-2: rgba(222, 234, 244, .28);
+  --line-3: rgba(255, 177, 104, .55);
+  --text: #f5f7f9;
+  --text-2: #cbd0d5;
+  --text-3: #a9b0b8;
+  --text-4: #858e98;
+  --accent: #ffad67;
+  --accent-2: #e5792f;
+  --accent-soft: rgba(255, 145, 55, .11);
+  --ember: #ff9c46;
+  --shadow-1: inset 0 1px 0 rgba(255,255,255,.11), 0 18px 45px rgba(0,0,0,.42);
+  --shadow-2: inset 0 1px 0 rgba(255,255,255,.14), 0 28px 65px rgba(0,0,0,.58);
+}
+
+html, #root { background: transparent; }
+body {
+  background:
+    linear-gradient(90deg, rgba(1,3,5,.32), rgba(1,3,5,.05) 30%, rgba(1,3,5,.04) 72%, rgba(1,3,5,.12)),
+    url('/mia-command-room-v2.webp') center top / cover fixed no-repeat,
+    #030507;
+}
+body::before {
+  opacity: .16;
+  background:
+    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px) 0 0 / 56px 56px,
+    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px) 0 0 / 56px 56px;
+  animation: none;
+}
+body::after {
+  opacity: .22;
+  animation: mia-room-shimmer 18s ease-in-out infinite alternate;
+  background: linear-gradient(110deg, transparent 20%, rgba(255,171,93,.035) 43%, transparent 62%);
+}
+@keyframes mia-room-shimmer {
+  from { transform: translateX(-5%); }
+  to { transform: translateX(5%); }
+}
+
+.shell, .shell.collapsed {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  gap: 0 10px;
+  padding: 4px 10px 10px;
+}
+.shell.collapsed { grid-template-columns: var(--sidebar-w-collapsed) minmax(0, 1fr); }
+.shell > .sidebar {
+  grid-column: 1;
+  grid-row: 1;
+  height: calc(100vh - 8px);
+  border: 1px solid rgba(222,236,247,.35);
+  border-radius: 18px;
+  background: linear-gradient(160deg, rgba(11,15,19,.82), rgba(2,5,8,.90));
+  backdrop-filter: blur(24px) saturate(1.12);
+  box-shadow: var(--shadow-2);
+}
+.shell > .topbar {
+  position: fixed;
+  z-index: 30;
+  top: 20px;
+  right: 24px;
+  width: auto;
+  min-width: 390px;
+  height: 58px;
+  padding: 9px 12px;
+  border: 1px solid rgba(222,236,247,.32);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(12,16,20,.79), rgba(3,6,9,.88));
+  backdrop-filter: blur(24px) saturate(1.14);
+  box-shadow: var(--shadow-1);
+}
+.topbar .status-group:first-child .chip:not(.hero) { display: none; }
+.topbar .status-group:first-child .chip.hero {
+  min-height: 36px;
+  padding-inline: 13px;
+  color: #f5f7f9;
+  border-color: rgba(255,174,99,.24);
+}
+.topbar .status-group.right { gap: 5px; }
+.topbar .mia-account { max-width: 150px; }
+.shell > .main {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  padding: 0 0 36px;
+}
+.conn-banner {
+  position: fixed;
+  z-index: 29;
+  top: 86px;
+  right: 24px;
+  width: auto;
+  min-width: 310px;
+  border-radius: 12px;
+  backdrop-filter: blur(18px);
+}
+
+.brand {
+  min-height: 112px;
+  height: auto;
+  padding: 22px 22px 18px;
+  align-items: flex-start;
+  border-bottom-color: rgba(222,236,247,.14);
+}
+.brand .core { display: none; }
+.brand-text { gap: 5px; }
+.brand-text strong {
+  color: #fff;
+  background: none;
+  font-family: var(--sans);
+  font-size: 38px;
+  font-weight: 400;
+  letter-spacing: .07em;
+  line-height: .9;
+}
+.brand-text .label {
+  color: #e4e7ea;
+  font-size: 11px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.nav {
+  gap: 4px;
+  padding: 10px;
+}
+.nav-item {
+  min-height: 43px;
+  padding: 9px 12px;
+  border-radius: 11px;
+  color: #e1e5e9;
+}
+.nav-item svg { color: #d8dfe5; }
+.nav-item:hover {
+  color: #fff;
+  border-color: rgba(255,255,255,.11);
+  background: rgba(255,255,255,.035);
+}
+.nav-item.active {
+  color: #fff;
+  border-color: rgba(255,174,99,.78);
+  background: linear-gradient(100deg, rgba(230,105,25,.28), rgba(72,34,10,.23));
+  box-shadow: inset 0 0 16px rgba(255,139,43,.12), 0 0 18px rgba(255,130,33,.21);
+}
+.nav-item.active::before { display: none; }
+.nav-item.active svg {
+  color: #fff0e2;
+  filter: drop-shadow(0 0 6px rgba(255,145,55,.9));
+}
+.sidebar-foot { background: rgba(2,5,8,.24); }
+
+.page {
+  width: 100%;
+  max-width: none;
+  gap: 12px;
+}
+.mia-home { gap: 12px; }
+.panel,
+.mia-home .panel,
+.mia-home .mia-metric,
+.mia-inline-session {
+  border: 1px solid rgba(222,236,247,.28);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(17,21,25,.68), rgba(2,5,8,.84));
+  backdrop-filter: blur(22px) saturate(1.08);
+  box-shadow: var(--shadow-1);
+}
+.panel:hover { border-color: rgba(255,174,99,.40); }
+.panel-head {
+  min-height: 50px;
+  background: linear-gradient(180deg, rgba(255,255,255,.035), transparent);
+}
+.panel-head h2,
+.panel-head h2 svg { color: #f1f4f6; }
+.panel-head h2 svg,
+.mia-metric-icon {
+  color: #ffb36d;
+  filter: drop-shadow(0 0 8px rgba(255,139,42,.56));
+}
+
+.mia-home .mia-noir-hero {
+  position: relative;
+  display: block;
+  min-height: 690px;
+  height: 690px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none;
+}
+.mia-home .mia-noir-hero::before {
+  z-index: 0;
+  background:
+    radial-gradient(ellipse at 50% 37%, transparent 0 31%, rgba(1,3,5,.08) 56%, rgba(1,3,5,.30) 100%),
+    linear-gradient(0deg, rgba(1,3,5,.30), transparent 42%) !important;
+}
+.mia-home .mia-noir-hero::after { display: none; }
+
+.mia-home .mia-brain-stage {
+  position: absolute;
+  z-index: 2;
+  top: -12px;
+  left: 50%;
+  width: 520px;
+  height: 535px;
+  min-height: 535px;
+  margin: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: none;
+  mask-image: none;
+}
+.mia-home .mia-brain-stage::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 400px;
+  margin: auto;
+  background: url('/mia-reference-brain.webp') center / 100% 100% no-repeat;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 52%, transparent 83%);
+  mask-image: radial-gradient(ellipse at center, #000 52%, transparent 83%);
+  filter:
+    drop-shadow(0 0 9px rgba(255,246,232,.72))
+    drop-shadow(0 0 25px rgba(255,131,35,.68))
+    drop-shadow(0 0 70px rgba(255,112,20,.28));
+  animation: mia-brain-breathe 3.8s ease-in-out infinite;
+}
+.mia-home .mia-brain-stage::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 65px 15px 25px;
+  border-radius: 50%;
+  background:
+    repeating-radial-gradient(ellipse at center, transparent 0 36px, rgba(255,154,72,.17) 37px 38px, transparent 39px 68px),
+    conic-gradient(from 0deg, transparent, rgba(255,152,67,.16), transparent 28%, rgba(255,255,255,.11), transparent 63%);
+  filter: blur(.2px) drop-shadow(0 0 15px rgba(255,125,35,.35));
+  animation: mia-orbit-turn 16s linear infinite;
+}
+.mia-home .brain-core {
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  opacity: .27;
+  mix-blend-mode: screen;
+  filter: saturate(1.18) brightness(1.12);
+}
+@keyframes mia-brain-breathe {
+  0%,100% { opacity: .90; transform: scale(.992); }
+  50% { opacity: 1; transform: scale(1.012); }
+}
+@keyframes mia-orbit-turn { to { transform: rotate(360deg); } }
+
+.mia-reference-links {
+  position: absolute;
+  z-index: 6;
+  top: 132px;
+  left: 11%;
+  right: 11%;
+  height: 330px;
+  display: grid;
+  grid-template-columns: 170px 170px;
+  grid-template-rows: repeat(3, 1fr);
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+.mia-reference-link {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 54px;
+  padding: 12px 16px;
+  color: #f3f5f7;
+  border: 1px solid rgba(222,236,247,.30);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(16,20,24,.80), rgba(2,5,8,.86));
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-1);
+  pointer-events: auto;
+  text-decoration: none;
+}
+.mia-reference-link strong {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .065em;
+}
+.mia-reference-link span {
+  color: #abb3bc;
+  font-size: 10.5px;
+}
+.mia-reference-link:hover {
+  color: #fff;
+  border-color: rgba(255,174,99,.72);
+  box-shadow: 0 0 22px rgba(255,130,32,.20), var(--shadow-1);
+  text-decoration: none;
+}
+.mia-reference-link::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  width: 64px;
+  height: 1px;
+  background: linear-gradient(90deg, #ffae67, transparent);
+}
+.mia-reference-link:nth-child(even)::after {
+  left: auto;
+  right: 100%;
+  transform: rotate(180deg);
+}
+
+.mia-home .mia-noir-content {
+  position: absolute;
+  z-index: 8;
+  left: 6%;
+  right: 6%;
+  bottom: 16px;
+  width: auto !important;
+  min-height: 116px !important;
+  margin: 0;
+  padding: 34px 20px 16px !important;
+  display: grid;
+  grid-template-columns: 260px minmax(320px, 1fr) 190px;
+  grid-template-rows: auto auto;
+  gap: 7px 20px;
+  align-items: center;
+  text-align: left;
+  border: 1px solid rgba(226,238,248,.35);
+  border-radius: 18px;
+  background: linear-gradient(150deg, rgba(17,21,25,.78), rgba(2,5,8,.91));
+  backdrop-filter: blur(24px) saturate(1.12);
+  box-shadow: var(--shadow-2);
+}
+.mia-home .mia-presence {
+  position: absolute;
+  top: 9px;
+  left: 20px;
+  min-height: 22px;
+  padding: 3px 8px;
+  font-size: 9px;
+  letter-spacing: .04em;
+  background: rgba(2,5,8,.58);
+  border-color: rgba(222,236,247,.18);
+}
+.mia-home .mia-noir-kicker { display: none; }
+.mia-home .mia-noir-content h1 {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 27px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.08;
+}
+.mia-home .mia-noir-lead {
+  grid-column: 1;
+  grid-row: 2;
+  max-width: 255px;
+  margin: 0;
+  color: #aab2bb;
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+.mia-home .mia-command {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  width: 100%;
+  height: 60px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid rgba(255,172,96,.42);
+  border-radius: 16px;
+  background:
+    linear-gradient(90deg, transparent 43%, rgba(255,141,48,.18) 50%, transparent 57%),
+    rgba(2,5,8,.68);
+}
+.mia-home .mia-command::before {
+  content: "";
+  position: absolute;
+  left: 42%;
+  right: 19%;
+  top: 23px;
+  height: 14px;
+  opacity: .72;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0 4px, #ff9c46 5px 6px, transparent 7px 9px);
+  -webkit-mask-image: linear-gradient(0deg, transparent, #000 45%, transparent);
+  mask-image: linear-gradient(0deg, transparent, #000 45%, transparent);
+}
+.mia-home .mia-command input { position: relative; z-index: 1; }
+.mia-home .mia-command .btn { position: relative; z-index: 2; }
+.mia-home .mia-hero-actions {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.mia-home .mia-hero-actions .btn { width: 100%; justify-content: flex-start; }
+.mia-home .mia-core-pulse { display: none; }
+
+.btn, button.btn {
+  border-color: rgba(224,237,247,.24);
+  background: linear-gradient(150deg, rgba(38,43,48,.54), rgba(5,8,11,.82));
+  color: #edf1f4;
+}
+.btn:hover {
+  border-color: rgba(255,174,99,.65);
+  background: linear-gradient(150deg, rgba(67,47,30,.70), rgba(7,10,13,.88));
+}
+.btn.primary,
+.mia-home .btn.primary {
+  color: #fff7f0;
+  border-color: rgba(255,174,99,.63);
+  background: linear-gradient(140deg, rgba(224,108,31,.29), rgba(31,18,9,.84));
+  box-shadow: inset 0 1px 0 rgba(255,230,202,.13), 0 0 20px -9px #ff8932;
+}
+.input, .select, .textarea, input, select, textarea {
+  color: #f3f5f7;
+  border-color: rgba(224,237,247,.24);
+  background: rgba(2,5,8,.68);
+}
+
+.mia-home .mia-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.mia-home .mia-metric {
+  min-height: 134px;
+  padding: 17px;
+}
+.mia-home .mia-metric strong {
+  font-family: var(--sans);
+  font-size: 31px;
+}
+.mia-home .mia-work-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.mia-home .mia-agent-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.mia-event {
+  border-left: 2px solid #ffad67;
+  background: rgba(2,5,8,.32);
+}
+
+@media (min-width: 1700px) {
+  .mia-home .mia-noir-hero { height: 730px; min-height: 730px; }
+  .mia-home .mia-brain-stage { width: 560px; height: 575px; min-height: 575px; }
+  .mia-home .mia-brain-stage::before { width: 430px; }
+  .mia-reference-links { top: 150px; left: 13%; right: 13%; height: 350px; }
+  .mia-home .mia-noir-content { left: 8%; right: 8%; }
+}
+@media (max-width: 1120px) {
+  .mia-reference-links { left: 3%; right: 3%; grid-template-columns: 150px 150px; }
+  .mia-reference-link::after { width: 34px; }
+  .mia-home .mia-noir-content {
+    left: 2%;
+    right: 2%;
+    grid-template-columns: 210px minmax(250px, 1fr) 170px;
+    gap: 12px;
+  }
+  .mia-home .mia-agent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  body {
+    background:
+      linear-gradient(rgba(2,5,8,.40), rgba(2,5,8,.58)),
+      url('/mia-command-room-v2.webp') center top / auto 100vh fixed no-repeat,
+      #030507;
+  }
+  .shell, .shell.collapsed {
+    grid-template-columns: 1fr;
+    grid-template-rows: var(--topbar-h) 1fr var(--mobile-nav-h);
+    padding: 7px 7px 0;
+  }
+  .shell > .topbar {
+    position: fixed;
+    top: 7px;
+    left: 7px;
+    right: 7px;
+    width: auto;
+    min-width: 0;
+    height: 52px;
+  }
+  .shell > .main {
+    grid-column: 1;
+    grid-row: 2;
+    padding: 58px 0 28px;
+  }
+  .conn-banner { top: 65px; left: 7px; right: 7px; min-width: 0; }
+  .mia-home .mia-noir-hero { height: auto; min-height: 0; overflow: visible; }
+  .mia-home .mia-brain-stage {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 100%;
+    height: 340px;
+    min-height: 340px;
+    transform: none;
+  }
+  .mia-home .mia-brain-stage::before { width: 255px; }
+  .mia-reference-links {
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    height: auto;
+    padding: 0 6px 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+    gap: 8px;
+  }
+  .mia-reference-link { min-height: 64px; }
+  .mia-reference-link::after { display: none; }
+  .mia-home .mia-noir-content {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    width: 100% !important;
+    min-height: 0 !important;
+    padding: 38px 16px 16px !important;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .mia-home .mia-noir-lead { max-width: none; }
+  .mia-home .mia-command { width: 100%; height: auto; }
+  .mia-home .mia-command::before { display: none; }
+  .mia-home .mia-hero-actions { display: flex; flex-direction: row; flex-wrap: wrap; }
+  .mia-home .mia-hero-actions .btn { flex: 1 1 145px; justify-content: center; }
+  .mia-home .mia-metrics { grid-template-columns: 1fr; }
+  .mia-home .mia-work-grid,
+  .mia-home .mia-agent-grid { grid-template-columns: 1fr; }
+  input, textarea { font-size: 16px; }
+}
+@media (max-width: 430px) {
+  .topbar .mia-account,
+  .topbar .status-group:first-child { display: none; }
+  .mia-home .mia-brain-stage { height: 300px; min-height: 300px; }
+  .mia-home .mia-brain-stage::before { width: 225px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body::after,
+  .mia-home .mia-brain-stage::before,
+  .mia-home .mia-brain-stage::after { animation: none; }
+}
+
+/* Exact reference composition: one-screen brain, command bar and three control panels. */
+@media (min-width: 761px) {
+  .mia-home .mia-noir-hero { height: 630px; min-height: 630px; }
+  .mia-home .mia-brain-stage {
+    top: -20px;
+    width: 540px;
+    height: 525px;
+    min-height: 525px;
+  }
+  .mia-home .mia-brain-stage::before { width: 420px; }
+  .mia-reference-links {
+    top: 114px;
+    left: 9%;
+    right: 9%;
+    height: 300px;
+    grid-template-columns: 188px 188px;
+  }
+  .mia-reference-link {
+    min-height: 58px;
+    padding: 10px 13px;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 10px;
+  }
+  .mia-reference-link > svg { color: #ffb06a; filter: drop-shadow(0 0 8px #f47d27); }
+  .mia-reference-link > span { display: flex; flex-direction: column; gap: 3px; }
+  .mia-reference-link small { color: #abb3bc; font-size: 10px; }
+  .mia-home .mia-noir-content {
+    left: 7%;
+    right: 7%;
+    bottom: 3px;
+    min-height: 96px !important;
+    padding: 27px 16px 12px !important;
+    grid-template-columns: 205px minmax(300px, 1fr) 164px;
+    gap: 5px 14px;
+    border-radius: 15px;
+  }
+  .mia-home .mia-presence { top: 6px; left: 16px; }
+  .mia-home .mia-noir-content h1 { font-size: 25px; }
+  .mia-home .mia-noir-lead { max-width: 200px; font-size: 10px; line-height: 1.35; }
+  .mia-home .mia-command { height: 58px; border-radius: 14px; }
+  .mia-home .mia-command .btn {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+  .mia-home .mia-hero-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .mia-home .mia-hero-actions .btn {
+    width: 46px;
+    min-width: 46px;
+    height: 46px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 0;
+  }
+  .mia-home .mia-metrics { display: none; }
+  .mia-home .mia-work-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .mia-home .mia-work-grid > .panel {
+    min-width: 0;
+    height: 260px;
+    min-height: 260px;
+    overflow: hidden;
+    border-radius: 16px;
+  }
+  .mia-home .mia-work-grid .panel-head {
+    min-height: 48px;
+    padding: 10px 14px;
+  }
+  .mia-home .mia-work-grid .panel-head h2 { font-size: 13px; }
+  .mia-home .mia-work-grid .panel-body { padding: 12px 14px; }
+  .mia-home .mia-event-list { gap: 6px; }
+  .mia-home .mia-event { min-height: 48px; padding: 8px 10px; }
+  .mia-home .mia-agent-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .mia-home .mia-agent-grid .agent-card { min-height: 82px; }
+  .mia-home .task-timeline { max-height: 204px; overflow: hidden; }
+}
