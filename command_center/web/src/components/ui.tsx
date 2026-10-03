@@ -22,9 +22,19 @@ export function Panel({ title, icon, actions, children, className = "", flush = 
   );
 }
 
+// Anzeigenamen für Zustände. Nur die Beschriftung ändert sich; `tone()` und die Werte der API bleiben.
+const STATUS_LABEL: Record<string, string> = {
+  running: "Läuft", planning: "Plant", queued: "Wartend", waiting_for_approval: "Wartet auf Freigabe", paused: "Pausiert",
+  completed: "Erledigt", failed: "Fehlgeschlagen", cancelled: "Abgebrochen", executing: "Arbeitet", thinking: "Denkt",
+  waiting: "Wartet", idle: "Bereit", offline: "Offline", error: "Fehler", warn: "Warnung", warning: "Warnung",
+  success: "Erfolg", healthy: "Gesund", ok: "OK", pending: "Offen", approved: "Genehmigt", rejected: "Abgelehnt",
+  expired: "Abgelaufen", connected: "Verbunden",
+};
+
 export function Badge({ status, children, className = "" }: { status?: string; children?: ReactNode; className?: string }) {
   const t = tone(status);
-  return <span className={`badge ${t} ${className}`}>{children ?? (status || "").replace(/_/g, " ")}</span>;
+  const raw = status || "";
+  return <span className={`badge ${t} ${className}`}>{children ?? STATUS_LABEL[raw.toLowerCase()] ?? raw.replace(/_/g, " ")}</span>;
 }
 
 export function StatusIndicator({ status, label, live = false, size = 8 }: { status?: string; label?: ReactNode; live?: boolean; size?: number }) {

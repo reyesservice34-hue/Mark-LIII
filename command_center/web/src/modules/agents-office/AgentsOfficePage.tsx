@@ -58,7 +58,7 @@ export default function AgentsOfficePage() {
                     <div className="row wrap" style={{ gap: 6 }}>
                       <Badge status={a.status === "ERROR" ? "error" : a.status === "OFFLINE" ? "offline" : a.status} />
                       <Badge status={a.health} />
-                      {!a.enabled && <span className="badge err">disabled</span>}
+                      {!a.enabled && <span className="badge err">deaktiviert</span>}
                       <span className="badge muted">{AUTONOMY_LABEL[a.rights.autonomy] || a.rights.autonomy}</span>
                     </div>
                     <div className="small muted">{a.current_activity || "Keine laufende Tätigkeit"}</div>
