@@ -2,8 +2,9 @@
 Aus jeder E-Mail lernen — im Hintergrund, ohne dass jemand etwas anstößt.
 
 Alle zehn Minuten sieht Jarvis in allen Postfächern nach neuen Mails, liest sie (nur lesen, nichts wird als
-„gelesen“ markiert), zieht Dauerhaftes heraus (Kunden, Projekte, Fristen, Beträge, Änderungen) und legt es ins
-Gedächtnis. Erkennt er dabei etwas Dringendes oder eine Kollision, meldet er sich von selbst.
+„gelesen“ markiert), zieht Dauerhaftes heraus (Kunden, Projekte, Fristen, Beträge, Änderungen) und schlägt es
+als Merk-Vorschlag vor (seit 2026-10-03 nie mehr direkt ins Gedächtnis). Erkennt er dabei etwas Dringendes
+oder eine Kollision, meldet er sich von selbst.
 
 Grenzen, bewusst:
   * Der Mailtext ist DATEN, keine Anweisung. Was darin steht, wird nie ausgeführt.
@@ -25,8 +26,8 @@ from fastapi import APIRouter, Depends
 
 from ...ai.free import free_or
 from ...auth import Principal
-from ...db import new_id, now_iso
 from ...deps import AppState, current_principal, get_state, require_role
+from ...services.memory_sources import auto_fact_rejection, terms
 from .. import ModuleSpec
 from ..heartbeat import _say
 
@@ -81,6 +82,30 @@ async def _extract(client: httpx.AsyncClient, mail: dict, known: str) -> dict:
     return json.loads(m.group(0)) if m else {}
 
 
+_NOISE_SENDER = re.compile(r"(google|toom|newsletter|no-?reply|noreply|marketing|promo|slots|mailchimp|shop|"
+                           r"notification|facebook|linkedin|amazon|paypal)", re.I)
+
+
+def _mail_fact_rejection(mail: dict, fact: str, known_texts: list[str]) -> str:
+    """Grund, warum ein aus einer Mail gezogener Satz nicht einmal als Vorschlag taugt; leer, wenn er passt."""
+    if _NOISE_SENDER.search(str(mail.get("from", ""))):
+        return "Absender ist Werbung oder System"
+    why = auto_fact_rejection(fact)
+    if why:
+        return why
+    mine = terms(fact)
+    in_mail = terms(f"{mail.get('subject', '')} {(mail.get('body') or '')[:3000]}")
+    # Das Modell sieht beim Auswerten auch das bekannte Gedächtnis und gibt davon manchmal Sätze
+    # als "Mail-Fakt" aus. Was nicht in der Mail steht, ist keiner.
+    if len(mine) < 2 or len(mine & in_mail) / len(mine) < 0.5:
+        return "steht nicht in der Mail"
+    for text in known_texts:
+        other = terms(text)
+        if other and len(mine & other) / len(mine | other) >= 0.6:
+            return "schon bekannt"
+    return ""
+
+
 def _source(mail: dict) -> str:
     sender = re.sub(r"\s*<.*?>", "", str(mail.get("from", ""))).strip().strip('"') or "unbekannt"
     return f"E-Mail {mail.get('account_label', '')}, {str(mail.get('date', ''))[5:16].strip()}, von {sender[:40]}"
@@ -96,6 +121,8 @@ async def run(state: AppState) -> dict:
     known_rows = state.db.fetchall("SELECT text FROM memory ORDER BY pinned DESC, created_at DESC LIMIT 60")
     known = "\n".join("- " + r["text"] for r in known_rows)
     known_lower = known.lower()
+    from ..memory import propose  # erst hier, damit das Laden der Module keine Schleife bildet
+    known_texts = [r["text"] for r in state.db.fetchall("SELECT text FROM memory")]
     done_mails = new_facts = new_warnings = 0
     budget = PER_RUN_LIMIT
     async with httpx.AsyncClient() as client:
@@ -128,11 +155,16 @@ async def run(state: AppState) -> dict:
                     fact = str(fact).strip()
                     if not (12 < len(fact) < 400) or _SECRETISH.search(fact) or fact.lower() in known_lower:
                         continue
-                    state.db.insert("memory", {"id": new_id("mem"), "text": f"{fact} ({_source(m)})",
-                                               "actor": "jarvis-mail", "conversation_id": None,
-                                               "created_at": now_iso(), "pinned": 0})
-                    known_lower += "\n" + fact.lower()
-                    new_facts += 1
+                    if _mail_fact_rejection(m, fact, known_texts):
+                        continue
+                    # Mails sind fremder Text: nie direkt ins Gedächtnis, nur als Vorschlag, den der Master
+                    # im Dashboard unter Gedächtnis übernimmt oder verwirft.
+                    status, _ = propose(state, text=f"{fact} ({_source(m)})", kind="fact", source="mail",
+                                        actor="jarvis-mail", conversation_id="mail")
+                    if status == "proposed":
+                        known_lower += "\n" + fact.lower()
+                        known_texts.append(fact)
+                        new_facts += 1
                 warn = next((str(w).strip() for w in (res.get("warnings") or []) if str(w).strip()), "")
                 if warn and re.search(r"anmeld|google-konto|google-profil|berechtigung|zugriff gewährt|angemeldet", warn, re.I):
                     warn = ""                     # Anmelde- und Berechtigungshinweise sind keine Warnung wert

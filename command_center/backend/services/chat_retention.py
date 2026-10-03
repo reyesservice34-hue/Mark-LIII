@@ -35,6 +35,7 @@ import httpx
 
 from ..db import new_id, now_iso
 from .learning import LearningLedger
+from .memory_sources import auto_fact_rejection
 
 DEFAULT_HOURS = 48
 TIME_BUDGET = 600            # ein Lauf hört nach so vielen Sekunden auf; der Rest folgt beim nächsten
@@ -221,6 +222,10 @@ class ChatRetention:
         key = _norm(fact)
         if not (12 < len(fact) < 400) or _SECRETISH.search(fact) or _CONFIGISH.search(fact) or _EVENTISH.search(fact) or _LABELISH.search(fact) \
                 or len(fact.split()) < MIN_FACT_WORDS or not key:
+            return False
+        # Gesprächsereignisse, schnell veraltete Zustände, englische Mitschrift und Handlungsempfehlungen
+        # ("kann gelöscht werden") gehören nicht ins Gedächtnis; dauerhafte Wünsche und Regeln schon.
+        if auto_fact_rejection(fact):
             return False
         if key in known or any(key in k or k in key for k in known if len(k) > 30):
             return False

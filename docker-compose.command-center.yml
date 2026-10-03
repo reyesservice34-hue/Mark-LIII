@@ -104,6 +104,8 @@ services:
       - ./command_center/backend/modules/chat_retention/__init__.py:/app/command_center/backend/modules/chat_retention/__init__.py:ro
       # 2026-09-29: modules/memory nachgezogen, sonst ImportError bei learning_mode_enabled (runtime.py verweist bereits darauf)
       - ./command_center/backend/modules/memory/__init__.py:/app/command_center/backend/modules/memory/__init__.py:ro
+      # 2026-10-03: Mail-Fakten laufen nur noch als Vorschlag (modules/memory.propose); ohne diese Zeile bliebe der alte Code im Image aktiv
+      - ./command_center/backend/modules/maillearn/__init__.py:/app/command_center/backend/modules/maillearn/__init__.py:ro
       # 2026-09-29: Portierung main.py-Tools (v2-Plan) — Reminder-Service (neu), app.py importiert ihn bereits
       - ./command_center/backend/services/reminders.py:/app/command_center/backend/services/reminders.py:ro
       - ./command_center/backend/services/local_warmup.py:/app/command_center/backend/services/local_warmup.py:ro
