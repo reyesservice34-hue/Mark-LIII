@@ -42,7 +42,19 @@ function runningTasks(tasks?: Record<string, number>) {
   return Number(tasks.active || 0);
 }
 
+function useClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  return now;
+}
+
+const level = (v: number) => (v >= 90 ? "err" : v >= 75 ? "warn" : "");
+
 export function TopStatusBar() {
+  const now = useClock();
   const { data, reload } = useApi<StatusPayload>("/api/status", {
     refreshOn: [
       "task.*",
@@ -86,7 +98,7 @@ export function TopStatusBar() {
   return (
     <header className="topbar mia-topbar" role="banner">
       <div className="status-group">
-        <span className="chip hero">
+        <span className={`chip hero ${connection.state}`}>
           <StatusIndicator
             status={connection.state === "online" ? "ok" : connection.state === "offline" ? "err" : "warn"}
             live={connection.state !== "online"}
@@ -103,6 +115,18 @@ export function TopStatusBar() {
         <span className="chip desktop-only">
           <span className="val">{data?.agents?.active ?? 0}</span> AGENT{data?.agents?.active === 1 ? "" : "EN"} AKTIV
         </span>
+        {data?.server?.connected && (
+          <>
+            <span className="chip metric desktop-only" title={`CPU ${Math.round(data.server.cpu)} %`}>
+              CPU <span className="val">{Math.round(data.server.cpu)}%</span>
+              <span className={`mini-meter ${level(data.server.cpu)}`}><span style={{ width: `${Math.min(100, data.server.cpu)}%` }} /></span>
+            </span>
+            <span className="chip metric desktop-only" title={`RAM ${Math.round(data.server.ram)} %`}>
+              RAM <span className="val">{Math.round(data.server.ram)}%</span>
+              <span className={`mini-meter ${level(data.server.ram)}`}><span style={{ width: `${Math.min(100, data.server.ram)}%` }} /></span>
+            </span>
+          </>
+        )}
       </div>
 
       <div className="status-group right">
@@ -152,6 +176,9 @@ export function TopStatusBar() {
             )}
           </button>
         )}
+        <span className="chip clock desktop-only" title={now.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}>
+          {now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+        </span>
         <button
           className="chip desktop-only mia-account"
           type="button"

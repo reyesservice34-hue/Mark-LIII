@@ -1,0 +1,155 @@
+/* MIA Operations Wall — Startseite als Leitstand.
+   Reihenfolge von oben: Alarm → Telemetrie → Kern + Ereignisse → Sitzung → Systemstatus → Arbeit. */
+.ops-home { gap: 12px; }
+
+/* ── Alarmleiste (nur bei echten Zuständen) ──────────────────────────── */
+.ops-alerts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 180, 84, 0.4);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r-md);
+  background: linear-gradient(90deg, rgba(255, 180, 84, 0.1), rgba(255, 180, 84, 0.02));
+}
+.ops-alerts-title {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--warn);
+  font-family: var(--hud); font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+}
+.ops-alerts-title small { color: var(--text-3); font-family: var(--mono); font-size: 10px; font-weight: 400; letter-spacing: 0.04em; text-transform: none; }
+.ops-alert-list { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.ops-alert { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 12.5px; }
+.ops-alert:hover { color: var(--warn); text-decoration: none; }
+
+/* ── Kern + Ereignis-Ticker ──────────────────────────────────────────── */
+.ops-main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr); gap: 10px; align-items: stretch; }
+.ops-core .panel-body { display: flex; flex-direction: column; gap: 10px; }
+.ops-core-state { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-2); }
+.ops-core-stage {
+  position: relative;
+  height: 330px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background:
+    radial-gradient(ellipse 60% 70% at 50% 50%, rgba(76, 201, 240, 0.1), transparent 70%),
+    linear-gradient(rgba(76, 201, 240, 0.05) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, rgba(76, 201, 240, 0.05) 1px, transparent 1px) 0 0 / 32px 32px,
+    #04070b;
+}
+.ops-core-stage .brain-core { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ops-hud {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.ops-hud b { font-size: 9px; font-weight: 500; letter-spacing: 0.2em; color: var(--text-4); }
+.ops-hud span { font-size: 12px; letter-spacing: 0.1em; color: var(--accent); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ops-hud::before { content: ""; position: absolute; width: 12px; height: 12px; border: 1px solid rgba(76, 201, 240, 0.55); }
+.ops-hud.tl { top: 6px; left: 6px; } .ops-hud.tl::before { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.ops-hud.tr { top: 6px; right: 6px; text-align: right; align-items: flex-end; } .ops-hud.tr::before { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+.ops-hud.bl { bottom: 22px; left: 6px; } .ops-hud.bl::before { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+.ops-hud.br { bottom: 22px; right: 6px; text-align: right; align-items: flex-end; } .ops-hud.br::before { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+
+.ops-console {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--line-3);
+  border-radius: var(--r-md);
+  background: #04070b;
+  box-shadow: inset 0 0 0 1px rgba(76, 201, 240, 0.06);
+}
+.ops-console:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.ops-prompt { color: var(--accent); font-family: var(--mono); font-size: 14px; font-weight: 700; }
+.ops-console input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+}
+.ops-console input:focus { outline: none; box-shadow: none; }
+.ops-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.ops-areas { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.ops-areas a {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3);
+}
+.ops-areas a:hover { color: var(--accent); text-decoration: none; }
+
+.ops-feed { min-height: 0; }
+.ops-feed .panel-body { flex: 1; min-height: 260px; position: relative; }
+.ops-feed .list { position: absolute; inset: 0; max-height: none !important; overflow: auto; }
+.ops-feed .list-item { border-bottom: 1px solid var(--line); padding: 7px 14px !important; }
+
+/* ── Raster für Systemstatus und Arbeit ──────────────────────────────── */
+.ops-grid { display: grid; gap: 10px; align-items: start; }
+.ops-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mia-work-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.mia-agent-grid { gap: 8px; }
+
+/* ── Aktive Sitzung ──────────────────────────────────────────────────── */
+.mia-inline-session { overflow: hidden; }
+.mia-inline-head {
+  min-height: 52px; padding: 10px 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(76, 201, 240, 0.04);
+}
+.mia-inline-head .eyebrow { font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+.mia-inline-head strong { font-family: var(--hud); font-size: 15px; letter-spacing: 0.08em; }
+.mia-inline-chat { min-height: 420px; max-height: 62vh; }
+.mia-inline-chat .messages { flex: 1; min-height: 280px; }
+.mia-inline-chat .composer { background: var(--bg-1); }
+.mia-inline-empty { flex: 1; min-height: 280px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-3); text-align: center; padding: 28px; }
+.mia-voice-error { padding: 10px 14px; color: var(--err); font-size: 13px; }
+.state-line { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; color: var(--text-2); }
+
+/* ── Kalender ────────────────────────────────────────────────────────── */
+.mia-event-list { display: grid; gap: 6px; }
+.mia-event {
+  display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 12px;
+  min-height: 44px; padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.015);
+}
+.mia-event time { color: var(--accent); font-family: var(--mono); font-size: 11px; }
+.mia-event > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mia-event strong, .mia-event span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mia-event span { color: var(--text-3); font-size: 11px; }
+
+/* ── Breiten ─────────────────────────────────────────────────────────── */
+@media (max-width: 1180px) {
+  .ops-main { grid-template-columns: 1fr; }
+  .ops-feed .panel-body { min-height: 0; }
+  .ops-feed .list { position: static; max-height: 320px !important; }
+  .ops-grid-3, .mia-work-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .ops-core-stage { height: 250px; }
+  .ops-hud.bl, .ops-hud.br { display: none; }
+  .ops-grid-3, .mia-work-grid { grid-template-columns: 1fr; }
+  .ops-alerts { grid-template-columns: 1fr; gap: 6px; }
+  .mia-inline-head { align-items: flex-start; flex-direction: column; }
+  .mia-inline-chat { min-height: 360px; max-height: 68vh; }
+  .ops-console input { font-size: 16px; }
+}

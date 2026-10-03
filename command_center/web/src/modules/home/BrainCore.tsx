@@ -1,5 +1,5 @@
 /**
- * Der Kern: ein goldenes Hologramm in Gehirnform — eine Wolke aus Lichtpunkten mit Längen- und Breitenlinien,
+ * Der Kern: ein cyanfarbenes Hologramm in Gehirnform — eine Wolke aus Lichtpunkten mit Längen- und Breitenlinien,
  * Nervenimpulsen, kreisenden Ringen und einer Skala. Wenn MIA spricht, pulsiert alles im Rhythmus seiner
  * echten Stimme: die Live-Konsole meldet Zustand und Lautstärke. Ohne Meldung atmet es nur leise.
  * Bewegung ist Zierde: mit „reduzierte Bewegung" steht es still.
@@ -117,28 +117,28 @@ export function BrainCore({ thinking = false }: { thinking?: boolean }) {
 
       ctx.clearRect(0, 0, W, H);
       const g = ctx.createRadialGradient(cx, cy, R * 0.1, cx, cy, R * (2.1 + level * 0.5));
-      g.addColorStop(0, `rgba(255,170,60,${0.34 + 0.3 * level + 0.2 * flash})`); g.addColorStop(0.4, `rgba(255,120,20,${0.1 + 0.08 * level})`); g.addColorStop(1, "rgba(255,120,20,0)");
+      g.addColorStop(0, `rgba(60,170,255,${0.34 + 0.3 * level + 0.2 * flash})`); g.addColorStop(0.4, `rgba(20,120,255,${0.1 + 0.08 * level})`); g.addColorStop(1, "rgba(20,120,255,0)");
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
       ctx.globalCompositeOperation = "lighter";
       ctx.save(); ctx.translate(cx, cy); ctx.rotate(-tt * 0.06);
       for (let i = 0; i < 120; i++) {
         const a = (i / 120) * TAU, long = i % 10 === 0, r1 = R * 1.72, r2 = r1 + (long ? 12 : 5);
-        ctx.strokeStyle = long ? "rgba(255,190,90,.75)" : "rgba(255,170,70,.32)"; ctx.lineWidth = long ? 1.4 : 1;
+        ctx.strokeStyle = long ? "rgba(90,190,255,.75)" : "rgba(70,170,255,.32)"; ctx.lineWidth = long ? 1.4 : 1;
         ctx.beginPath(); ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1 * 0.34); ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2 * 0.34); ctx.stroke();
       }
       ctx.restore();
-      ring(R * 1.5, R * 1.5, 0, 0.9, 0.35, `rgba(255,176,64,${0.28 + 0.25 * level})`, 1.2, tt * 0.25);
-      ring(R * 1.62, R * 1.62, 0, 2.2, 0.9, "rgba(255,200,120,.22)", 1, -tt * 0.16);
-      ring(R * 1.4, R * 0.42, -0.35, 1.4, 0.7, `rgba(255,190,90,${0.22 + 0.3 * level})`, 1.2, tt * 0.5);
+      ring(R * 1.5, R * 1.5, 0, 0.9, 0.35, `rgba(64,176,255,${0.28 + 0.25 * level})`, 1.2, tt * 0.25);
+      ring(R * 1.62, R * 1.62, 0, 2.2, 0.9, "rgba(120,200,255,.22)", 1, -tt * 0.16);
+      ring(R * 1.4, R * 0.42, -0.35, 1.4, 0.7, `rgba(90,190,255,${0.22 + 0.3 * level})`, 1.2, tt * 0.5);
       for (let i = 0; i < 3; i++) {
         const a = tt * (0.5 + i * 0.17) + i * 2.1, rr = R * (1.5 + i * 0.06);
-        ctx.fillStyle = "rgba(255,225,160,.95)"; ctx.beginPath(); ctx.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, 2.6, 0, TAU); ctx.fill();
+        ctx.fillStyle = "rgba(160,225,255,.95)"; ctx.beginPath(); ctx.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, 2.6, 0, TAU); ctx.fill();
       }
       for (let i = shock.length - 1; i >= 0; i--) {
         shock[i] += dt * 1.1; const s = shock[i];
         if (s > 1) { shock.splice(i, 1); continue; }
-        ctx.strokeStyle = `rgba(255,190,90,${0.55 * (1 - s)})`; ctx.lineWidth = 2 * (1 - s) + 0.5;
+        ctx.strokeStyle = `rgba(90,190,255,${0.55 * (1 - s)})`; ctx.lineWidth = 2 * (1 - s) + 0.5;
         ctx.beginPath(); ctx.arc(cx, cy, R * (1.0 + s * 0.9), 0, TAU); ctx.stroke();
       }
 
@@ -146,16 +146,16 @@ export function BrainCore({ thinking = false }: { thinking?: boolean }) {
       for (let k = 0; k < 14; k++) {
         const u = (k / 14) * TAU; ctx.beginPath();
         for (let j = 0; j <= 28; j++) { const [x, y, z] = shape(u, 0.05 + (j / 28) * (Math.PI - 0.1)); const q = proj(x, y, z, ca, sa, ct, st, sc); if (j) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); }
-        ctx.strokeStyle = `rgba(255,170,70,${0.07 + 0.06 * level})`; ctx.stroke();
+        ctx.strokeStyle = `rgba(70,170,255,${0.07 + 0.06 * level})`; ctx.stroke();
       }
       for (let k = 1; k < 9; k++) {
         const v = (k / 9) * Math.PI; ctx.beginPath();
         for (let j = 0; j <= 48; j++) { const [x, y, z] = shape((j / 48) * TAU, v); const q = proj(x, y, z, ca, sa, ct, st, sc); if (j) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); }
-        ctx.strokeStyle = `rgba(255,170,70,${0.08 + 0.06 * level})`; ctx.stroke();
+        ctx.strokeStyle = `rgba(70,170,255,${0.08 + 0.06 * level})`; ctx.stroke();
       }
 
       const lp = (i: number) => proj(pts[i].x, pts[i].y, pts[i].z, ca, sa, ct, st, sc);
-      ctx.strokeStyle = `rgba(255,190,100,${0.09 + 0.1 * level})`;
+      ctx.strokeStyle = `rgba(100,190,255,${0.09 + 0.1 * level})`;
       ctx.beginPath();
       for (const l of links) { const a = lp(l.a), b = lp(l.b); if (a[2] < -0.1 && b[2] < -0.1) continue; ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
       ctx.stroke();
@@ -167,7 +167,7 @@ export function BrainCore({ thinking = false }: { thinking?: boolean }) {
         const tw = 0.55 + 0.45 * Math.sin(tt * (1 + p.b * 2) + p.b * 40);
         const a = (0.3 + 0.7 * depth) * tw * (0.75 + level * 0.7) + sw * 0.7;
         const sz = (0.6 + p.s * 0.75) * q[3] * (0.75 + depth * 0.6) + sw * 1.3 + flash * 0.5;
-        ctx.fillStyle = sw > 0.3 ? `rgba(255,236,190,${Math.min(1, a)})` : `rgba(255,${(165 + 60 * depth) | 0},${(60 + 60 * p.b) | 0},${Math.min(1, a)})`;
+        ctx.fillStyle = sw > 0.3 ? `rgba(190,236,255,${Math.min(1, a)})` : `rgba(${(60 + 60 * p.b) | 0},${(165 + 60 * depth) | 0},255,${Math.min(1, a)})`;
         ctx.fillRect(q[0] - sz / 2, q[1] - sz / 2, sz, sz);
       }
 
@@ -177,11 +177,11 @@ export function BrainCore({ thinking = false }: { thinking?: boolean }) {
         if (im.t >= 1) { imps.splice(i, 1); continue; }
         const l = links[im.l], a = lp(l.a), b = lp(l.b), x = a[0] + (b[0] - a[0]) * im.t, y = a[1] + (b[1] - a[1]) * im.t;
         const t0 = Math.max(0, im.t - 0.2), x0 = a[0] + (b[0] - a[0]) * t0, y0 = a[1] + (b[1] - a[1]) * t0;
-        ctx.strokeStyle = "rgba(255,225,160,.9)"; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x, y); ctx.stroke();
-        ctx.fillStyle = "#fff3d9"; ctx.beginPath(); ctx.arc(x, y, 2.2, 0, TAU); ctx.fill();
+        ctx.strokeStyle = "rgba(160,225,255,.9)"; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x, y); ctx.stroke();
+        ctx.fillStyle = "#d9f3ff"; ctx.beginPath(); ctx.arc(x, y, 2.2, 0, TAU); ctx.fill();
       }
       const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * (0.35 + 0.25 * level + 0.2 * flash));
-      cg.addColorStop(0, `rgba(255,236,190,${0.35 + 0.4 * level})`); cg.addColorStop(1, "rgba(255,160,50,0)");
+      cg.addColorStop(0, `rgba(190,236,255,${0.35 + 0.4 * level})`); cg.addColorStop(1, "rgba(50,160,255,0)");
       ctx.fillStyle = cg; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
 
       for (let k = 0; k < 3; k++) {
@@ -192,7 +192,7 @@ export function BrainCore({ thinking = false }: { thinking?: boolean }) {
           const y = y0 + env * A * (Math.sin(x * 0.034 - s * 3) + 0.55 * Math.sin(x * 0.087 + s * 4.6 + k) + 0.25 * Math.sin(x * 0.19 - s * 9));
           if (x) ctx.lineTo(x, y); else ctx.moveTo(x, y);
         }
-        ctx.strokeStyle = `rgba(255,165,60,${0.6 - k * 0.15})`; ctx.lineWidth = 1.3 - k * 0.2; ctx.stroke();
+        ctx.strokeStyle = `rgba(60,165,255,${0.6 - k * 0.15})`; ctx.lineWidth = 1.3 - k * 0.2; ctx.stroke();
       }
       ctx.globalCompositeOperation = "source-over";
       if (!reduce) raf = requestAnimationFrame(frame);

@@ -235,3 +235,72 @@ kbd { border-radius: 3px; font-family: var(--mono); }
   input, textarea, select { font-size: 16px; }
 }
 @media (hover: none) { .panel:hover { border-color: var(--line-2); } }
+
+/* ── Gemeinsame Leitstand-Bausteine (Kacheln, Raster, Filter) ───────── */
+/* ── Telemetrie-Leiste ───────────────────────────────────────────────── */
+.ops-telemetry { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.ops-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px 11px;
+  color: var(--text);
+  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--line-3);
+  border-radius: var(--r-md);
+  box-shadow: var(--edge), var(--shadow-1);
+  transition: border-color var(--t-med) var(--ease), background var(--t-med) var(--ease);
+}
+.ops-tile:hover { text-decoration: none; border-color: rgba(76, 201, 240, 0.4); background: linear-gradient(180deg, var(--bg-3), var(--bg-1)); }
+.ops-tile.ok { border-left-color: var(--ok); }
+.ops-tile.warn { border-left-color: var(--warn); }
+.ops-tile.err { border-left-color: var(--err); }
+.ops-tile-label {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3);
+}
+.ops-tile-label svg { color: var(--accent); }
+.ops-tile-value {
+  font-family: var(--mono);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.ops-tile.ok .ops-tile-value { color: var(--ok); }
+.ops-tile.warn .ops-tile-value { color: var(--warn); }
+.ops-tile.err .ops-tile-value { color: var(--err); }
+.ops-tile small { color: var(--text-3); font-size: 11px; line-height: 1.35; }
+
+.ops-telemetry.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ops-telemetry.cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.ops-tile .meter { margin-top: 2px; }
+
+/* Zweispaltiger Leitstand-Bereich (Hauptspalte + Seitenspalte), klappt auf schmalen Schirmen um. */
+.ops-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 10px; align-items: start; }
+.ops-split > .stack { gap: 10px; min-width: 0; }
+.ops-split.detail { grid-template-columns: minmax(0, 1fr) minmax(380px, 520px); }
+.ops-charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+
+/* Umschalter für Filter: eine Reihe kantiger Tasten statt Dropdown. */
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line-2); border-radius: var(--r-md); overflow: hidden; background: var(--bg-1); }
+.seg button {
+  height: 28px; padding: 0 12px; border: 0; border-right: 1px solid var(--line); background: transparent;
+  color: var(--text-3); font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+}
+.seg button:last-child { border-right: 0; }
+.seg button:hover { color: var(--text); background: rgba(255, 255, 255, 0.03); }
+.seg button.on { color: #03141c; background: var(--accent); font-weight: 700; }
+.ops-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+@media (max-width: 1280px) { .ops-telemetry, .ops-telemetry.cols-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ops-telemetry.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .ops-split, .ops-split.detail { grid-template-columns: 1fr; } .ops-charts { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .ops-telemetry, .ops-telemetry.cols-4, .ops-telemetry.cols-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .ops-tile-value { font-size: 24px; } }
+
+/* Kacheln, die als Filter-Taste dienen (Aufgaben). */
+button.ops-tile { font: inherit; text-align: left; cursor: pointer; width: 100%; }
+.ops-tile.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow-1); }

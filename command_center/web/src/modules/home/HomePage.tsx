@@ -4,8 +4,12 @@ import { useApi } from "@/lib/useApi";
 import { api } from "@/lib/api";
 import { useEvent } from "@/lib/events";
 import {
+  Activity,
+  AlertTriangle,
   Bot,
   Calendar,
+  Cpu,
+  ShieldCheck,
   HardDrive,
   Layers,
   ListChecks,
@@ -25,8 +29,12 @@ import { MessageList } from "@/modules/chat/MessageList";
 import { ChatComposer } from "@/modules/chat/ChatComposer";
 import type { Attachment, Message, RunState } from "@/modules/chat/types";
 import "@/modules/chat/chat.css";
-import "./noir-home.css";
+import "./ops-home.css";
+import "./architecture.css";
 import { BrainCore } from "./BrainCore";
+import { ActivityFeed } from "./ActivityFeed";
+import { CoreDeck } from "./CoreDeck";
+import { HeartbeatTile } from "./HeartbeatTile";
 
 interface CalendarEvent {
   uid: string;
@@ -47,7 +55,20 @@ interface CalendarPayload {
 }
 
 const ACTIVE_AGENT_STATES = new Set(["THINKING", "EXECUTING", "WAITING"]);
+const PHASE_LABEL: Record<string, string> = {
+  closed: "inaktiv",
+  connecting: "verbindet",
+  listening: "hört zu",
+  thinking: "denkt",
+  speaking: "spricht",
+};
 const pad = (value: number) => String(value).padStart(2, "0");
+const uptime = (seconds: number) => {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return d ? `${d} T ${h} Std` : h ? `${h} Std ${m} Min` : `${m} Min`;
+};
 const dateKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 const eventTime = (event: CalendarEvent) => {
   const start = new Date(event.start);
@@ -211,6 +232,9 @@ export default function HomePage() {
   const blockedTasks = Number(taskCounts.BLOCKED || 0) + Number(taskCounts.WAITING_FOR_APPROVAL || 0);
   const openTasks = runningTasks + queuedTasks + blockedTasks;
   const activeAgents = system?.agents?.active ?? 0;
+  const approvalsPending = system?.approvals_pending ?? 0;
+  const serverOk = !!system?.server?.connected;
+  const serverLevel = !serverOk ? "" : system!.server.cpu >= 90 ? "err" : system!.server.cpu >= 75 ? "warn" : "ok";
 
 
   const todayEvents = [...(calendar.data?.events || [])].sort(
@@ -231,36 +255,97 @@ export default function HomePage() {
   ].filter(Boolean) as { text: string; path: string }[];
 
   return (
-    <div className="page mia-home">
+    <div className="page ops-home">
       <ErrorState error={status.error} retry={() => status.reload(false)} />
 
-      <section className="mia-noir-hero" aria-labelledby="mia-hero-title">
-        <div className="mia-brain-stage" aria-label="MIA Gehirn"><BrainCore thinking={liveSession.phase === "thinking"} /></div>
-        <nav className="mia-reference-links" aria-label="MIA Kernbereiche">
-          <Link className="mia-reference-link" to="/workflows"><Search size={22} /><span><strong>ANALYSE</strong><small>Verstehen · Abläufe</small></span></Link>
-          <Link className="mia-reference-link" to="/memory"><HardDrive size={22} /><span><strong>GEDÄCHTNIS</strong><small>Wissen · Kontext</small></span></Link>
-          <Link className="mia-reference-link" to="/tasks"><Layers size={22} /><span><strong>PLANUNG</strong><small>Aufgaben · Strategie</small></span></Link>
-          <Link className="mia-reference-link" to="/chat"><MessageSquare size={22} /><span><strong>KOMMUNIKATION</strong><small>Chat · Voice · Vision</small></span></Link>
-          <Link className="mia-reference-link" to="/agents"><Play size={22} /><span><strong>AUSFÜHRUNG</strong><small>Agenten · Abteilungen</small></span></Link>
-          <Link className="mia-reference-link" to="/integrations"><Plug size={22} /><span><strong>INTEGRATION</strong><small>Tools · Systeme</small></span></Link>
-        </nav>
-        <div className="mia-noir-content">
-          <div className="mia-presence">
-            <StatusIndicator
-              status={!master ? "muted" : master.online ? "ok" : "err"}
-              live={!!master?.active_runs?.length}
-            />
-            <span>{!master ? "Status wird geladen" : master.online ? "MIA ist online" : "MIA ist offline"}</span>
-            <span className="mia-presence-model">{master?.provider?.label || "Kein KI-Provider verbunden"}</span>
+      {criticalMessages.length > 0 && (
+        <section className="ops-alerts" aria-label="Kritische Hinweise">
+          <div className="ops-alerts-title">
+            <AlertTriangle size={14} />
+            <span>Kritische Hinweise</span>
+            <small>nur reale, bestätigte Zustände</small>
           </div>
-          <div className="mia-noir-kicker">Zentrale Intelligenz · ein Kontext · eine MIA</div>
-          <h1 id="mia-hero-title">Talk to MIA</h1>
-          <p className="mia-noir-lead">
-            Deine Kommandozentrale für Gespräche, Aufgaben, Agenten und echte Ausführung. Ruhig, klar und ohne
-            erfundene Zustände.
-          </p>
+          <div className="ops-alert-list">
+            {criticalMessages.map((message) => (
+              <Link key={`${message.path}-${message.text}`} to={message.path} className="ops-alert">
+                <span className="dot warn" />
+                <span>{message.text}</span>
+                <span aria-hidden>→</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
-          <form className="mia-command" onSubmit={submitCommand}>
+      <section className="ops-telemetry" aria-label="Lage auf einen Blick">
+        <Link className={`ops-tile ${!master ? "" : master.online ? "ok" : "err"}`} to="/chat">
+          <span className="ops-tile-label"><Sparkles size={13} /> MIA</span>
+          <strong className="ops-tile-value">{!master ? "—" : master.online ? "ONLINE" : "OFFLINE"}</strong>
+          <small>{master?.provider?.label || "kein KI-Provider verbunden"}</small>
+        </Link>
+        <Link className={`ops-tile ${blockedTasks > 0 ? "warn" : ""}`} to="/tasks">
+          <span className="ops-tile-label"><ListChecks size={13} /> Aufträge</span>
+          <strong className="ops-tile-value">{system ? openTasks : "—"}</strong>
+          <small>{runningTasks} laufen · {queuedTasks} wartend · {blockedTasks} blockiert</small>
+        </Link>
+        <Link className="ops-tile" to="/agents">
+          <span className="ops-tile-label"><Bot size={13} /> Agenten</span>
+          <strong className="ops-tile-value">{system ? activeAgents : "—"}</strong>
+          <small>{system ? `${system.agents.enabled}/${system.agents.total} einsatzbereit` : "wird geladen"}</small>
+        </Link>
+        <Link className={`ops-tile ${approvalsPending > 0 ? "warn" : ""}`} to="/approvals">
+          <span className="ops-tile-label"><ShieldCheck size={13} /> Freigaben</span>
+          <strong className="ops-tile-value">{system ? approvalsPending : "—"}</strong>
+          <small>{approvalsPending > 0 ? "warten auf Entscheidung" : "nichts offen"}</small>
+        </Link>
+        <Link className={`ops-tile ${serverLevel}`} to="/server">
+          <span className="ops-tile-label"><Cpu size={13} /> Server</span>
+          <strong className="ops-tile-value">{serverOk ? `${Math.round(system!.server.cpu)}%` : "—"}</strong>
+          <span className={`meter ${serverLevel}`}><span style={{ width: `${serverOk ? Math.min(100, system!.server.cpu) : 0}%` }} /></span>
+          <small>{serverOk ? `CPU · RAM ${Math.round(system!.server.ram)}% · Disk ${Math.round(system!.server.disk)}%` : "nicht bestätigt"}</small>
+        </Link>
+        <Link className="ops-tile" to="/calendar">
+          <span className="ops-tile-label"><Calendar size={13} /> Termine heute</span>
+          <strong className="ops-tile-value">{calendar.loading && !calendar.data ? "—" : todayEvents.length}</strong>
+          <small>{calendar.data?.available === false ? "nicht eingerichtet" : "Kalender öffnen"}</small>
+        </Link>
+      </section>
+
+      <div className="ops-main">
+        <Panel
+          className="ops-core"
+          title="MIA Kern"
+          icon={<Sparkles size={14} />}
+          actions={
+            <span className="ops-core-state">
+              <StatusIndicator
+                status={!master ? "muted" : master.online ? "ok" : "err"}
+                live={!!master?.active_runs?.length}
+              />
+              {!master ? "Status wird geladen" : master.online ? "bereit" : "offline"}
+            </span>
+          }
+          foot={
+            <nav className="ops-areas" aria-label="MIA Kernbereiche">
+              <Link to="/workflows"><Search size={12} /> Analyse</Link>
+              <Link to="/memory"><HardDrive size={12} /> Gedächtnis</Link>
+              <Link to="/tasks"><Layers size={12} /> Planung</Link>
+              <Link to="/chat"><MessageSquare size={12} /> Kommunikation</Link>
+              <Link to="/agents"><Play size={12} /> Ausführung</Link>
+              <Link to="/integrations"><Plug size={12} /> Integration</Link>
+            </nav>
+          }
+        >
+          <div className="ops-core-stage" aria-label="MIA Gehirn">
+            <BrainCore thinking={liveSession.phase === "thinking"} />
+            <div className="ops-hud tl"><b>Zustand</b><span>{PHASE_LABEL[liveSession.phase] || liveSession.phase}</span></div>
+            <div className="ops-hud tr"><b>Leitung</b><span>{liveSession.open ? "LIVE" : sessionId ? "TEXT" : "frei"}</span></div>
+            <div className="ops-hud bl"><b>Modell</b><span>{master?.provider?.label || "—"}</span></div>
+            <div className="ops-hud br"><b>Laufzeit</b><span>{system ? uptime(system.jarvis.uptime_seconds) : "—"}</span></div>
+          </div>
+
+          <form className="ops-console" onSubmit={submitCommand}>
+            <span className="ops-prompt" aria-hidden>&gt;</span>
             <input
               value={command}
               onChange={(event) => setCommand(event.target.value)}
@@ -268,13 +353,13 @@ export default function HomePage() {
               aria-label="Auftrag an MIA"
             />
             <button className="btn primary" type="submit" disabled={!command.trim()}>
-              <Sparkles size={15} /> Senden
+              <Sparkles size={14} /> Senden
             </button>
           </form>
 
-          <div className="mia-hero-actions">
+          <div className="ops-actions">
             <button className="btn primary" type="button" onClick={() => void focusMiaSession()} disabled={openingSession}>
-              <Mic size={15} />
+              <Mic size={14} />
               {sessionId
                 ? "MIA-Sitzung anzeigen"
                 : openingSession
@@ -282,19 +367,24 @@ export default function HomePage() {
                   : "Mit MIA sprechen"}
             </button>
             <Link className="btn" to={sessionId ? `/chat/${sessionId}` : "/chat?new=1"}>
-              <MessageSquare size={15} /> Chat öffnen
+              <MessageSquare size={14} /> Chat öffnen
             </Link>
             <Link className="btn ghost" to="/memory">
-              <Sparkles size={15} /> Gedächtnis
+              <Sparkles size={14} /> Gedächtnis
             </Link>
           </div>
+        </Panel>
 
-
-        </div>
-        <div className="mia-core-pulse" aria-hidden="true">
-          <span />
-        </div>
-      </section>
+        <Panel
+          className="ops-feed"
+          title="Ereignisse"
+          icon={<Activity size={14} />}
+          actions={<Link className="btn sm ghost" to="/logs">Protokoll</Link>}
+          flush
+        >
+          <ActivityFeed limit={30} />
+        </Panel>
+      </div>
 
       {sessionId && (
         <section className="mia-inline-session panel" aria-label="Aktive MIA-Sitzung">
@@ -347,44 +437,10 @@ export default function HomePage() {
         </section>
       )}
 
-      <section className="mia-metrics" aria-label="MIA Übersicht">
-        <Link className="mia-metric" to="/calendar">
-          <span className="mia-metric-icon"><Calendar size={17} /></span>
-          <span className="mia-metric-label">Termine heute</span>
-          <strong>{calendar.loading && !calendar.data ? "—" : todayEvents.length}</strong>
-          <small>{calendar.data?.available === false ? "nicht eingerichtet" : "Kalender öffnen"}</small>
-        </Link>
-        <Link className="mia-metric" to="/tasks">
-          <span className="mia-metric-icon"><ListChecks size={17} /></span>
-          <span className="mia-metric-label">Offene Aufgaben</span>
-          <strong>{system ? openTasks : "—"}</strong>
-          <small>{runningTasks} laufen · {blockedTasks} blockiert</small>
-        </Link>
-        <Link className="mia-metric" to="/agents">
-          <span className="mia-metric-icon"><Bot size={17} /></span>
-          <span className="mia-metric-label">Aktive Agenten</span>
-          <strong>{system ? activeAgents : "—"}</strong>
-          <small>{system ? `${system.agents.enabled}/${system.agents.total} einsatzbereit` : "wird geladen"}</small>
-        </Link>
-      </section>
-
-      {criticalMessages.length > 0 && (
-        <section className="mia-alerts" aria-label="Kritische Hinweise">
-          <div className="mia-section-title">
-            <span>Kritische Hinweise</span>
-            <small>Nur reale, bestätigte Zustände</small>
-          </div>
-          <div className="mia-alert-list">
-            {criticalMessages.map((message) => (
-              <Link key={`${message.path}-${message.text}`} to={message.path} className="mia-alert">
-                <span className="dot warn" />
-                <span>{message.text}</span>
-                <span aria-hidden>→</span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
+      <div className="ops-grid ops-grid-3">
+        <CoreDeck />
+        <HeartbeatTile />
+      </div>
 
       <div className="mia-work-grid">
         <Panel

@@ -15,8 +15,8 @@
  */
 
 .voice-console {
-  --core: #ff9d2e;
-  --core-hot: #ffd9a0;
+  --core: var(--accent);
+  --core-hot: #d9f3ff;
   --core-deep: #d9631a;
   position: relative;
   display: grid;
@@ -28,7 +28,7 @@
   border: 1px solid var(--line-2);
   border-radius: 18px;
   background:
-    radial-gradient(760px 340px at 14% 50%, rgba(255, 157, 46, 0.11), transparent 62%),
+    radial-gradient(760px 340px at 14% 50%, rgba(76,201,240, 0.11), transparent 62%),
     linear-gradient(180deg, var(--bg-2), var(--bg-0));
   overflow: hidden;
 }
@@ -53,7 +53,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(100deg, transparent 30%, rgba(255, 157, 46, 0.055) 50%, transparent 70%);
+  background: linear-gradient(100deg, transparent 30%, rgba(76,201,240, 0.055) 50%, transparent 70%);
   transform: translateX(-100%);
   animation: vc-sweep 9s ease-in-out infinite;
   pointer-events: none;
@@ -91,15 +91,15 @@
   height: 54px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 35%, var(--core-hot), var(--core) 45%, var(--core-deep));
-  box-shadow: 0 0 60px rgba(255, 157, 46, 0.55), 0 0 140px rgba(255, 157, 46, 0.22);
+  box-shadow: 0 0 60px rgba(76,201,240, 0.55), 0 0 140px rgba(76,201,240, 0.22);
   transition: box-shadow 0.4s ease, background 0.4s ease;
 }
 
 @keyframes vc-spin { to { transform: rotate(360deg); } }
 @keyframes vc-breathe { 0%, 100% { transform: scale(1); opacity: 0.7; } 50% { transform: scale(1.06); opacity: 0.35; } }
 @keyframes vc-pulse {
-  0%, 100% { box-shadow: 0 0 50px rgba(255, 157, 46, 0.45), 0 0 120px rgba(255, 157, 46, 0.18); }
-  50% { box-shadow: 0 0 95px rgba(255, 157, 46, 0.95), 0 0 220px rgba(255, 157, 46, 0.42); }
+  0%, 100% { box-shadow: 0 0 50px rgba(76,201,240, 0.45), 0 0 120px rgba(76,201,240, 0.18); }
+  50% { box-shadow: 0 0 95px rgba(76,201,240, 0.95), 0 0 220px rgba(76,201,240, 0.42); }
 }
 
 /* Zuhören: der Kern öffnet sich, die Ringe werden schneller. */
@@ -113,8 +113,8 @@
 .voice-console.phase-connecting, .voice-console.phase-thinking .vc-ring.r2 { animation-duration: 2.2s; opacity: 0.8; }
 .voice-console.phase-connecting, .voice-console.phase-thinking .vc-ring.r3 { animation-duration: 0.9s; opacity: 0.9; }
 .voice-console.phase-connecting, .voice-console.phase-thinking .vc-nucleus {
-  background: radial-gradient(circle at 35% 35%, #ffffff, #ffd9a0 40%, var(--core) 75%);
-  box-shadow: 0 0 80px rgba(255, 217, 160, 0.75), 0 0 180px rgba(255, 157, 46, 0.35);
+  background: radial-gradient(circle at 35% 35%, #ffffff, #d9f3ff 40%, var(--core) 75%);
+  box-shadow: 0 0 80px rgba(255, 217, 160, 0.75), 0 0 180px rgba(76,201,240, 0.35);
 }
 
 /* Sprechen: ruhiger, aber hell — die Stimme trägt jetzt. */
@@ -123,7 +123,7 @@
 .voice-console.phase-speaking .vc-nucleus {
   animation: vc-pulse 2.2s ease-in-out infinite;
   background: radial-gradient(circle at 35% 35%, var(--core-hot), var(--core) 40%, var(--core-deep));
-  box-shadow: 0 0 90px rgba(255, 157, 46, 0.8), 0 0 200px rgba(90, 200, 255, 0.28);
+  box-shadow: 0 0 90px rgba(76,201,240, 0.8), 0 0 200px rgba(90, 200, 255, 0.28);
 }
 
 /* ── Text ──────────────────────────────────────────────────────────────── */
