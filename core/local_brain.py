@@ -28,6 +28,7 @@ from memory.memory_manager import (  # noqa: E402
     format_memory_for_prompt,
     relevant_conversation_memory,
 )
+from memory.behavior_memory import behavior_context  # noqa: E402
 from memory.config_manager import get_personality_mode, PERSONALITY_MODES  # noqa: E402
 
 CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
@@ -658,6 +659,10 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
     # always leads; passed history is prior conversation turns appended after it.
     messages = [{"role": "system", "content": system_prompt}] + (history or [])
     if not worker_mode:
+        # Verhaltensgedaechtnis greift bei jeder Nutzereingabe ZUERST - vor Recall und Tools.
+        behavior_block = behavior_context(clear_text)
+        if behavior_block:
+            messages.append({"role": "system", "content": behavior_block})
         try:
             recalled_context = relevant_conversation_memory(clear_text, limit=6, max_chars=2800)
         except Exception as e:
@@ -970,6 +975,10 @@ def chat_stream_and_speak(user_text: str, history: list[dict] | None = None, voi
     # passed prior turns — exactly what "remember like a human" needs. System prompt now
     # always leads; passed history is prior conversation turns appended after it.
     messages = [{"role": "system", "content": system_prompt}] + (history or [])
+    # Verhaltensgedaechtnis greift bei jeder Nutzereingabe ZUERST - vor Recall und Tools.
+    behavior_block = behavior_context(clear_text)
+    if behavior_block:
+        messages.append({"role": "system", "content": behavior_block})
     try:
         recalled_context = relevant_conversation_memory(clear_text, limit=6, max_chars=2800)
     except Exception as e:
