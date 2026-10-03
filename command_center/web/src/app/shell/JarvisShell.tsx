@@ -94,8 +94,8 @@ export function JarvisShell() {
         <LiveBar />
         {conn.state !== "online" && conn.state !== "connecting" && (
           <div className={`conn-banner ${conn.state === "offline" ? "err" : ""}`} role="status">
-            {conn.state === "offline" ? "Live connection lost — data may be stale." : "Reconnecting to the live stream…"}
-            <button className="btn sm" onClick={() => events.reconnectNow()}>Reconnect now</button>
+            {conn.state === "offline" ? "Live-Verbindung unterbrochen — Daten sind möglicherweise veraltet." : "Verbindung zum Live-Stream wird neu aufgebaut …"}
+            <button className="btn sm" onClick={() => events.reconnectNow()}>Jetzt verbinden</button>
           </div>
         )}
         <Suspense fallback={<div className="page"><Skeleton rows={6} height={18} /></div>}>

@@ -83,6 +83,13 @@
   .chat-layout > .side.open:last-child { position: fixed !important; inset: calc(var(--topbar-h) + 8px) 8px calc(var(--mobile-nav-h) + 8px) !important; padding: 0 !important; z-index: 40; border-radius: var(--r-lg); }
 }
 
+/* Der Chat füllt die Höhe, die nach Banner und Live-Streifen übrig bleibt, statt eine feste Höhe zu rechnen:
+   Erscheint oben "Verbindung unterbrochen", rutscht der Chat nicht mehr unter die Navigation und
+   schneidet den Hinweis unter der Eingabe nicht ab. */
+.main:has(> .chat-layout) { display: flex; flex-direction: column; }
+.main:has(> .chat-layout) > .chat-layout { flex: 1 1 0; height: auto; min-height: 320px; }
+.main:has(> .chat-layout) > .conn-banner, .main:has(> .chat-layout) > .live-bar { flex: none; }
+
 .chat-layout .composer-bar .pick { border-color: var(--line-2); background: var(--bg-1); color: var(--text-2); border-radius: var(--r-sm); }
 .chat-layout .composer-bar .pick:focus-within { border-color: var(--chat-accent, var(--accent)); }
 .chat-layout .composer-bar .pick.mode-full { color: var(--warn); border-color: rgba(255, 180, 84, 0.6); }
