@@ -54,6 +54,7 @@ from memory.memory_manager import (
     save_session_summary, pop_last_session, record_conversation_turn,
     search_memory, set_trim_notifier,
 )
+from memory.behavior_memory import consult as behavior_consult, learn_from_turn as behavior_learn
 from core import knowledge_client
 
 # The file-backed tools (open_app, web_search, browser_control, …) are no longer
@@ -804,6 +805,14 @@ class MiaLive:
         parts = [time_ctx, identity_ctx, personality_ctx]
         if context_ctx:
             parts.append(context_ctx)
+        # Behavior memory first: user-defined rules lead the context, before facts.
+        try:
+            behavior_str = behavior_consult("")
+        except Exception as exc:
+            print(f"[Behavior] consult failed: {exc}")
+            behavior_str = ""
+        if behavior_str:
+            parts.append(behavior_str)
         if mem_str:
             parts.append(mem_str)
         parts.append(sys_prompt)
@@ -1211,6 +1220,10 @@ class MiaLive:
 
                             full_in = " ".join(in_buf).strip()
                             if full_in:
+                                try:
+                                    await asyncio.to_thread(behavior_learn, full_in)
+                                except Exception as exc:
+                                    print(f"[Behavior] learn failed: {exc}")
                                 self.ui.write_log(f"You: {full_in}")
                                 self._session_log.append(f"User: {full_in}")
                                 if self._dashboard:

@@ -6,6 +6,7 @@ import { AuthProvider } from "@/lib/auth";
 import "@/design/base.css";
 import "@/design/polish.css";
 import "@/design/modern.css";
+import "@/design/dashboard-layout.css";
 import "@/design/noir-glass.css";
 import "@/design/command-theme.css";
 
