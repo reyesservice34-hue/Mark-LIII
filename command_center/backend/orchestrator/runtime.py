@@ -248,6 +248,15 @@ def core_memory(state, limit: int = 0) -> str:
             "Handlung. Widerspricht eine Anfrage dem, sag es, statt es zu übergehen:\n" + lines)
 
 
+def _behavior_block(text: str, learn: bool) -> str:
+    """Regeln aus memory/behavior_memory.py; fehlt das Modul (altes Image) oder scheitert es, bleibt es leer."""
+    try:
+        from memory.behavior_memory import behavior_context
+        return behavior_context(text, learn=learn)
+    except Exception:  # noqa: BLE001 — Regeln dürfen nie eine Antwort verhindern
+        return ""
+
+
 def recall_memory(state, text: str, limit: int = 6) -> str:
     """Erinnerungen, die zur aktuellen Frage passen — zusätzlich zum Hauptgedächtnis, bei jeder Anfrage neu.
 
@@ -756,6 +765,12 @@ class MasterRuntime:
                 nonlocal system
                 system += "\n\n" + text
 
+        # Verhaltensgedächtnis zuerst, für jeden Agenten und jede Anfrage. Gelernt wird nur aus dem, was der
+        # Nutzer selbst im obersten Gespräch schreibt – nie aus Aufgaben, Delegationen oder Tool-Ergebnissen.
+        behavior = _behavior_block(goal, learn=handle.depth == 0 and bool(handle.conversation_id)
+                                   and not handle.task_id and agent.kind == "master")
+        if behavior:
+            context(behavior)
         if agent.kind == "master":
             recalled = recall_memory(st, goal)
             try:
