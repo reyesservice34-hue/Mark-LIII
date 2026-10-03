@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
@@ -33,7 +35,9 @@ def _base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-BEHAVIOR_PATH = _base_dir() / "brain" / "memory" / "behavior" / "rules.jsonl"
+# MIA_BEHAVIOR_PATH lässt den Command-Center-Container die Regeln in sein Datenvolumen legen.
+BEHAVIOR_PATH = Path(os.environ.get("MIA_BEHAVIOR_PATH")
+                     or _base_dir() / "brain" / "memory" / "behavior" / "rules.jsonl")
 
 _lock = Lock()
 
@@ -113,11 +117,30 @@ def _safe(text: str) -> bool:
 
 
 # ── Speicher ─────────────────────────────────────────────────────────────────
+def _mirror(row: dict) -> None:
+    """Best-effort Sicherung auf den Wissensserver (aus, solange knowledge_host fehlt)."""
+    def _run() -> None:
+        try:
+            from core import knowledge_client as kc
+            if not kc.is_enabled():
+                return
+            if row.get("deleted"):
+                kc.memory_delete([f"behavior:{row['id']}"])
+            else:
+                kc.memory_upsert(f"behavior:{row['id']}", row.get("text", ""), actor="behavior",
+                                 pinned=row.get("status") == "active",
+                                 created_at=row.get("created", ""))
+        except Exception as exc:
+            print(f"[Behavior] mirror failed: {exc}")
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _append(row: dict) -> None:
     BEHAVIOR_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _lock:
         with BEHAVIOR_PATH.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    _mirror(row)
 
 
 def _load_all() -> dict[str, dict]:
@@ -190,6 +213,31 @@ def add_rule(text: str, *, scope: str = "general", status: str = "active",
         }
     _append(row)
     return row
+
+
+# ── Import ───────────────────────────────────────────────────────────────────
+_BULLET_RE = re.compile(r"^\s*(?:[-*•–]|\d+[.)])\s+(.+)$")
+
+
+def import_rules(text: str, source: str = "file") -> dict:
+    """Regeldatei einlesen: jede Aufzählungszeile (-, *, •, 1.) wird eine aktive Regel.
+
+    Überschriften und Fließtext werden übersprungen; Geheimnisse und Versuche,
+    Sicherheitsregeln auszuhebeln, verwirft add_rule wie überall.
+    """
+    imported = skipped = 0
+    for line in str(text or "").splitlines():
+        m = _BULLET_RE.match(line)
+        if not m:
+            continue
+        rule = m.group(1).strip().strip("*_ ")
+        if len(rule) < 8:
+            continue
+        if add_rule(rule, scope=_detect_scope(rule), status="active", source=source):
+            imported += 1
+        else:
+            skipped += 1
+    return {"imported": imported, "skipped": skipped}
 
 
 # ── Lernen ───────────────────────────────────────────────────────────────────
@@ -272,3 +320,12 @@ def behavior_context(user_text: str, learn: bool = True) -> str:
     except Exception as exc:  # Das Gedächtnis darf nie einen Turn blockieren.
         print(f"[Behavior] consult failed: {exc}")
         return ""
+
+
+if __name__ == "__main__":  # python -m memory.behavior_memory import <datei>
+    if len(sys.argv) == 3 and sys.argv[1] == "import":
+        path = Path(sys.argv[2])
+        print(import_rules(path.read_text(encoding="utf-8"), source=f"file:{path.name}"))
+    else:
+        for r in list_rules():
+            print(f"{r['status']:9} {r['id']} {r['text']}")

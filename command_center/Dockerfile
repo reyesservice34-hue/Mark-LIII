@@ -39,6 +39,8 @@ COPY plugins/__init__.py plugins/_calendar_core.py /app/plugins/
 # wandert es in den Wissensspeicher, danach wird es dort gepflegt und nicht
 # mehr überschrieben. Ohne diese Zeile läge es im Repository und wäre für ihn
 # unsichtbar — er liest keine Datei, die niemand in seinen Systemtext stellt.
+# Verhaltensgedächtnis: reine Standardbibliothek; die Regeln liegen im Datenvolumen (MIA_BEHAVIOR_PATH).
+COPY memory/__init__.py memory/behavior_memory.py /app/memory/
 COPY .claude/HAUPTGEDAECHTNIS.md .claude/STEHENDE_ANWEISUNGEN.md /app/.claude/
 COPY --from=frontend /build/dist /app/command_center/backend/static
 

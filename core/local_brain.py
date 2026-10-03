@@ -658,11 +658,12 @@ def chat(user_text: str, history: list[dict] | None = None, skip_clarify: bool =
     # passed prior turns — exactly what "remember like a human" needs. System prompt now
     # always leads; passed history is prior conversation turns appended after it.
     messages = [{"role": "system", "content": system_prompt}] + (history or [])
+    # Verhaltensgedaechtnis greift bei jeder Eingabe ZUERST - vor Recall und Tools. Hintergrund-
+    # Worker (Agenten) befolgen die Regeln ebenfalls, lernen aber nicht aus Aufgabentexten.
+    behavior_block = behavior_context(clear_text, learn=not worker_mode)
+    if behavior_block:
+        messages.append({"role": "system", "content": behavior_block})
     if not worker_mode:
-        # Verhaltensgedaechtnis greift bei jeder Nutzereingabe ZUERST - vor Recall und Tools.
-        behavior_block = behavior_context(clear_text)
-        if behavior_block:
-            messages.append({"role": "system", "content": behavior_block})
         try:
             recalled_context = relevant_conversation_memory(clear_text, limit=6, max_chars=2800)
         except Exception as e:

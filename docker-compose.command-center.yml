@@ -28,6 +28,7 @@ services:
     environment:
       JARVIS_CC_DATA_DIR: /data
       JARVIS_CC_WORKSPACE_DIR: /data/workspace
+      MIA_BEHAVIOR_PATH: /data/behavior/rules.jsonl
       # 2026-09-29 (user, explicit): match main.py's configured Gemini Live voice
       # (memory/config_manager.py voice_name="Aoede") instead of this service's
       # own default ("Puck") — same MIA must sound the same everywhere.
