@@ -39,7 +39,9 @@ _EN=frozenset("the is was to and of for with has have wanted working on a an in 
 _WISH=re.compile(r"\b(möchte|möchten|will|wollen|wünscht|wünschen|bevorzugt|soll|sollen|wants|prefers|likes|immer|nie|niemals|ab jetzt|künftig)\b",re.I)
 _EVENT=re.compile(r"^(?:der |die )?(?:master|mia|nutzer|benutzer|user)\b[^.]{0,60}?\b(?:hat|haben|hatte|wurde|wurden|was|has|had|stored|asked|created|cloned|installed|checked|versucht|benötigt|bestätigt|bestätigte|erstellt|erstellte|gestartet|fragt|fragte|bat|prüft|geprüft|installiert|geklont|arbeitet|needs|asks|creates)\b",re.I)
 _ACTION=re.compile(r"(kann|können|sollte|sollen|muss|darf)[^.]{0,50}(gelöscht|entfernt|deaktiviert|abgeschaltet|überschrieben)|\blöschen\b|\bdeaktivieren\b|\bentfernen\b",re.I)
-_STALE=re.compile(r"(nicht aktiv|fehlt\b|fehlend|nicht gefunden|nicht vorhanden|verhindert|rechtehindernis|derzeit|aktuell\b|gerade\b|noch nicht|offline|läuft nicht|ohne verbindung)",re.I)
+_STALE=re.compile(r"(nicht aktiv|fehlt\b|fehlend|nicht gefunden|nicht vorhanden|verhindert|rechtehindernis|derzeit|aktuell\b|gerade\b|noch nicht|offline|läuft nicht|ohne verbindung|problematisch|probleme\b|fehlerhaft|funktioniert nicht|einwandfrei|nicht verbinden)",re.I)
+# "MIA kann X nicht" als Gedächtnis-Satz nährt falsche Absagen ("dazu habe ich keine Rechte"): nie speichern.
+_LIMIT=re.compile(r"\b(kann|können|konnte|konnten)\b[^.]{0,60}\bnicht\b",re.I)
 _PROMPTISH=re.compile(r"^(du bist|you are|deine (hauptaufgabe|aufgabe)|dein name)\b",re.I)
 def auto_fact_rejection(text):
     """Grund, warum ein automatisch gelernter Satz NICHT ins Gedächtnis gehört; leer, wenn er passt.
@@ -51,6 +53,7 @@ def auto_fact_rejection(text):
     wish=bool(_WISH.search(t))
     if _PROMPTISH.search(t): return "Prompt-Fragment"
     if _ACTION.search(t): return "Handlungsempfehlung"
+    if _LIMIT.search(t): return "Einschränkung, nährt falsche Absagen"
     if _EVENT.search(t) and not wish: return "Gesprächsereignis"
     toks=re.findall(r"[a-zA-Zäöüß]+",t.lower())
     if len(toks)>=4 and sum(w in _EN for w in toks)/len(toks)>=0.25 and not wish: return "englische Mitschrift"
