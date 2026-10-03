@@ -106,6 +106,14 @@ services:
       - ./command_center/backend/modules/memory/__init__.py:/app/command_center/backend/modules/memory/__init__.py:ro
       # 2026-10-03: Mail-Fakten laufen nur noch als Vorschlag (modules/memory.propose); ohne diese Zeile bliebe der alte Code im Image aktiv
       - ./command_center/backend/modules/maillearn/__init__.py:/app/command_center/backend/modules/maillearn/__init__.py:ro
+      # 2026-10-03: Verhaltensgedächtnis (memory/behavior_memory.py) im Container, ohne Image-Neubau. Dieselben drei
+      # Dateien kopiert auch das Dockerfile; ohne Mount fiele runtime.py still auf "keine Regeln" zurück.
+      - ./memory/__init__.py:/app/memory/__init__.py:ro
+      - ./memory/behavior_memory.py:/app/memory/behavior_memory.py:ro
+      - ./memory/behavior_seed.md:/app/memory/behavior_seed.md:ro
+      # Eine Regel-Datei für Engine UND Container (schreibbar): was im Chat gelernt wird, gilt auch im Orchestrator
+      # und umgekehrt. Die Engine liest brain/memory/behavior/rules.jsonl (Standardpfad); MIA_BEHAVIOR_PATH zeigt hierher.
+      - ./brain/memory/behavior:/data/behavior
       # 2026-09-29: Portierung main.py-Tools (v2-Plan) — Reminder-Service (neu), app.py importiert ihn bereits
       - ./command_center/backend/services/reminders.py:/app/command_center/backend/services/reminders.py:ro
       - ./command_center/backend/services/local_warmup.py:/app/command_center/backend/services/local_warmup.py:ro
