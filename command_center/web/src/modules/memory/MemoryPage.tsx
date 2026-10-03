@@ -16,8 +16,19 @@ import { Panel, EmptyState, ErrorState, Modal, Skeleton, Toggle } from "@/compon
 import { relative } from "@/lib/format";
 import "@/modules/home/architecture.css";
 
-interface Fact { id: string; text: string; actor: string; created_at: string; pinned: number }
-interface Payload { instructions: string; facts: Fact[]; core: Fact[]; max_core: number; total: number; learning_mode: boolean }
+interface Fact { id: string; text: string; actor: string; created_at: string; pinned: number; source?: string; kind?: string }
+/** Ein Merksatz, den MIA selbst geschlossen oder aus fremdem Text (Mail) gezogen hat — gemerkt wird er erst mit deinem Ja. */
+interface Proposal { id: string; text: string; kind: string; source: string; actor: string; created_at: string }
+interface Payload { instructions: string; facts: Fact[]; core: Fact[]; max_core: number; total: number; learning_mode: boolean; proposals?: Proposal[] }
+
+/** Woher ein Eintrag stammt. "ungeprüft" = automatisch gelernt, von dir noch nicht angesehen. */
+const HERKUNFT: Record<string, { label: string; ungeprueft?: boolean }> = {
+  user: { label: "von dir" }, dashboard: { label: "Dashboard" }, confirmed: { label: "bestätigt" },
+  "chat-auto": { label: "automatisch", ungeprueft: true }, mail: { label: "aus Mail", ungeprueft: true },
+  inferred: { label: "MIA-Schluss" },
+};
+const ART: Record<string, string> = { correction: "Korrektur", preference: "Vorliebe" };
+const herkunft = (source?: string, fallback = "—") => HERKUNFT[source || ""]?.label ?? fallback;
 interface Doc { slug: string; title: string; summary: string; enabled: boolean; uses: number; bytes: number; lines: number; updated_at: string }
 
 const BEISPIEL = `Sprich mich mit „Chef" an.
@@ -26,7 +37,9 @@ Bei allem, was an einen Kunden rausgeht, vorher fragen.
 Preise nie ohne meinen Aufschlag nennen.`;
 
 export default function MemoryPage() {
-  const { data, error, loading, reload } = useApi<Payload>("/api/memory");
+  // memory.proposal: ein neuer Vorschlag von MIA erscheint sofort, ohne dass die Seite neu geladen wird.
+  const { data, error, loading, reload } = useApi<Payload>("/api/memory", { refreshOn: ["memory.proposal"] });
+  const [nurUngeprueft, setNurUngeprueft] = useState(false);
   const [text, setText] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -140,8 +153,30 @@ export default function MemoryPage() {
     )
   );
 
-  const facts = (data?.facts || []).filter((f) => !q || f.text.toLowerCase().includes(q.toLowerCase()));
+  /** Einen Vorschlag übernehmen (wird zum Gedächtnis) oder verwerfen. */
+  const decide = async (p: Proposal, what: "accept" | "reject") => {
+    try {
+      await api.post(`/api/memory/proposals/${p.id}/${what}`);
+      toast({ title: what === "accept" ? "Gemerkt" : "Verworfen", body: p.text.slice(0, 90), tone: "ok" });
+      reload();
+    } catch (e: any) { toast({ title: "Ging nicht", body: e?.message, tone: "err" }); }
+  };
+
+  const rejectAll = async () => {
+    const list = data?.proposals || [];
+    if (!window.confirm(`Alle ${list.length} Vorschläge verwerfen?`)) return;
+    try {
+      await Promise.all(list.map((p) => api.post(`/api/memory/proposals/${p.id}/reject`)));
+      toast({ title: "Verworfen", body: `${list.length} Vorschläge entfernt.`, tone: "ok" });
+      reload();
+    } catch (e: any) { toast({ title: "Ging nicht", body: e?.message, tone: "err" }); }
+  };
+
+  const facts = (data?.facts || [])
+    .filter((f) => !q || f.text.toLowerCase().includes(q.toLowerCase()))
+    .filter((f) => !nurUngeprueft || HERKUNFT[f.source || ""]?.ungeprueft);
   const core = data?.core || [];
+  const proposals = data?.proposals || [];
 
   if (error) return <div className="page"><ErrorState error={error} retry={reload} /></div>;
 
@@ -168,6 +203,34 @@ export default function MemoryPage() {
             onChange={(enabled) => { if (!modeSaving && data) void setLearningMode(enabled); }} />
         </div>
       </Panel>
+
+      {proposals.length > 0 && (
+        <Panel title={`Vorschläge von MIA · ${proposals.length}`} icon={<Sparkles size={15} />}
+          actions={<button className="btn sm danger" onClick={rejectAll}><X size={13} />Alle verwerfen</button>}
+          foot="Das hat MIA selbst geschlossen oder aus einer Mail gezogen. Erst mit „Übernehmen“ wird es gemerkt und gilt in Gesprächen. Unbeantwortet verfällt ein Vorschlag nach 30 Tagen.">
+          <table className="table">
+            <thead><tr><th>Vorschlag</th><th>Herkunft</th><th>wann</th><th /></tr></thead>
+            <tbody>
+              {proposals.map((p) => (
+                <tr key={p.id}>
+                  <td>
+                    {ART[p.kind] && <span className="badge info" style={{ marginRight: 6 }}>{ART[p.kind]}</span>}
+                    {p.text}
+                  </td>
+                  <td className="small muted">{herkunft(p.source, p.actor || "—")}</td>
+                  <td className="small muted">{relative(p.created_at)}</td>
+                  <td className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+                    <button className="btn sm primary" onClick={() => decide(p, "accept")}
+                      title="Merken — gilt ab jetzt in Gesprächen"><Check size={13} />Übernehmen</button>
+                    <button className="btn sm" onClick={() => decide(p, "reject")}
+                      title="Verwerfen"><X size={13} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      )}
 
       <Panel title={`Hauptgedächtnis${data ? ` · ${core.length}/${data.max_core}` : ""}`}
         icon={<Zap size={15} />}
@@ -285,6 +348,8 @@ export default function MemoryPage() {
         actions={<>
           <input className="input sm" placeholder="suchen …" value={q} onChange={(e) => setQ(e.target.value)}
             style={{ width: 160 }} />
+          <button className={`btn sm ${nurUngeprueft ? "primary" : ""}`} onClick={() => setNurUngeprueft((v) => !v)}
+            title="Nur automatisch Gelerntes zeigen, das du noch nicht geprüft hast">Nur ungeprüft</button>
           {(data?.total ?? 0) > 0 && (
             <button className="btn sm danger" onClick={clearAll}><Trash2 size={13} />Alles löschen</button>
           )}
@@ -303,7 +368,7 @@ export default function MemoryPage() {
             </EmptyState>
           ) : (
             <table className="table">
-              <thead><tr><th>Eintrag</th><th>von</th><th>wann</th><th /></tr></thead>
+              <thead><tr><th>Eintrag</th><th>Herkunft</th><th>wann</th><th /></tr></thead>
               <tbody>
                 {facts.map((f) => (
                   <tr key={f.id}>
@@ -311,7 +376,13 @@ export default function MemoryPage() {
                       {f.pinned ? <span className="core-badge" title="Im Hauptgedächtnis"><Zap size={11} /></span> : null}
                       {editable(f)}
                     </td>
-                    <td className="small muted">{f.actor || "—"}</td>
+                    <td className="small muted">
+                      {herkunft(f.source, f.actor || "—")}
+                      {HERKUNFT[f.source || ""]?.ungeprueft && (
+                        <span className="badge warn" style={{ marginLeft: 6 }}
+                          title="Automatisch gelernt, von dir noch nicht geprüft">ungeprüft</span>
+                      )}
+                    </td>
                     <td className="small muted">{relative(f.created_at)}</td>
                     <td className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
                       <button className="btn sm" onClick={() => setEdit({ id: f.id, text: f.text })}
