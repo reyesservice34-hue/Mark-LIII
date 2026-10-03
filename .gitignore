@@ -48,6 +48,7 @@ desktop.ini
 # ── Runtime output ────────────────────────────────────────────────────────────
 *.log
 logs/
+!command_center/web/src/modules/logs/
 downloads/
 screenshots/
 tasks/queue/*.json

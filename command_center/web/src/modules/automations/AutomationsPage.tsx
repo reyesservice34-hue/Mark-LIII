@@ -26,9 +26,9 @@ export default function AutomationsPage() {
   };
   return (
     <div className="page">
-      <div className="page-head"><div><div className="eyebrow">Background jobs</div><h1>Automations</h1></div></div>
+      <div className="page-head"><div><div className="eyebrow">Hintergrundjobs</div><h1>Automatisierungen</h1></div></div>
       <ErrorState error={jobs.error} retry={() => jobs.reload(false)} />
-      <Panel title="Scheduled jobs" icon={<Timer size={15} />} flush foot="These are the command center's own recurring jobs (sampling, health checks, housekeeping). External workflows live under Workflows.">
+      <Panel title="Geplante Jobs" icon={<Timer size={15} />} flush foot="These are the command center's own recurring jobs (sampling, health checks, housekeeping). External workflows live under Workflows.">
         {!jobs.data ? <div className="panel-body"><Skeleton rows={4} /></div> : (
           <table className="table">
             <thead><tr><th>Job</th><th>Interval</th><th>Last run</th><th>Result</th><th>Runs</th><th>Enabled</th><th /></tr></thead>

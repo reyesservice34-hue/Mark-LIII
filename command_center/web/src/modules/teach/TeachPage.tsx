@@ -107,10 +107,10 @@ export default function TeachPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <div><div className="eyebrow">Show it once, keep the lesson</div><h1>Teach</h1></div>
+        <div><div className="eyebrow">Einmal zeigen, Lektion behalten</div><h1>Beibringen</h1></div>
         {can("operator") && <div className="actions">
-          {active ? <button className="btn danger" onClick={() => stop(active)}><Square />Stop recording</button>
-            : <button className="btn primary" onClick={() => setStarting(true)}><Plus />Record a demonstration</button>}
+          {active ? <button className="btn danger" onClick={() => stop(active)}><Square />Aufnahme beenden</button>
+            : <button className="btn primary" onClick={() => setStarting(true)}><Plus />Vorführung aufnehmen</button>}
         </div>}
       </div>
       <ErrorState error={recordings.error || procedures.error} retry={() => recordings.reload(false)} />
@@ -132,7 +132,7 @@ export default function TeachPage() {
         </Panel>
       )}
 
-      <div className="grid" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
+      <div className="ops-split even">
         <Panel title="Recordings" icon={<GraduationCap size={15} />} flush>
           {!recordings.data ? <div className="panel-body"><Skeleton /></div> :
             recordings.data.recordings.length === 0 ?
@@ -272,7 +272,7 @@ export default function TeachPage() {
       )}
 
       {starting && (
-        <Modal title="Record a demonstration" onClose={() => { setStarting(false); setParams({}); }}
+        <Modal title="Vorführung aufnehmen" onClose={() => { setStarting(false); setParams({}); }}
           foot={<><button className="btn" onClick={() => { setStarting(false); setParams({}); }}>Cancel</button>
             <button className="btn primary" onClick={start} disabled={!form.title.trim() || busy}>Start recording</button></>}>
           <div className="stack">

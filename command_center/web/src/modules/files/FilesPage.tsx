@@ -72,14 +72,14 @@ export default function FilesPage() {
   return (
     <div className="page" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (can("operator")) upload(e.dataTransfer.files); }}>
       <div className="page-head">
-        <div><div className="eyebrow">Workspace · {recent.data ? `${recent.data.usage.files} files · ${bytes(recent.data.usage.bytes)}` : ""}</div><h1>Files</h1></div>
+        <div><div className="eyebrow">Arbeitsbereich · {recent.data ? `${recent.data.usage.files} Dateien · ${bytes(recent.data.usage.bytes)}` : ""}</div><h1>Dateien</h1></div>
         <div className="actions">
-          <div className="row" style={{ gap: 6 }}><Search size={14} style={{ color: "var(--text-3)" }} /><input ref={searchInput} className="input" style={{ width: 220 }} placeholder="Search by name" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search files" /></div>
+          <div className="row" style={{ gap: 6 }}><Search size={14} style={{ color: "var(--text-3)" }} /><input ref={searchInput} className="input" style={{ width: 220 }} placeholder="Nach Name suchen" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search files" /></div>
           {can("operator") && <><input ref={fileInput} type="file" multiple hidden onChange={(e) => upload(e.target.files)} /><button className="btn" onClick={mkdir}><FolderPlus />Folder</button><button className="btn primary" onClick={() => fileInput.current?.click()} disabled={uploading}>{uploading ? <span className="spinner" /> : <Upload />}Upload</button></>}
         </div>
       </div>
       <ErrorState error={dir.error || search.error} retry={() => dir.reload(false)} />
-      <div className="grid" style={{ gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1fr)" }}>
+      <div className="ops-split wide">
         <div className="stack" style={{ minWidth: 0 }}>
           {can("admin") && <Panel title="Terminal" icon={<Terminal size={15} />} flush foot={`Arbeitsverzeichnis: ${path || "workspace"}`}>
             <div style={{ minHeight: 150, maxHeight: 260, overflow: "auto", padding: "10px 12px", background: "var(--bg-0)", fontFamily: "var(--mono)", fontSize: 12 }}>

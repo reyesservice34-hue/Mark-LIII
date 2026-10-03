@@ -24,17 +24,22 @@ export default function IntegrationsPage() {
     } catch (e: any) { toast({ title: "Speichern fehlgeschlagen", body: e.message, tone: "err" }); }
     finally { setBusy(null); }
   };
-  const check = async (id: string) => { setBusy(id); try { await api.post(`/api/integrations/${id}/check`); } catch (e: any) { toast({ title: "Check failed", body: e.message, tone: "err" }); } finally { setBusy(null); } };
+  const check = async (id: string) => { setBusy(id); try { await api.post(`/api/integrations/${id}/check`); } catch (e: any) { toast({ title: "Prüfung fehlgeschlagen", body: e.message, tone: "err" }); } finally { setBusy(null); } };
   const checkAll = async () => { setBusy("*"); try { await api.post("/api/integrations/check-all"); list.reload(); } finally { setBusy(null); } };
   const s = list.data?.summary;
   return (
     <div className="page">
       <div className="page-head">
-        <div><div className="eyebrow">Integration registry{s ? ` · ${s.connected} connected · ${s.configured} configured · ${s.total} available` : ""}</div><h1>Integrations</h1></div>
-        {can("operator") && <div className="actions"><button className="btn sm" onClick={checkAll} disabled={busy === "*"}><RefreshCw style={busy === "*" ? { animation: "spin 1s linear infinite" } : undefined} />Check all</button></div>}
+        <div><div className="eyebrow">Integrationsregister</div><h1>Integrationen</h1></div>
+        {can("operator") && <div className="actions"><button className="btn sm" onClick={checkAll} disabled={busy === "*"}><RefreshCw style={busy === "*" ? { animation: "spin 1s linear infinite" } : undefined} />Alle prüfen</button></div>}
       </div>
       <ErrorState error={list.error} retry={() => list.reload(false)} />
-      <p className="small muted">Credentials are read from the server environment only and are never shown here. A card shows NOT CONNECTED until the required variables are set; “checked” means a real request to the service succeeded.</p>
+      <div className="ops-telemetry cols-3" aria-label="Integrationen im Überblick">
+        <div className={`ops-tile ${s && s.connected > 0 ? "ok" : ""}`}><span className="ops-tile-label">Verbunden</span><strong className="ops-tile-value">{s ? s.connected : "—"}</strong><small>Dienst hat zuletzt geantwortet</small></div>
+        <div className="ops-tile"><span className="ops-tile-label">Eingerichtet</span><strong className="ops-tile-value">{s ? s.configured : "—"}</strong><small>Zugangsdaten hinterlegt</small></div>
+        <div className="ops-tile"><span className="ops-tile-label">Verfügbar</span><strong className="ops-tile-value">{s ? s.total : "—"}</strong><small>im Register</small></div>
+      </div>
+      <p className="small muted">Zugangsdaten werden nur aus der Server-Umgebung gelesen und nie angezeigt. Eine Karte zeigt „nicht verbunden“, bis die nötigen Variablen gesetzt sind; „geprüft“ heißt, dass eine echte Anfrage an den Dienst gelang.</p>
       {!list.data ? <Skeleton rows={4} height={60} /> : (
         <div className="grid auto">
           {list.data.integrations.map((i) => (

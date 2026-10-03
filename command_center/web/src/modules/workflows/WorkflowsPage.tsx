@@ -37,10 +37,10 @@ export default function WorkflowsPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <div><div className="eyebrow">Workflow center</div><h1>Workflows</h1></div>
+        <div><div className="eyebrow">Workflow-Zentrale</div><h1>Workflows</h1></div>
         <div className="actions">
-          {providers.map((p) => <span key={p.provider} className="row small"><StatusIndicator status={p.configured ? (p.error ? "error" : "ok") : "offline"} label={`${p.label} ${p.configured ? (p.error ? "error" : "connected") : "not connected"}`} /></span>)}
-          {can("operator") && <button className="btn sm" onClick={sync} disabled={syncing || !list.data?.configured}><RefreshCw style={syncing ? { animation: "spin 1s linear infinite" } : undefined} />Sync</button>}
+          {providers.map((p) => <span key={p.provider} className="row small"><StatusIndicator status={p.configured ? (p.error ? "error" : "ok") : "offline"} label={`${p.label} ${p.configured ? (p.error ? "error" : "verbunden") : "nicht verbunden"}`} /></span>)}
+          {can("operator") && <button className="btn sm" onClick={sync} disabled={syncing || !list.data?.configured}><RefreshCw style={syncing ? { animation: "spin 1s linear infinite" } : undefined} />Abgleichen</button>}
         </div>
       </div>
       <ErrorState error={list.error} retry={() => list.reload(false)} />
@@ -53,7 +53,7 @@ export default function WorkflowsPage() {
           </div>
         </Panel>
       )}
-      <div className="grid" style={{ gridTemplateColumns: "minmax(0, 3fr) minmax(0, 2fr)" }}>
+      <div className="ops-split">
         <Panel title="Workflows" icon={<Workflow size={15} />} flush foot={list.data?.stats && Object.keys(list.data.stats).length ? `last 7 days: ${Object.entries(list.data.stats).map(([k, v]: any) => `${v.count} ${k}`).join(" · ")}` : undefined}>
           {!list.data ? <div className="panel-body"><Skeleton rows={4} /></div> : list.data.workflows.length === 0 ? <EmptyState icon={<Workflow size={26} />} title={list.data.configured ? "No workflows found" : "Not connected"}>{list.data.configured ? "The connected engine reports no workflows yet." : "Configure an engine to see workflows."}</EmptyState> : (
             <table className="table">

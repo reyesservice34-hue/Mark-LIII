@@ -18,10 +18,10 @@ export default function NotificationsPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <div><div className="eyebrow">Notification center{list.data ? ` · ${list.data.unread} unread` : ""}</div><h1>Notifications</h1></div>
+        <div><div className="eyebrow">Meldezentrale{list.data ? ` · ${list.data.unread} ungelesen` : ""}</div><h1>Meldungen</h1></div>
         <div className="actions">
-          <select className="select" style={{ width: 150 }} value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Category">{CATEGORIES.map((c) => <option key={c} value={c}>{c || "All categories"}</option>)}</select>
-          <button className={`btn sm ${unread ? "primary" : ""}`} onClick={() => setUnread((v) => !v)}>Unread only</button>
+          <select className="select" style={{ width: 150 }} value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Kategorie">{CATEGORIES.map((c) => <option key={c} value={c}>{c || "Alle Kategorien"}</option>)}</select>
+          <button className={`btn sm ${unread ? "primary" : ""}`} onClick={() => setUnread((v) => !v)}>Nur ungelesene</button>
           <button className="btn sm" onClick={markAll}><Check />Mark all read</button>
         </div>
       </div>

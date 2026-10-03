@@ -278,12 +278,15 @@ kbd { border-radius: 3px; font-family: var(--mono); }
 
 .ops-telemetry.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .ops-telemetry.cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.ops-telemetry.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ops-tile .meter { margin-top: 2px; }
 
 /* Zweispaltiger Leitstand-Bereich (Hauptspalte + Seitenspalte), klappt auf schmalen Schirmen um. */
 .ops-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 10px; align-items: start; }
 .ops-split > .stack { gap: 10px; min-width: 0; }
 .ops-split.detail { grid-template-columns: minmax(0, 1fr) minmax(380px, 520px); }
+.ops-split.wide { grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); }
+.ops-split.even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .ops-charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 
 /* Umschalter für Filter: eine Reihe kantiger Tasten statt Dropdown. */
@@ -297,10 +300,19 @@ kbd { border-radius: 3px; font-family: var(--mono); }
 .seg button.on { color: #03141c; background: var(--accent); font-weight: 700; }
 .ops-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
-@media (max-width: 1280px) { .ops-telemetry, .ops-telemetry.cols-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ops-telemetry.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 1100px) { .ops-split, .ops-split.detail { grid-template-columns: 1fr; } .ops-charts { grid-template-columns: 1fr; } }
+@media (max-width: 1280px) { .ops-telemetry, .ops-telemetry.cols-5, .ops-telemetry.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ops-telemetry.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .ops-split, .ops-split.detail, .ops-split.wide, .ops-split.even { grid-template-columns: 1fr; } .ops-charts { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .ops-telemetry, .ops-telemetry.cols-4, .ops-telemetry.cols-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .ops-tile-value { font-size: 24px; } }
 
 /* Kacheln, die als Filter-Taste dienen (Aufgaben). */
 button.ops-tile { font: inherit; text-align: left; cursor: pointer; width: 100%; }
 .ops-tile.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow-1); }
+
+/* Seitenköpfe mit Symbol + Untertitel (Kalender, Geräte, Erweiterungen, Gedächtnis): gleiche Leitstand-Optik. */
+.page-head h1 { display: flex; align-items: center; gap: 10px; }
+.page-head h1 svg { color: var(--accent); flex: none; }
+.page-head p.muted { margin-top: 4px; font-size: 12px; color: var(--text-3); max-width: 70ch; }
+.page-head .actions .select { height: 30px; }
+
+/* Starre Inline-Raster (zwei Spalten) auf schmalen Schirmen untereinander. */
+@media (max-width: 1100px) { .grid[style*="grid-template-columns"] { grid-template-columns: 1fr !important; } }

@@ -25,7 +25,7 @@ export default function AgentsPage() {
 
   const act = async (a: Agent, action: "enable" | "disable" | "stop") => {
     try { await api.post(`/api/agents/${a.id}/${action}`); list.reload(); detail.reload(); toast({ title: `${a.name}: ${action}`, tone: "ok" }); }
-    catch (e: any) { toast({ title: "Action failed", body: e.message, tone: "err" }); }
+    catch (e: any) { toast({ title: "Aktion fehlgeschlagen", body: e.message, tone: "err" }); }
   };
   const doAssign = async () => {
     if (!assign || !form.title.trim()) return;
@@ -52,23 +52,32 @@ export default function AgentsPage() {
 
   const master = list.data?.master;
   const a = detail.data?.agent;
+  const ags = list.data?.agents || [];
+  const nActive = ags.filter((x) => ["THINKING", "EXECUTING", "WAITING"].includes(x.status)).length;
+  const nError = ags.filter((x) => x.status === "ERROR").length;
   return (
     <div className="page">
       <div className="page-head">
-        <div><div className="eyebrow">Agent control center</div><h1>Agents</h1></div>
+        <div><div className="eyebrow">Agentenleitstand</div><h1>Agenten</h1></div>
         <div className="actions">
-          {master && <span className="row"><StatusIndicator status={master.online ? "ok" : "err"} label={master.label} /><span className="small muted">{master.provider?.label || "no provider"} · mode {master.mode}</span></span>}
-          {can("operator") && <button className="btn sm" onClick={checkMaster} disabled={checking}><RefreshCw style={checking ? { animation: "spin 1s linear infinite" } : undefined} />Check provider</button>}
+          {master && <span className="row"><StatusIndicator status={master.online ? "ok" : "err"} label={master.label} /><span className="small muted">{master.provider?.label || "kein Anbieter"} · Modus {master.mode}</span></span>}
+          {can("operator") && <button className="btn sm" onClick={checkMaster} disabled={checking}><RefreshCw style={checking ? { animation: "spin 1s linear infinite" } : undefined} />Anbieter prüfen</button>}
         </div>
       </div>
       <ErrorState error={list.error} retry={() => list.reload(false)} />
       {master?.error && <ErrorState error={master.error} />}
-      <div className="grid" style={{ gridTemplateColumns: a ? "minmax(0, 1fr) minmax(360px, 480px)" : "1fr" }}>
+      <div className="ops-telemetry cols-4" aria-label="Agenten im Überblick">
+        <div className="ops-tile"><span className="ops-tile-label">Agenten gesamt</span><strong className="ops-tile-value">{list.data ? ags.length : "—"}</strong><small>{list.data ? `${ags.filter((x) => x.enabled).length} eingeschaltet` : "wird geladen"}</small></div>
+        <div className={`ops-tile ${nActive > 0 ? "ok" : ""}`}><span className="ops-tile-label">Aktiv</span><strong className="ops-tile-value">{list.data ? nActive : "—"}</strong><small>denken oder arbeiten gerade</small></div>
+        <div className="ops-tile"><span className="ops-tile-label">Bereit</span><strong className="ops-tile-value">{list.data ? ags.filter((x) => x.enabled && x.status === "IDLE").length : "—"}</strong><small>warten auf Aufträge</small></div>
+        <div className={`ops-tile ${nError > 0 ? "err" : ""}`}><span className="ops-tile-label">Fehler</span><strong className="ops-tile-value">{list.data ? nError : "—"}</strong><small>{nError > 0 ? "brauchen Aufmerksamkeit" : "alles ruhig"}</small></div>
+      </div>
+      <div className={a ? "ops-split detail" : ""}>
         <div className="stack" style={{ gap: 16 }}>
           {!list.data ? <Skeleton rows={3} height={60} /> : <div className="grid auto">{list.data.agents.map((ag) => <AgentCard key={ag.id} agent={ag} onClick={() => nav(`/agents/${ag.id}`)} />)}</div>}
         </div>
         {agentId && (
-          <Panel title={a ? <span className="row"><Icon name={a.icon} size={15} />{a.name}</span> : "Agent"} actions={<button className="btn sm ghost" onClick={() => nav("/agents")}>Close</button>}>
+          <Panel title={a ? <span className="row"><Icon name={a.icon} size={15} />{a.name}</span> : "Agent"} actions={<button className="btn sm ghost" onClick={() => nav("/agents")}>Schließen</button>}>
             {detail.error ? <ErrorState error={detail.error} /> : !a ? <Skeleton rows={5} /> : (
               <div className="stack" style={{ gap: 14 }}>
                 <div className="row wrap"><Badge status={a.status === "ERROR" ? "error" : a.status === "OFFLINE" ? "offline" : a.status} /><Badge status={a.health} />{!a.enabled && <span className="badge err">disabled</span>}<span className="badge muted">{a.kind}</span></div>

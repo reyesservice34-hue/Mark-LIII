@@ -25,15 +25,17 @@ export default function ApprovalsPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <div><div className="eyebrow">Approval gate</div><h1>Approvals</h1></div>
+        <div><div className="eyebrow">Freigabe-Schleuse{data ? ` · ${data.pending} offen` : ""}</div><h1>Freigaben</h1></div>
         <div className="actions">
-          <select className="select" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter status" style={{ width: 160 }}>
-            <option value="">All</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="expired">Expired</option>
-          </select>
+          <div className="seg" role="group" aria-label="Statusfilter">
+            {([["", "Alle"], ["pending", "Offen"], ["approved", "Genehmigt"], ["rejected", "Abgelehnt"], ["expired", "Abgelaufen"]] as const).map(([value, label]) => (
+              <button key={value} type="button" className={filter === value ? "on" : ""} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>
+            ))}
+          </div>
         </div>
       </div>
       <ErrorState error={error} retry={() => reload(false)} />
-      <div className="grid" style={{ gridTemplateColumns: selected ? "minmax(0, 1fr) minmax(320px, 420px)" : "1fr" }}>
+      <div className={selected ? "ops-split detail" : ""}>
         <Panel title="Requests" icon={<ShieldCheck size={15} />} flush>
           {loading && !data ? <div className="panel-body"><Skeleton rows={4} /></div> : list.length === 0 ?
             <EmptyState icon={<ShieldCheck size={28} />} title="No approval requests">High-impact actions from agents will pause here until you decide.</EmptyState> :

@@ -29,10 +29,10 @@ export default function SettingsPage() {
 
   return (
     <div className="page">
-      <div className="page-head"><div><div className="eyebrow">Configuration is environment-driven · secrets never leave the server</div><h1>Settings</h1></div></div>
+      <div className="page-head"><div><div className="eyebrow">Konfiguration kommt aus der Umgebung · Geheimnisse verlassen den Server nie</div><h1>Einstellungen</h1></div></div>
       <ErrorState error={settings.error} retry={() => settings.reload(false)} />
       <div className="grid cols-2">
-        <Panel title="Master agent & providers" icon={<Settings size={15} />}>
+        <Panel title="Hauptagent & Anbieter" icon={<Settings size={15} />}>
           {!s ? <Skeleton /> : <div className="stack">
             <KeyValue items={[["Mode", <Badge status={s.master.mode === "none" ? "offline" : "ok"}>{s.master.mode}</Badge>], ["Provider", s.master.provider?.label || "—"], ["State", s.master.label], ["Version", s.version]]} />
             <div className="label">Configured providers</div>

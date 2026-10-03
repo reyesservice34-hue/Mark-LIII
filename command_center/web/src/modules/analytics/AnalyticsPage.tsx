@@ -30,8 +30,8 @@ export default function AnalyticsPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <div><div className="eyebrow">Real usage data · no estimates</div><h1>Analytics</h1></div>
-        <div className="actions"><select className="select" style={{ width: 140 }} value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Period"><option value={7}>Last 7 days</option><option value={14}>Last 14 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></div>
+        <div><div className="eyebrow">Echte Nutzungsdaten · keine Schätzungen</div><h1>Auswertung</h1></div>
+        <div className="actions"><select className="select" style={{ width: 140 }} value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Zeitraum"><option value={7}>Letzte 7 Tage</option><option value={14}>Letzte 14 Tage</option><option value={30}>Letzte 30 Tage</option><option value={90}>Last 90 days</option></select></div>
       </div>
       <ErrorState error={error} retry={() => reload(false)} />
       {loading && !data ? <Skeleton rows={5} height={40} /> : data && (
