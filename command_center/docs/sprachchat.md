@@ -15,7 +15,7 @@ dasselbe Modell, dasselbe Gedächtnis und Verhaltensgedächtnis, dieselbe Verst�
 3. **Spracherkennung**: OpenAI `gpt-4o-mini-transcribe` (~1 s), mit Fachwortschatz als Hinweis.
    Fällt OpenAI aus, übernimmt das lokale Whisper (Speaches).
 4. **Denken**: MIA wie im Text-Chat (Haiku-Kette).
-5. **Stimme**: OpenAI `gpt-4o-mini-tts`, Stimme `marin`. Ersatz: Gemini (Aoede), dann Piper.
+5. **Stimme**: OpenAI `gpt-4o-mini-tts`, Stimme `nova`. Ersatz: Gemini (Aoede), dann Piper.
    Die Antwort wird satzweise vertont, der erste Satz klingt, während die nächsten entstehen.
 
 Erwartete Zeit bis zum ersten Ton: etwa 3–5 s.
@@ -36,7 +36,7 @@ Erwartete Zeit bis zum ersten Ton: etwa 3–5 s.
 | `MIA_VOICE_LIVE` | `local` | Sprachchat über MIAs Gehirn (empfohlen). `realtime` = OpenAI Realtime, eigenes Modell, schneller, aber nicht MIA. |
 | `JARVIS_CC_STT_PROVIDER` | `openai` | Spracherkennung über OpenAI; `local` = nur lokales Whisper (langsamer, bleibt auf dem Server). |
 | `JARVIS_CC_TTS_PROVIDER` | `openai` | Stimme über OpenAI; `gemini` = Aoede (gratis nur 10 Anfragen/Tag). |
-| `JARVIS_CC_OPENAI_TTS_VOICE` | `marin` | Stimme, z. B. `coral`, `shimmer`, `nova`. |
+| `JARVIS_CC_OPENAI_TTS_VOICE` | `nova` | Stimme, z. B. `coral`, `shimmer`, `sage`. |
 | `JARVIS_CC_OPENAI_TTS_INSTRUCTIONS` | (Standard) | Tonfall der Stimme. |
 | `MIA_VOICE_WAKEWORD` | `1` | `0` = kein Standby, immer wach. |
 | `MIA_VOICE_IDLE_S` | `45` | Sekunden ohne Gespräch bis zum Standby. |

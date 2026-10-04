@@ -143,7 +143,7 @@ class VoiceService:
         # OpenAI ist bezahlt und ohne Tageslimit; Gemini bleibt dahinter als Ersatz, dann Piper.
         self.openai_tts_key = _env("OPENAI_API_KEY")
         self.openai_tts_model = _env("JARVIS_CC_OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
-        self.openai_tts_voice = _env("JARVIS_CC_OPENAI_TTS_VOICE", "marin")
+        self.openai_tts_voice = _env("JARVIS_CC_OPENAI_TTS_VOICE", "nova")
         self.openai_tts_instructions = _env("JARVIS_CC_OPENAI_TTS_INSTRUCTIONS", DEFAULT_OPENAI_TTS_INSTRUCTIONS)
         self.openai_tts_on = bool(self.openai_tts_key) and provider == "openai"
         self.gemini_tts_on = bool(self.gemini_key) and provider in ("gemini", "openai")
