@@ -24,7 +24,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, Depends
 
-from ...ai.free import free_or
+from ...ai.free import free_or, no_think
 from ...auth import Principal
 from ...deps import AppState, current_principal, get_state, require_role
 from ...services.memory_sources import auto_fact_rejection, terms
@@ -73,8 +73,8 @@ async def _extract(client: httpx.AsyncClient, mail: dict, known: str) -> dict:
     text = (f"{PROMPT}\n\nBereits bekannt:\n{known[:2500]}\n\n--- E-MAIL ---\nPostfach: {mail.get('account_label')}\n"
             f"Von: {mail.get('from')}\nBetreff: {mail.get('subject')}\nDatum: {mail.get('date')}\n\n{body}")
     r = await client.post(base + "/chat/completions", headers={"Authorization": f"Bearer {key}"},
-                          json={"model": free_or(os.environ.get("JARVIS_CC_MAIL_LEARN_MODEL", "anthropic/claude-haiku-4.5")),
-                                "max_tokens": 450, "temperature": 0,
+                          json={"model": (_m := free_or(os.environ.get("JARVIS_CC_MAIL_LEARN_MODEL", "anthropic/claude-haiku-4.5"))),
+                                "max_tokens": 450, "temperature": 0, **no_think(_m),
                                 "messages": [{"role": "user", "content": text}]}, timeout=60)
     r.raise_for_status()
     raw = r.json()["choices"][0]["message"]["content"]

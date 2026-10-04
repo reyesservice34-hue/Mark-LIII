@@ -30,10 +30,11 @@ services:
       JARVIS_CC_WORKSPACE_DIR: /data/workspace
       JARVIS_PUBLIC_URL: https://jarvis.jarvis-reyes.de
       MIA_BEHAVIOR_PATH: /data/behavior/rules.jsonl
-      # 2026-09-29 (user, explicit): match main.py's configured Gemini Live voice
-      # (memory/config_manager.py voice_name="Aoede") instead of this service's
-      # own default ("Puck") — same MIA must sound the same everywhere.
-      JARVIS_CC_REALTIME_VOICE: Aoede
+      MCP_STDIO: "true"
+      MCP_MEMORY_SERVER: "modelcontextprotocol/server-memory"
+      MCP_BASH_SERVER: "modelcontextprotocol/server-bash"
+      MCP_FETCH_SERVER: "modelcontextprotocol/server-fetch"
+      MCP_FILESYSTEM_SERVER: "modelcontextprotocol/server-filesystem"
     ports:
       - "${JARVIS_CC_BIND:-127.0.0.1}:${JARVIS_CC_PORT:-8080}:8080"
     # The container runs as a non-root user, but the docker socket is
@@ -50,6 +51,8 @@ services:
       # network; unset it falls back to the always-present default bridge,
       # which changes nothing.
       - shared
+      # OmniRoute-Gateway (Container "omniroute"), erreichbar als http://omniroute:20128/v1
+      - omniroute
     # Damit ein Dienst, der auf dem Host selbst lauscht (Ollama, LM Studio,
     # eine Datenbank), unter host.docker.internal erreichbar ist. Unter Linux
     # gibt es diesen Namen sonst nicht — man müsste die Bridge-IP raten.
@@ -81,6 +84,7 @@ services:
       # 2026-10-03: freellm-Anbieter (config.py) und Sicherheitsfixes (Secret-Maskierung, cc_autonomy-Allow-list, MCP-Risiko)
       - ./command_center/backend/config.py:/app/command_center/backend/config.py:ro
       - ./command_center/backend/services/approvals.py:/app/command_center/backend/services/approvals.py:ro
+      - ./command_center/backend/services/action_ledger.py:/app/command_center/backend/services/action_ledger.py:ro
       - ./command_center/backend/services/cc_autonomy.py:/app/command_center/backend/services/cc_autonomy.py:ro
       - ./command_center/backend/services/mcp.py:/app/command_center/backend/services/mcp.py:ro
       # 2026-09-29: Portierung main.py-Tools (v2-Plan) — neues Modul, muss mitgemountet werden
@@ -100,6 +104,10 @@ services:
       - ./command_center/backend/app.py:/app/command_center/backend/app.py:ro
       - ./command_center/backend/db.py:/app/command_center/backend/db.py:ro
       - ./command_center/backend/services/learning.py:/app/command_center/backend/services/learning.py:ro
+      # 2026-10-04: no_think() für Qwen3 (Denken aus), sonst leere/abgeschnittene JSON-Antworten beim Lernen
+      - ./command_center/backend/ai/free.py:/app/command_center/backend/ai/free.py:ro
+      # 2026-10-04: rollender Prompt-Cache auf dem Verlauf (schnellere, billigere Werkzeug-Schleifen)
+      - ./command_center/backend/ai/anthropic_provider.py:/app/command_center/backend/ai/anthropic_provider.py:ro
       - ./command_center/backend/services/chat_retention.py:/app/command_center/backend/services/chat_retention.py:ro
       - ./command_center/backend/modules/chat_retention/__init__.py:/app/command_center/backend/modules/chat_retention/__init__.py:ro
       # 2026-09-29: modules/memory nachgezogen, sonst ImportError bei learning_mode_enabled (runtime.py verweist bereits darauf)
@@ -262,6 +270,10 @@ networks:
   shared:
     external: true
     name: ${JARVIS_CC_SHARED_NETWORK:-mia-mark53-shared}
+  # Netz des OmniRoute-Stacks (/opt/omniroute), existiert bereits.
+  omniroute:
+    external: true
+    name: omniroute_default
 
 volumes:
   jarvis-cc-data:

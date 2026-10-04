@@ -30,11 +30,22 @@ microphone control in the browser stays disabled with that reason on it.
 """
 from __future__ import annotations
 
+import asyncio
 import io
+import logging
 import os
+import re
 import wave
 
 import httpx
+
+_log = logging.getLogger("jarvis.cc")
+
+# Gemini-TTS erzeugt die ganze Datei, bevor sie zurückkommt (~0,5 s je Sekunde Sprache).
+# Lange Texte lesen deshalb Piper vor, damit niemand lange auf den ersten Ton wartet.
+GEMINI_TTS_MAX_CHARS = 1500
+GEMINI_TTS_TIMEOUT = 25.0
+GEMINI_TTS_RATE = 24000
 
 ELEVEN_URL = "https://api.elevenlabs.io/v1/text-to-speech"
 # 24 kHz mono: klein genug für die Leitung, gut genug für eine Stimme.
@@ -71,6 +82,23 @@ def _endpoint(base: str, path: str) -> str:
     return f"{base}/v1{path}"
 
 
+_SPOKEN = [(r"\bz\. ?B\.", "zum Beispiel"), (r"\bca\.", "circa"), (r"\bbzw\.", "beziehungsweise"), (r"\busw\.", "und so weiter"),
+           (r"\bd\. ?h\.", "das heißt"), (r"\bggf\.", "gegebenenfalls"), (r"\bevtl\.", "eventuell"), (r"\bInkl\.", "inklusive"),
+           (r"m²|\bqm\b", " Quadratmeter"), (r"(\d)\s?%", r"\1 Prozent"), (r"(\d)\s?(€|EUR)\b", r"\1 Euro"), (r"€", " Euro"),
+           (r"&", " und "), (r"(\d{1,2}):00\b(?: Uhr)?", r"\1 Uhr"), (r"(\d{1,2}):(\d{2})\b(?: Uhr)?", r"\1 Uhr \2"),
+           (r"(\d),(\d{2})\s?Euro", r"\1 Euro \2"), (r"\s{2,}", " ")]
+
+
+def _speakable(text: str) -> str:
+    """Was man schreibt, ist nicht, was man sagt: Abkürzungen, Euro-Zeichen, Uhrzeiten und Markdown aussprechbar machen."""
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)      # Links: nur der Text
+    text = re.sub(r"```.*?```", " ", text, flags=re.S)          # Codeblöcke werden nicht vorgelesen
+    text = re.sub(r"[*_`#>|]+", "", text)                       # Markdown-Zeichen
+    for pat, rep in _SPOKEN:
+        text = re.sub(pat, rep, text)
+    return text.strip()
+
+
 class VoiceService:
     def __init__(self) -> None:
         self.reload()
@@ -92,6 +120,13 @@ class VoiceService:
         self.eleven_key = _env("ELEVENLABS_API_KEY")
         self.eleven_voice = _env("ELEVENLABS_VOICE_ID")
         self.eleven_model = _env("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
+        # Gemini-TTS ist nur der Mund: es liest den Text vor, den der Chat liefert. Das
+        # Gehirn bleibt der Chat. Ausfall oder JARVIS_CC_TTS_PROVIDER=local → Piper.
+        self.gemini_key = _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")
+        self.gemini_tts_model = _env("JARVIS_CC_GEMINI_TTS_MODEL", "gemini-3.8-flash-lite-tts")
+        self.gemini_tts_voice = _env("JARVIS_CC_GEMINI_TTS_VOICE") or _env("JARVIS_CC_REALTIME_VOICE") or "Aoede"
+        self.gemini_tts_on = bool(self.gemini_key) and _env("JARVIS_CC_TTS_PROVIDER", "local").lower() == "gemini"
+        self._gemini_client = None
 
     # ── capabilities ─────────────────────────────────────────────────────
     def stt_available(self) -> bool:
@@ -102,10 +137,14 @@ class VoiceService:
         return bool(self.eleven_key and self.eleven_voice)
 
     def tts_available(self) -> bool:
-        return bool(self.eleven_available() or self.tts_url)
+        return bool(self.eleven_available() or self.gemini_tts_on or self.tts_url)
 
     def tts_provider(self) -> str:
-        return "elevenlabs" if self.eleven_available() else ("openai-compatible" if self.tts_url else "")
+        if self.eleven_available():
+            return "elevenlabs"
+        if self.gemini_tts_on:
+            return "gemini"
+        return "openai-compatible" if self.tts_url else ""
 
     def capabilities(self) -> dict:
         return {
@@ -130,6 +169,11 @@ class VoiceService:
             return {"available": True, "configured": True, "provider": "elevenlabs",
                     "model": self.eleven_model, "voice": self.eleven_voice,
                     "detail": f"Stimme über ElevenLabs ({self.eleven_model})"}
+        if self.gemini_tts_on:
+            return {"available": True, "configured": True, "provider": "gemini",
+                    "model": self.gemini_tts_model, "voice": self.gemini_tts_voice,
+                    "detail": f"Stimme über Gemini ({self.gemini_tts_model}/{self.gemini_tts_voice})"
+                              + (", bei Ausfall Piper" if self.tts_url else "")}
         if self.eleven_key and not self.eleven_voice:
             return {"available": bool(self.tts_url), "configured": bool(self.tts_url),
                     "provider": "openai-compatible" if self.tts_url else "",
@@ -198,10 +242,10 @@ class VoiceService:
     async def transcribe(self, audio: bytes, content_type: str = "audio/webm",
                          language: str = "") -> dict:
         if not self.stt_available():
-            raise VoiceError("No speech-to-text backend is configured on this server "
-                             "(set JARVIS_CC_STT_URL).")
+            raise VoiceError("Auf diesem Server ist keine Spracherkennung eingerichtet "
+                             "(JARVIS_CC_STT_URL setzen).")
         if not audio:
-            raise VoiceError("The recording was empty.")
+            raise VoiceError("Die Aufnahme war leer.")
         if len(audio) > MAX_AUDIO_BYTES:
             raise VoiceError(f"The recording is larger than {MAX_AUDIO_BYTES // (1024 * 1024)} MB.")
         base_type = (content_type or "").split(";")[0].strip().lower()
@@ -227,7 +271,7 @@ class VoiceService:
         except httpx.HTTPError as e:
             raise VoiceError(f"The transcription service could not be reached ({e.__class__.__name__}).")
         if r.status_code == 401:
-            raise VoiceError("The transcription service rejected the API key.")
+            raise VoiceError("Die Spracherkennung hat den API-Schlüssel abgelehnt.")
         if r.status_code >= 400:
             raise VoiceError(f"The transcription service answered HTTP {r.status_code}: {r.text[:200]}")
         try:
@@ -236,21 +280,55 @@ class VoiceService:
             payload = {"text": r.text}
         text = (payload.get("text") or "").strip()
         if not text:
-            raise VoiceError("Nothing recognisable was in that recording.")
+            raise VoiceError("Ich habe in der Aufnahme nichts verstanden. Bitte noch einmal etwas länger sprechen.")
         return {"text": text, "language": payload.get("language", lang), "model": self.stt_model}
 
     # ── text to speech ───────────────────────────────────────────────────
+    async def _speak_gemini(self, text: str) -> tuple[bytes, str]:
+        """Liest `text` mit Gemini-TTS vor. Nur die Stimme, kein eigenes Denken."""
+        from google import genai
+        from google.genai import types
+        if self._gemini_client is None:
+            self._gemini_client = genai.Client(api_key=self.gemini_key)
+        # Markdown-Zeichen würden mitgesprochen oder verschluckt.
+        spoken = re.sub(r"[*`]+|^#+\s*", "", text, flags=re.M).strip()
+        cfg = types.GenerateContentConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=self.gemini_tts_voice))))
+        r = await asyncio.wait_for(
+            self._gemini_client.aio.models.generate_content(model=self.gemini_tts_model, contents=spoken, config=cfg),
+            timeout=GEMINI_TTS_TIMEOUT)
+        part = r.candidates[0].content.parts[0].inline_data
+        data = part.data if part else b""
+        if not data:
+            raise VoiceError("Gemini hat kein Audio geliefert.")
+        # Gemini liefert eine fertige WAV; rohes PCM wird nur zur Sicherheit eingepackt.
+        if data[:4] == b"RIFF" or "wav" in (part.mime_type or "").lower():
+            return data, "audio/wav"
+        return self._wav(data, rate=GEMINI_TTS_RATE), "audio/wav"
+
     async def speak(self, text: str, voice: str = "") -> tuple[bytes, str]:
         if not self.tts_available():
             raise VoiceError(self._tts_capabilities()["detail"])
         text = (text or "").strip()
         if not text:
-            raise VoiceError("There is nothing to say.")
+            raise VoiceError("Es gibt nichts vorzulesen.")
         if len(text) > 8000:
             text = text[:8000]
+        text = _speakable(text) or text
         # ElevenLabs geht vor, wenn es eingerichtet ist: eine Stimme, nicht zwei.
         if self.eleven_available():
             return await self._speak_eleven(text, voice)
+        if self.gemini_tts_on and len(text) <= GEMINI_TTS_MAX_CHARS:
+            try:
+                return await self._speak_gemini(text)
+            except Exception as e:  # noqa: BLE001 - jeder Ausfall führt zu Piper, nie zu Stille
+                _log.warning("Gemini-TTS fehlgeschlagen, Piper springt ein: %s", e.__class__.__name__)
+                if not self.tts_url:
+                    raise VoiceError("Die Gemini-Stimme ist nicht erreichbar und es ist kein lokaler Rückfall eingerichtet.")
+        if not self.tts_url:
+            raise VoiceError("Dieser Text ist für die Gemini-Stimme zu lang und es ist kein lokaler Rückfall eingerichtet.")
         headers = {"Authorization": f"Bearer {self.tts_key}"} if self.tts_key else {}
         body = {"model": self.tts_model, "voice": voice or self.tts_voice, "input": text,
                 "response_format": self.tts_format}
@@ -262,12 +340,12 @@ class VoiceService:
         except httpx.HTTPError as e:
             raise VoiceError(f"The speech service could not be reached ({e.__class__.__name__}).")
         if r.status_code == 401:
-            raise VoiceError("The speech service rejected the API key.")
+            raise VoiceError("Die Sprachausgabe hat den API-Schlüssel abgelehnt.")
         if r.status_code >= 400:
             raise VoiceError(f"The speech service answered HTTP {r.status_code}: {r.text[:200]}")
         audio = r.content
         if not audio:
-            raise VoiceError("The speech service returned no audio.")
+            raise VoiceError("Die Sprachausgabe hat kein Audio geliefert.")
         if self.tts_format == "pcm":
             return self._wav(audio, rate=24000), "audio/wav"
         return audio, r.headers.get("content-type", "audio/mpeg")

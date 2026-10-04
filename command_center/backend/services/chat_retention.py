@@ -33,6 +33,7 @@ from typing import Any
 
 import httpx
 
+from ..ai.free import no_think
 from ..db import new_id, now_iso
 from .learning import LearningLedger
 from .memory_sources import auto_fact_rejection
@@ -117,7 +118,7 @@ async def ollama_llm(prompt: str) -> str:
     model = os.environ.get("JARVIS_CC_RETENTION_MODEL") or os.environ.get("JARVIS_CC_MAIL_LEARN_MODEL") or "qwen2.5:7b"
     async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0)) as http:
         r = await http.post(base + "/chat/completions", headers=headers,
-                            json={"model": model, "max_tokens": 900, "temperature": 0,
+                            json={"model": model, "max_tokens": 900, "temperature": 0, **no_think(model),
                                   "response_format": {"type": "json_object"},
                                   "messages": [{"role": "user", "content": prompt}]})
         r.raise_for_status()

@@ -92,6 +92,21 @@ export async function openLine(conversationId = ""): Promise<void> {
   }
 }
 
+/**
+ * Wichtige Meldung: Sprachchat von selbst öffnen und MIA sprechen lassen.
+ * Mehrere offene Tabs: nur der erste spricht (Merker in localStorage).
+ */
+export async function announce(notificationId: string): Promise<void> {
+  try {
+    if (localStorage.getItem("mia-announced") === notificationId) return;
+    localStorage.setItem("mia-announced", notificationId);
+  } catch { /* ohne Speicher trotzdem ansagen */ }
+  if (!snapshot.open) {
+    try { await openLine(); } catch { return; }
+  }
+  line?.announce(notificationId);
+}
+
 export async function closeLine(): Promise<void> {
   const l = line;
   line = null;

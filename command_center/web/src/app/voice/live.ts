@@ -14,7 +14,13 @@
 
 const RATE = 24000;
 
-export type LiveState = "connecting" | "listening" | "thinking" | "speaking" | "closed";
+export type LiveState = "connecting" | "reconnecting" | "listening" | "thinking" | "speaking" | "closed";
+
+/** Wartezeiten bis zum nächsten Verbindungsversuch; der letzte Wert gilt danach dauerhaft. */
+const RETRY_MS = [1000, 2000, 5000, 10000];
+const PING_MS = 20000;
+/** Abweisungen des Servers (Anmeldung, Rolle, Gespräch fehlt): Neuversuch wäre zwecklos. */
+const FINAL_CODES = new Set([4401, 4403, 4404]);
 
 export interface LiveHandlers {
   onState?: (s: LiveState) => void;
@@ -81,6 +87,10 @@ export class LiveLine {
   private open = false;
   private muted = false;
   private playbackGeneration = 0;
+  private stopped = false;
+  private retries = 0;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private h: LiveHandlers, private conversationId = "") {}
 
@@ -107,22 +117,8 @@ export class LiveLine {
       throw new Error("Zugriff auf das Mikrofon wurde abgelehnt.");
     }
 
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const q = this.conversationId ? `?conversation_id=${encodeURIComponent(this.conversationId)}` : "";
-    const ws = new WebSocket(`${proto}//${location.host}/api/voice/live${q}`);
-    this.ws = ws;
-    ws.onmessage = (e) => this.downstream(e.data);
-    ws.onclose = () => { void this.stop(); this.h.onClose?.(); };
-
-    await new Promise<void>((resolve, reject) => {
-      const fail = () => reject(new Error("Die Leitung zum Server kam nicht zustande."));
-      ws.onopen = () => resolve();
-      ws.onerror = fail;
-      setTimeout(() => { if (ws.readyState !== WebSocket.OPEN) fail(); }, 12000);
-    });
-
-    ws.onmessage = (e) => this.downstream(e.data);
-
+    this.stopped = false;
+    await this.connect();
 
     this.playHead = this.ctxOut!.currentTime;
 
@@ -133,7 +129,8 @@ export class LiveLine {
     // bräuchte eine eigene Datei und brächte hier keinen hörbaren Vorteil.
     this.node = ctxIn.createScriptProcessor(4096, 1, 1);
     this.node.onaudioprocess = (ev) => {
-      if (!this.open || this.muted || ws.readyState !== WebSocket.OPEN) return;
+      const ws = this.ws;
+      if (!this.open || this.muted || !ws || ws.readyState !== WebSocket.OPEN) return;
       const pcm = floatToPcm16(downsample(ev.inputBuffer.getChannelData(0), ctxIn.sampleRate, RATE));
       ws.send(JSON.stringify({
         type: "input_audio_buffer.append",
@@ -145,6 +142,65 @@ export class LiveLine {
     this.open = true;
     this.muted = false;
     this.h.onState?.("listening");
+  }
+
+  /**
+   * Nur den WebSocket aufbauen. Mikrofon und Wiedergabe bleiben unberührt, damit
+   * ein Neuaufbau nach Trennung (Server-Neustart, Netzwackler) ohne Klick klappt.
+   */
+  private async connect(): Promise<void> {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const q = this.conversationId ? `?conversation_id=${encodeURIComponent(this.conversationId)}` : "";
+    const ws = new WebSocket(`${proto}//${location.host}/api/voice/live${q}`);
+    this.ws = ws;
+    ws.onmessage = (e) => this.downstream(e.data);
+    ws.onclose = (e) => {
+      if (this.ws !== ws) return;
+      this.clearPing();
+      if (this.stopped) return;
+      if (FINAL_CODES.has(e.code)) {
+        this.h.onError?.("Der Server hat die Sprachleitung abgewiesen. Bitte neu anmelden oder Gespräch neu öffnen.");
+        void this.stop().then(() => this.h.onClose?.());
+        return;
+      }
+      this.scheduleReconnect();
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      const fail = () => reject(new Error("Die Leitung zum Server kam nicht zustande."));
+      ws.onopen = () => resolve();
+      ws.onerror = fail;
+      setTimeout(() => { if (ws.readyState !== WebSocket.OPEN) fail(); }, 12000);
+    });
+    ws.onerror = null;
+    this.retries = 0;
+    this.pingTimer = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
+    }, PING_MS);
+  }
+
+  private scheduleReconnect() {
+    if (this.stopped || this.retryTimer) return;
+    this.flush();
+    this.h.onState?.("reconnecting");
+    const wait = RETRY_MS[Math.min(this.retries, RETRY_MS.length - 1)];
+    this.retries++;
+    this.retryTimer = setTimeout(async () => {
+      this.retryTimer = null;
+      if (this.stopped) return;
+      try {
+        await this.connect();
+        if (!this.stopped) this.h.onState?.("listening");
+      } catch {
+        // onclose des fehlgeschlagenen Sockets plant den nächsten Versuch.
+        if (this.ws?.readyState !== WebSocket.CONNECTING) this.scheduleReconnect();
+      }
+    }, wait);
+  }
+
+  private clearPing() {
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
   }
 
   /** Mikrofon anhalten, ohne die Sprachverbindung oder die Antwort zu beenden. */
@@ -188,7 +244,8 @@ export class LiveLine {
         break;
       case "response.done":
         this.h.onSaid?.(this.said, true);
-        this.h.onState?.("listening");
+        // Satzteile können noch laufen; dann setzt onended den Zustand.
+        if (!this.queue.length) this.h.onState?.("listening");
         break;
       case "error":
         this.h.onError?.(ev.error?.message || "Fehler auf der Leitung.");
@@ -198,10 +255,18 @@ export class LiveLine {
     }
   }
 
-  private async playFile(encoded: string) {
-    const ctx = this.ctxOut;
-    if (!ctx) return;
+  // Der Server schickt die Antwort satzweise; Teile in Reihenfolge dekodieren
+  // und lückenlos hintereinander einplanen statt gleichzeitig abzuspielen.
+  private fileChain: Promise<void> = Promise.resolve();
+
+  private playFile(encoded: string) {
     const generation = this.playbackGeneration;
+    this.fileChain = this.fileChain.then(() => this.playFilePart(encoded, generation));
+  }
+
+  private async playFilePart(encoded: string, generation: number) {
+    const ctx = this.ctxOut;
+    if (!ctx || generation !== this.playbackGeneration) return;
     try {
       await ctx.resume();
       const bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
@@ -209,10 +274,12 @@ export class LiveLine {
       if (generation !== this.playbackGeneration) return;
       const node = ctx.createBufferSource();
       node.buffer = buffer; node.connect(ctx.destination);
+      const at = Math.max(ctx.currentTime, this.playHead);
+      this.playHead = at + buffer.duration;
       this.queue.push(node);
       this.h.onState?.("speaking");
       node.onended = () => { this.queue = this.queue.filter((n) => n !== node); if (!this.queue.length && generation === this.playbackGeneration) this.h.onState?.("listening"); };
-      node.start();
+      node.start(at);
     } catch { this.h.onError?.("Die Audioantwort konnte nicht wiedergegeben werden. Bitte Live Voice erneut starten."); }
   }
 
@@ -251,7 +318,21 @@ export class LiveLine {
     this.ws.send(JSON.stringify({ type: "response.create" }));
   }
 
+  /** Wichtige Meldung von MIA ansprechen lassen; wartet kurz, falls die Leitung noch aufgebaut wird. */
+  announce(notificationId: string, tries = 0) {
+    const ws = this.ws;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "jarvis.announce", notification_id: notificationId }));
+      return;
+    }
+    if (tries < 40 && !this.stopped) setTimeout(() => this.announce(notificationId, tries + 1), 250);
+  }
+
   async stop(): Promise<void> {
+    this.stopped = true;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.clearPing();
     this.open = false;
     this.muted = false;
     this.flush();

@@ -1,0 +1,10 @@
+{
+  "provider": "openrouter",
+  "model": "qwen/qwen3.8-27b:free",
+  "strict_free": true,
+  "paid_fallback": false,
+  "data_collection": "deny",
+  "local_fallback": "manual",
+  "timeout_seconds": 15,
+  "free_fallback": "apodex/apodex-1.1-mini:free"
+}

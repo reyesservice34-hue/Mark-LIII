@@ -14,12 +14,15 @@ Die Vektoren stehen in einer eigenen Tabelle (memory_embeddings); die Tabelle me
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import re
 from pathlib import Path
 
 import httpx
+
+_log = logging.getLogger("jarvis.cc")
 
 DEFAULT_MODEL = "openai/text-embedding-3-small"
 # Local embedding models can time out on large first-run batches, especially
@@ -68,12 +71,14 @@ async def embed(texts: list[str], timeout: float = 20.0) -> list[list[float]] | 
                 r = await http.post(base + "/v1/embeddings", headers={"Authorization": "Bearer " + key},
                                     json={"model": _model(), "input": chunk})
                 if r.status_code != 200:
+                    _log.warning("Gedächtnis-Bedeutungssuche: %s antwortet HTTP %s", _model(), r.status_code)
                     return None
                 data = sorted(r.json()["data"], key=lambda d: d.get("index", 0))
                 if len(data) != len(chunk):
                     return None
                 out.extend(_unit(d["embedding"]) for d in data)
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _log.warning("Gedächtnis-Bedeutungssuche nicht erreichbar: %s", e.__class__.__name__)
         return None
     return out
 

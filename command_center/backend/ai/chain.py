@@ -6,6 +6,7 @@ gegen dieselbe Wand laeuft.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -17,7 +18,8 @@ from .base import ProviderInfo, ToolDef
 _HTTP = re.compile(r"HTTP (\d{3})")
 USAGE_FILE = os.environ.get("JARVIS_CHAIN_USAGE_FILE", "/data/chain_usage.json")
 # Preis in USD je Million Tokens (Eingabe, Ausgabe); ueberschreibbar mit JARVIS_<NAME>_PRICE_IN / _OUT
-_PRICES = {"groq": (0.0, 0.0), "together": (0.14, 0.28), "deepseek": (0.14, 0.28)}
+_PRICES = {"groq": (0.0, 0.0), "together": (0.14, 0.28), "deepseek": (0.14, 0.28),
+           "anthropic": (1.0, 5.0)}  # Haiku 4.5 als Fallback; Preis gegen die aktuelle Preisliste pruefen
 
 
 def _price(name: str) -> tuple[float, float]:
@@ -28,6 +30,26 @@ def _price(name: str) -> tuple[float, float]:
     except ValueError:
         pass
     return pin, pout
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
+
+def _retry_waits() -> list[float]:
+    """Wartezeiten (Sekunden), bevor ein Zugang nach HTTP 429 erneut gefragt wird, z. B. "3,6,10".
+    Leer = sofort zum naechsten Zugang (bisheriges Verhalten)."""
+    out = []
+    for part in os.environ.get("JARVIS_CHAIN_RETRY_429", "").split(","):
+        try:
+            if part.strip():
+                out.append(max(0.0, float(part)))
+        except ValueError:
+            pass
+    return out
 
 
 def _load() -> dict:
@@ -61,7 +83,9 @@ class ChainProvider:
         code = int(m.group(1)) if m else 0
         if code in (401, 402, 403):
             return 900.0
-        if code in (413, 429):
+        if code == 429:
+            return _env_float("JARVIS_CHAIN_COOLDOWN_429", 300.0)
+        if code == 413:
             return 300.0
         return 60.0
 
@@ -70,14 +94,37 @@ class ChainProvider:
         last_err: dict | None = None
         now = time.monotonic()
         size = len(system) + len(repr(messages)) + sum(len(t.description) + len(repr(t.input_schema)) for t in tools)
+        # Messzeile: woraus besteht eine Anfrage (Zeichen; ~3,5 Zeichen = 1 Token). Nur Protokoll, ändert nichts.
+        print("[MIA_PROMPT_SIZE] " + json.dumps({"system": len(system), "verlauf": len(repr(messages)),
+              "nachrichten": len(messages), "werkzeuge": len(tools),
+              "werkzeug_zeichen": sum(len(t.description) + len(repr(t.input_schema)) for t in tools),
+              "summe": size, "tokens_ca": round(size / 3.5)}), flush=True)
+        if os.environ.get("MIA_PROMPT_DUMP") == "1" and len(system) > 2000:
+            try:  # nur zur Analyse: letzter großer Systemprompt, bleibt im Container (/tmp)
+                with open("/tmp/mia_last_system.txt", "w", encoding="utf-8") as fh:
+                    fh.write(system)
+            except OSError:
+                pass
         order = [i for i in range(len(self.providers)) if self._skip_until[i] <= now and size < self._too_big[i]]
         order += [i for i in range(len(self.providers)) if i not in order and size < self._too_big[i]]
         order += [i for i in range(len(self.providers)) if i not in order]  # zuletzt auch die uebrigen
-        for i in order:
-            gen = self.providers[i].stream(system=system, messages=messages, tools=tools, max_tokens=max_tokens)
-            try:
-                first = await gen.__anext__()
-            except StopAsyncIteration:
+        for pos, i in enumerate(order):
+            # Nur der erste Zugang wird nach 429 noch einmal gefragt: kurze Gratis-Sperren
+            # sind schneller abgewartet als ein langsamer Ersatz (z. B. lokales Modell auf CPU).
+            waits = _retry_waits() if pos == 0 else []
+            while True:
+                gen = self.providers[i].stream(system=system, messages=messages, tools=tools, max_tokens=max_tokens)
+                try:
+                    first = await gen.__anext__()
+                except StopAsyncIteration:
+                    first = None
+                    break
+                mm = _HTTP.search(str(first.get("message", ""))) if first.get("type") == "error" else None
+                if not (mm and mm.group(1) == "429" and waits):
+                    break
+                await gen.aclose()  # type: ignore[attr-defined]
+                await asyncio.sleep(waits.pop(0))
+            if first is None:
                 continue
             if first.get("type") == "error":
                 msg = str(first.get("message", ""))

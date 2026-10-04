@@ -12,6 +12,7 @@ import { Sidebar } from "./Sidebar";
 import { TopStatusBar } from "./TopStatusBar";
 import { LiveBar } from "./LiveBar";
 import { armHeyMia } from "@/app/voice/wake";
+import { announce } from "@/app/voice/liveStore";
 
 export function JarvisShell() {
   const { modules, logout } = useAuth();
@@ -81,6 +82,8 @@ export function JarvisShell() {
   useEvent("notification.created", (ev) => {
     const n = ev.data;
     toast({ title: n.title, body: n.body, tone: n.severity === "error" || n.severity === "critical" ? "err" : n.severity === "warning" ? "warn" : n.severity === "success" ? "ok" : "info" });
+    // Wichtiges sagt MIA von selbst: Sprachchat öffnet sich und sie spricht (Server entscheidet über speak).
+    if (n.speak && n.id) void announce(String(n.id));
   });
 
   const mobile = [{ id: "home", title: "Home", icon: "home", path: "/", mobile_priority: 1000 },

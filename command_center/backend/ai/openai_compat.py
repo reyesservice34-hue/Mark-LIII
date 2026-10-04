@@ -74,6 +74,32 @@ class OpenAICompatProvider:
                         out.append({"role": "user", "content": parts})
         return out
 
+    @staticmethod
+    def _text_tool_history(out: list[dict]) -> list[dict]:
+        """Werkzeugverlauf als Text: DuckDuckGo (ddgw/…) lehnt role=tool und assistant.tool_calls mit
+        ERR_BAD_REQUEST ab, versteht denselben Verlauf als Text aber und ruft das nächste Werkzeug normal auf."""
+        names: dict[str, str] = {}
+        res: list[dict] = []
+        for m in out:
+            if m["role"] == "assistant" and m.get("tool_calls"):
+                lines = [m.get("content") or ""]
+                for c in m["tool_calls"]:
+                    names[c["id"]] = c["function"]["name"]
+                    lines.append(f"[Werkzeugaufruf {c['function']['name']} {c['function']['arguments']}]")
+                m = {"role": "assistant", "content": "\n".join(x for x in lines if x)}
+            elif m["role"] == "tool":
+                content = m.get("content") or ""
+                if not isinstance(content, str):
+                    content = json.dumps(content, ensure_ascii=False)
+                m = {"role": "user", "content": f"[Ergebnis {names.get(m.get('tool_call_id'), 'Werkzeug')}]: {content}"}
+            # Gleiche Rollen hintereinander (mehrere Ergebnisse) zusammenfassen.
+            if res and res[-1]["role"] == m["role"] and m["role"] in ("user", "assistant") \
+                    and isinstance(res[-1].get("content"), str) and isinstance(m.get("content"), str):
+                res[-1] = {"role": m["role"], "content": res[-1]["content"] + "\n\n" + m["content"]}
+            else:
+                res.append(m)
+        return res
+
     async def stream(self, *, system: str, messages: list[dict], tools: list[ToolDef],
                      max_tokens: int = 16000) -> AsyncIterator[dict]:
         # OpenAI-compatible endpoints validate function names against
@@ -83,6 +109,8 @@ class OpenAICompatProvider:
             "model": self.info.model, "stream": True, "max_tokens": max_tokens,
             "messages": self._convert_messages(system, messages, names.wire),
         }
+        if self.info.model.startswith("ddgw/"):
+            body["messages"] = self._text_tool_history(body["messages"])
         if getattr(self, "include_usage", False):
             body["stream_options"] = {"include_usage": True}
         if tools:
@@ -93,49 +121,89 @@ class OpenAICompatProvider:
         calls: dict[int, dict] = {}
         finish = "stop"
         usage: dict = {}
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(self.read_timeout, connect=15.0)) as client:
-                async with client.stream("POST", f"{self.base_url}/chat/completions",
-                                         headers=self._headers(), json=body) as resp:
-                    if resp.status_code >= 400:
-                        raw = (await resp.aread()).decode("utf-8", "replace")[:400]
-                        yield {"type": "error", "retryable": resp.status_code >= 500,
-                               "message": f"{self.info.label} returned HTTP {resp.status_code}: {raw}"}
-                        return
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        payload = line[5:].strip()
-                        if payload == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(payload)
-                        except ValueError:
-                            continue
-                        if chunk.get("usage"):
-                            usage = {"input_tokens": chunk["usage"].get("prompt_tokens", 0),
-                                     "output_tokens": chunk["usage"].get("completion_tokens", 0)}
-                        for choice in chunk.get("choices", []):
-                            delta = choice.get("delta") or {}
-                            if delta.get("content"):
-                                text_parts.append(delta["content"])
-                                yield {"type": "text_delta", "text": delta["content"]}
-                            for tc in delta.get("tool_calls") or []:
-                                idx = tc.get("index", 0)
-                                slot = calls.setdefault(idx, {"id": "", "name": "", "args": ""})
-                                if tc.get("id"):
-                                    slot["id"] = tc["id"]
-                                fn = tc.get("function") or {}
-                                if fn.get("name"):
-                                    slot["name"] += fn["name"]
-                                if fn.get("arguments"):
-                                    slot["args"] += fn["arguments"]
-                            if choice.get("finish_reason"):
-                                finish = choice["finish_reason"]
-        except httpx.HTTPError as e:
-            yield {"type": "error", "message": f"Cannot reach {self.info.label}: {e or e.__class__.__name__}", "retryable": True}
-            return
+        if self.info.model.startswith("ddgw/"):
+            # DuckDuckGo liefert Werkzeugaufrufe im Stream nur als "<tool>…</tool>"-Text, ohne Stream als echte
+            # tool_calls. Deshalb hier eine einzige Antwort statt Stream; die Ereignisse bleiben dieselben.
+            body["stream"] = False
+            body.pop("stream_options", None)
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(self.read_timeout, connect=15.0)) as client:
+                    resp = await client.post(f"{self.base_url}/chat/completions", headers=self._headers(), json=body)
+            except httpx.HTTPError as e:
+                yield {"type": "error", "message": f"Cannot reach {self.info.label}: {e or e.__class__.__name__}", "retryable": True}
+                return
+            if resp.status_code >= 400:
+                yield {"type": "error", "retryable": resp.status_code >= 500,
+                       "message": f"{self.info.label} returned HTTP {resp.status_code}: {resp.text[:400]}"}
+                return
+            try:
+                data = resp.json()
+                choice = data["choices"][0]
+            except (ValueError, KeyError, IndexError):
+                yield {"type": "error", "retryable": True, "message": f"{self.info.label}: unlesbare Antwort"}
+                return
+            msg = choice.get("message") or {}
+            if data.get("usage"):
+                usage = {"input_tokens": data["usage"].get("prompt_tokens", 0),
+                         "output_tokens": data["usage"].get("completion_tokens", 0)}
+            if msg.get("content"):
+                text_parts.append(msg["content"])
+                yield {"type": "text_delta", "text": msg["content"]}
+            for idx, tc in enumerate(msg.get("tool_calls") or []):
+                fn = tc.get("function") or {}
+                args = fn.get("arguments")
+                calls[idx] = {"id": tc.get("id") or "", "name": fn.get("name") or "",
+                              "args": args if isinstance(args, str) else json.dumps(args or {})}
+            finish = choice.get("finish_reason") or "stop"
+        else:
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(self.read_timeout, connect=15.0)) as client:
+                    async with client.stream("POST", f"{self.base_url}/chat/completions",
+                                             headers=self._headers(), json=body) as resp:
+                        if resp.status_code >= 400:
+                            raw = (await resp.aread()).decode("utf-8", "replace")[:400]
+                            yield {"type": "error", "retryable": resp.status_code >= 500,
+                                   "message": f"{self.info.label} returned HTTP {resp.status_code}: {raw}"}
+                            return
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data:"):
+                                continue
+                            payload = line[5:].strip()
+                            if payload == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(payload)
+                            except ValueError:
+                                continue
+                            if chunk.get("usage"):
+                                usage = {"input_tokens": chunk["usage"].get("prompt_tokens", 0),
+                                         "output_tokens": chunk["usage"].get("completion_tokens", 0)}
+                            for choice in chunk.get("choices", []):
+                                delta = choice.get("delta") or {}
+                                if delta.get("content"):
+                                    text_parts.append(delta["content"])
+                                    yield {"type": "text_delta", "text": delta["content"]}
+                                for tc in delta.get("tool_calls") or []:
+                                    idx = tc.get("index", 0)
+                                    slot = calls.setdefault(idx, {"id": "", "name": "", "args": ""})
+                                    if tc.get("id"):
+                                        slot["id"] = tc["id"]
+                                    fn = tc.get("function") or {}
+                                    if fn.get("name"):
+                                        slot["name"] += fn["name"]
+                                    if fn.get("arguments"):
+                                        slot["args"] += fn["arguments"]
+                                if choice.get("finish_reason"):
+                                    finish = choice["finish_reason"]
+            except httpx.HTTPError as e:
+                yield {"type": "error", "message": f"Cannot reach {self.info.label}: {e or e.__class__.__name__}", "retryable": True}
+                return
 
+        if not "".join(text_parts).strip() and not calls:
+            # Leere Antwort ohne Fehlercode (kommt bei Gateways vor, z. B. bei leerem Guthaben): als Fehler melden,
+            # damit die Kette den nächsten Zugang fragt statt MIA stumm antworten zu lassen.
+            yield {"type": "error", "retryable": True, "message": f"{self.info.label} returned HTTP 502: leere Antwort"}
+            return
         content: list[dict] = []
         text = "".join(text_parts)
         if text:

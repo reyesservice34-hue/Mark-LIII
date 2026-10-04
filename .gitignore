@@ -104,3 +104,16 @@ knowledge_src/business_academy/practical/results/
 
 # Legacy pre-MIA brain documents are not part of active MIA source
 command_center/brain/
+
+# Laufzeit, Build und Sicherungen (nicht ins Repo)
+node_modules/
+command_center/web/.next/
+.mia-upgrade-backup/
+backups/
+brain/events/
+config/whatsapp_web/
+*.bak
+*.bak.*
+*.bak-*
+/mia-pairing*.png
+core/prompt-versionen/

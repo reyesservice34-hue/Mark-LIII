@@ -12,7 +12,9 @@ CODE=$(curl -s -o /tmp/lx-profile.json -w '%{http_code}' -H "Authorization: Bear
 if [ "$CODE" != "200" ]; then rm -f /tmp/lx-profile.json; echo "Lexware lehnt den Schluessel ab (HTTP $CODE). Nichts wurde geaendert."; exit 1; fi
 NAME=$(python3 -c 'import json;d=json.load(open("/tmp/lx-profile.json"));print(d.get("companyName","?"))'); rm -f /tmp/lx-profile.json
 echo "Schluessel gueltig. Firma in Lexware: $NAME"
-cp -a "$ENV" "/root/aufbewahrt-2026-09-19/vor-migration/command-center.env.vor-lexware"
+mkdir -p /root/mia-backups
+cp -a "$ENV" "/root/mia-backups/command-center.env.vor-lexware-$(date +%Y%m%d-%H%M%S)"
+chmod 600 /root/mia-backups/command-center.env.vor-lexware-* 2>/dev/null || true
 KEY="$KEY" python3 - <<'PY'
 import os, re
 p = "/root/Mark-LIII/command_center/.env"; s = open(p).read(); k = os.environ["KEY"]

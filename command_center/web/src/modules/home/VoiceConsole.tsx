@@ -8,6 +8,7 @@ import "./voice-console.css";
 
 const PHASE_LABEL: Record<LiveState, string> = {
   connecting: "Verbinde",
+  reconnecting: "Verbinde neu",
   listening: "Ich höre",
   thinking: "Denke nach",
   speaking: "Antworte",

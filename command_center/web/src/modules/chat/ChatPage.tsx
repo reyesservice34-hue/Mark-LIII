@@ -5,7 +5,7 @@ import { useApi } from "@/lib/useApi";
 import { useEvent } from "@/lib/events";
 import { useAuth } from "@/lib/auth";
 import { toast } from "@/lib/toast";
-import { Activity, MessageSquare, Mic, Sparkles, Volume2, VolumeX } from "@/lib/icons";
+import { Activity, MessageSquare, Mic, Sparkles, Volume2, VolumeX, X } from "@/lib/icons";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import type { StatusPayload } from "@/app/shell/TopStatusBar";
 import { ConversationList } from "./ConversationList";
@@ -33,6 +33,7 @@ export default function ChatPage() {
   const [runs, setRuns] = useState<Record<string, RunState>>({});
   const [currentRun, setCurrentRun] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [queued, setQueued] = useState<{ id: string; text: string; attachments: Attachment[]; agentId?: string }[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const stopRef = useRef<(() => void) | null>(null);
@@ -51,7 +52,7 @@ export default function ChatPage() {
     return () => { alive = false; };
   }, [conversationId, live.open]);
 
-  useEffect(() => { setListOpen(false); }, [conversationId]);
+  useEffect(() => { setListOpen(false); setQueued([]); }, [conversationId]);
 
   // ── new conversation from ?new=1 (optionally ?q=) ────────────────────
   useEffect(() => {
@@ -120,6 +121,16 @@ export default function ChatPage() {
       sayOnLine(text);
       return;
     }
+    // Während MIA noch antwortet, wartet die Nachricht und geht danach raus –
+    // so sieht jede Antwort den vollständigen Verlauf davor.
+    if (busy || runActive) {
+      setQueued((q) => [...q, { id: `${Date.now()}-${Math.random()}`, text, attachments, agentId }]);
+      return;
+    }
+    dispatch(text, attachments, agentId);
+  };
+  const dispatch = (text: string, attachments: Attachment[], agentId?: string) => {
+    if (!conversationId) return;
     setBusy(true);
     const stop = streamPost(`/api/chat/conversations/${conversationId}/messages`, { content: text, attachments, agent_id: agentId || null },
       handleStream, (err) => { stopRef.current = null; setBusy(false); if (err) toast({ title: "Nachricht fehlgeschlagen", body: err.message, tone: "err" }); convs.reload(); });
@@ -127,6 +138,7 @@ export default function ChatPage() {
   };
   const stop = async () => {
     const runId = currentRun;
+    setQueued([]);
     stopRef.current?.();
     if (runId) { try { await api.post(`/api/chat/runs/${runId}/cancel`); } catch { /* run may already be done */ } }
     setBusy(false);
@@ -168,6 +180,15 @@ export default function ChatPage() {
   const runActive = run && ["planning", "executing", "waiting", "delegated"].includes(run.status);
   const list = convs.data?.conversations || [];
 
+  // Warteschlange abarbeiten: sobald MIA fertig ist, geht die nächste Nachricht raus.
+  useEffect(() => {
+    if (busy || runActive || !queued.length || !conversationId) return;
+    const [next, ...rest] = queued;
+    setQueued(rest);
+    dispatch(next.text, next.attachments, next.agentId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, runActive, queued, conversationId]);
+
   return (
     <div className={`chat-layout ${panelOpen ? "" : "no-panel"}`}>
       <div className={`side chat-col ${listOpen ? "open" : ""}`}>
@@ -204,7 +225,18 @@ export default function ChatPage() {
           <>
             {messages.length === 0 && <EmptyState icon={<Sparkles size={26} />} title="MIA BEREIT">Sag oder schreib, was du brauchst. Mehrstufige Arbeit wird als Aufgabe sichtbar.</EmptyState>}
             <MessageList messages={messages} runs={runs} onRegenerate={regenerate} onRetry={retry} canAct={can("operator")} />
-            <ChatComposer onSend={send} onStop={stop} busy={busy || !!runActive} disabled={!can("operator")} initial={prefill}
+            {queued.length > 0 && (
+              <div className="stack" style={{ padding: "4px 12px", gap: 4 }} role="status" aria-label="Wartende Nachrichten">
+                {queued.map((q) => (
+                  <div key={q.id} className="row small" style={{ gap: 6, color: "var(--text-3)" }}>
+                    <span className="dot info" />
+                    <span className="truncate grow">Wartet: {q.text || `${q.attachments.length} Anhang/Anhänge`}</span>
+                    <button className="btn icon ghost sm" style={{ width: 18, height: 18 }} onClick={() => setQueued((x) => x.filter((y) => y.id !== q.id))} title="Aus der Warteschlange nehmen" aria-label="Wartende Nachricht entfernen"><X size={12} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <ChatComposer onSend={send} onStop={stop} busy={busy || !!runActive} queueWhileBusy disabled={!can("operator")} initial={prefill}
               offlineHint={masterOffline ? "Master-Agent offline – bitte den KI-Anbieter unter Einstellungen prüfen" : ""} />
           </>
         )}

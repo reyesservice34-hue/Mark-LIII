@@ -12,9 +12,11 @@ interface PickerBoard { agents: PickerAgent[]; autonomy_levels: string[] }
 const AUTONOMY_LABEL: Record<string, string> = { readonly: "Nur lesen", approval: "Mit Freigabe", full: "Autonom" };
 const MASTER_ID = "master";
 
-export function ChatComposer({ onSend, onStop, busy, disabled, initial, offlineHint = "", showPicker = true }: {
+export function ChatComposer({ onSend, onStop, busy, disabled, initial, offlineHint = "", showPicker = true, queueWhileBusy = false }: {
   onSend: (text: string, attachments: Attachment[], agentId?: string) => void; onStop: () => void; busy: boolean; disabled: boolean;
   initial?: string; offlineHint?: string; showPicker?: boolean;
+  /** Senden bleibt erlaubt, während MIA antwortet; der Aufrufer reiht die Nachricht ein. */
+  queueWhileBusy?: boolean;
 }) {
   const [text, setText] = useState(initial || "");
   const [files, setFiles] = useState<Attachment[]>([]);
@@ -44,7 +46,7 @@ export function ChatComposer({ onSend, onStop, busy, disabled, initial, offlineH
 
   const submit = () => {
     const t = text.trim();
-    if ((!t && !files.length) || busy || disabled) return;
+    if ((!t && !files.length) || (busy && !queueWhileBusy) || disabled) return;
     onSend(t, files, agentId === MASTER_ID ? undefined : agentId);
     setText(""); setFiles([]);
   };
@@ -69,11 +71,11 @@ export function ChatComposer({ onSend, onStop, busy, disabled, initial, offlineH
       {offlineHint && <div className="row small" style={{ color: "var(--warn)", gap: 6 }} role="status"><span className="dot warn" />{offlineHint}</div>}
       <div className="composer-box">
         <textarea ref={ta} rows={1} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} disabled={disabled}
-          placeholder={disabled ? "Deine Rolle darf keine Befehle senden" : "Nachricht an MIA schreiben …"} aria-label="Nachricht" />
+          placeholder={disabled ? "Deine Rolle darf keine Befehle senden" : busy && queueWhileBusy ? "Weitere Nachricht – geht nach der Antwort an MIA …" : "Nachricht an MIA schreiben …"} aria-label="Nachricht" />
         <input ref={fileInput} type="file" multiple hidden onChange={(e) => upload(e.target.files)} aria-hidden />
         <button className="btn icon ghost" onClick={() => fileInput.current?.click()} disabled={uploading || disabled} title="Dateien anhängen" aria-label="Dateien anhängen">{uploading ? <span className="spinner" /> : <Paperclip />}</button>
-        {busy ? <button className="btn danger icon" onClick={onStop} title="Abbrechen" aria-label="Abbrechen"><Square /></button>
-          : <button className="btn primary icon" onClick={submit} disabled={disabled || (!text.trim() && !files.length)} title="Senden (Enter)" aria-label="Senden"><Send /></button>}
+        {busy && <button className="btn danger icon" onClick={onStop} title="Abbrechen" aria-label="Abbrechen"><Square /></button>}
+        {(!busy || queueWhileBusy) && <button className="btn primary icon" onClick={submit} disabled={disabled || (!text.trim() && !files.length)} title={busy ? "Einreihen (Enter)" : "Senden (Enter)"} aria-label="Senden"><Send /></button>}
       </div>
       {showPicker && agents.length > 0 && (
         <div className="composer-bar">

@@ -1893,6 +1893,9 @@ class MiaLive:
 
         # Start dashboard (optional — needs: pip install fastapi "uvicorn[standard]" cryptography)
         try:
+            import os as _os
+            if _os.environ.get("MIA_DASHBOARD", "1") == "0":
+                raise RuntimeError("MIA_DASHBOARD=0")
             from dashboard.server import DashboardServer
             self._dashboard = DashboardServer()
             self._dashboard.set_connect_callback(self._on_phone_connected)

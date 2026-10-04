@@ -103,6 +103,8 @@ class Settings:
             "gemini": bool(_env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")),
             "local": bool(_env("LOCAL_LLM_URL")),
             "freellm": bool(_env("FREELLM_URL") and _env("FREELLM_API_KEY")),
+            "omniroute": bool(_env("OMNIROUTE_URL") and _env("OMNIROUTE_API_KEY") and _env("OMNIROUTE_MODEL")),
+            "claude": bool(_env("ANTHROPIC_API_KEY")),
         }
         if explicit:
             return explicit if candidates.get(explicit) else ""

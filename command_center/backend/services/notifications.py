@@ -32,10 +32,35 @@ class NotificationService:
         }
         self.db.insert("notifications", row)
         out = self._row(row)
+        out["speak"] = self._should_speak(out, meta or {})
         self.bus.publish("notification.created", out,
                          user_id=None if out["user_id"] == "*" else out["user_id"])
         self._maybe_push(out, meta or {})
         return out
+
+    @staticmethod
+    def _should_speak(out: dict, meta: dict) -> bool:
+        """Soll MIA die Meldung im offenen Command Center von selbst ansprechen (Sprachchat öffnet sich)?
+
+        Wichtiges ja: Warnungen, Fehler, Kritisches, Freigaben, Erinnerungen (meta call=True). Routine nein:
+        Kategorie „system“ (Herzschlag, Standort, Mail-Lernen), Info/Erfolg. meta={"speak": bool} hat Vorrang.
+        Abschalten: MIA_VOICE_ANNOUNCE=0.
+        """
+        import os
+        if os.environ.get("MIA_VOICE_ANNOUNCE", "1").strip().lower() in ("0", "off", "false"):
+            return False
+        if isinstance(meta.get("speak"), bool):
+            return meta["speak"]
+        if out["category"] == "system":
+            return False
+        return (out["severity"] in ("warning", "error", "critical")
+                or meta.get("call") is True)
+
+    def get(self, user_id: str, notification_id: str) -> dict | None:
+        row = self.db.fetchone(
+            "SELECT * FROM notifications WHERE id=? AND (user_id='*' OR user_id=?)",
+            (notification_id, user_id))
+        return self._row(row) if row else None
 
     def _maybe_push(self, out: dict, meta: dict) -> None:
         """Wichtiges zusätzlich aufs Handy (ntfy): Warnungen, Fehler, Freigaben und alles, was ein Agent ausdrücklich meldet.

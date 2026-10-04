@@ -78,6 +78,11 @@ class AnthropicProvider:
             "max_tokens": max_tokens,
             "messages": self._convert_messages(messages, names.wire),
         }
+        # Rollender Cache-Marker auf dem letzten Block des Verlaufs: In einer Werkzeug-Schleife (oft 10–40 Schritte)
+        # wird sonst jeder Schritt mit dem ganzen, wachsenden Verlauf neu berechnet. Die Reihenfolge ist
+        # Werkzeuge → System → Nachrichten; der System-Marker unten deckt Werkzeuge und System ab.
+        if kwargs["messages"] and isinstance(kwargs["messages"][-1].get("content"), list) and kwargs["messages"][-1]["content"]:
+            kwargs["messages"][-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
         if system:
             kwargs["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
         if tools:

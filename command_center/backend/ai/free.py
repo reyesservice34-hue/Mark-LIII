@@ -130,3 +130,9 @@ class FreeChain:
 
     async def health(self) -> dict:
         return await self.providers[0].health()
+
+
+def no_think(model: str) -> dict:
+    """Qwen3 denkt standardmäßig und verbraucht damit das Token-Budget (JSON-Antworten kamen leer oder abgeschnitten
+    zurück, ein Lauf dauerte über 90 s). Für Ollama gilt reasoning_effort="none"; andere Modelle bleiben unberührt."""
+    return {"reasoning_effort": "none"} if str(model or "").lower().startswith("qwen3") else {}

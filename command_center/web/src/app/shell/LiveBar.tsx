@@ -13,6 +13,7 @@ import type { LiveState } from "@/app/voice/live";
 
 const LABEL: Record<LiveState, string> = {
   connecting: "Verbinde …",
+  reconnecting: "Verbinde neu …",
   listening: "Hört zu",
   thinking: "Denkt nach",
   speaking: "Antwortet",

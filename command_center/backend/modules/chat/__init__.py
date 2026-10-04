@@ -77,7 +77,9 @@ async def get_conversation(conv_id: str, limit: int = 200, before: str = "", sta
     conv = _conv_or_404(state, conv_id, principal)
     messages = state.services["chat"].messages(conv_id, limit=limit, before=before)
     active = [r for r in state.runtime.active_runs() if r["conversation_id"] == conv_id]
-    return {"conversation": conv, "messages": messages, "active_runs": active}
+    return {"conversation": conv, "messages": messages, "active_runs": active,
+            "actions": [ {k: row[k] for k in ("id", "source_message_id", "tool", "target", "status", "approval_id", "consent_message_id")}
+                         for row in state.runtime.actions.visible(conv_id, principal.id)]}
 
 
 @router.patch("/conversations/{conv_id}")
