@@ -14,6 +14,7 @@ import type { LiveState } from "@/app/voice/live";
 const LABEL: Record<LiveState, string> = {
   connecting: "Verbinde …",
   reconnecting: "Verbinde neu …",
+  standby: "Standby – sag „Hey Mia“",
   listening: "Hört zu",
   thinking: "Denkt nach",
   speaking: "Antwortet",

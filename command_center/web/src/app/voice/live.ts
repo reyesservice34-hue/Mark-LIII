@@ -14,7 +14,7 @@
 
 const RATE = 24000;
 
-export type LiveState = "connecting" | "reconnecting" | "listening" | "thinking" | "speaking" | "closed";
+export type LiveState = "connecting" | "reconnecting" | "standby" | "listening" | "thinking" | "speaking" | "closed";
 
 /** Wartezeiten bis zum nächsten Verbindungsversuch; der letzte Wert gilt danach dauerhaft. */
 const RETRY_MS = [1000, 2000, 5000, 10000];
@@ -86,6 +86,9 @@ export class LiveLine {
   private said = "";
   private open = false;
   private muted = false;
+  // Server meldet Standby („Hey Mia“ nötig); Ruhezustand der Anzeige richtet sich danach.
+  private standby = false;
+  private idleState(): LiveState { return this.standby ? "standby" : "listening"; }
   private playbackGeneration = 0;
   private stopped = false;
   private retries = 0;
@@ -141,7 +144,7 @@ export class LiveLine {
     this.node.connect(ctxIn.destination);
     this.open = true;
     this.muted = false;
-    this.h.onState?.("listening");
+    this.h.onState?.(this.idleState());
   }
 
   /**
@@ -190,7 +193,7 @@ export class LiveLine {
       if (this.stopped) return;
       try {
         await this.connect();
-        if (!this.stopped) this.h.onState?.("listening");
+        if (!this.stopped) this.h.onState?.(this.idleState());
       } catch {
         // onclose des fehlgeschlagenen Sockets plant den nächsten Versuch.
         if (this.ws?.readyState !== WebSocket.CONNECTING) this.scheduleReconnect();
@@ -216,6 +219,15 @@ export class LiveLine {
       case "jarvis.unavailable":
         this.h.onError?.(ev.detail || "Die Live-Leitung ist nicht verfügbar.");
         void this.stop();
+        break;
+      case "jarvis.standby":
+        // Server wartet auf „Hey Mia“; nichts Ungespieltes abbrechen, nur die Anzeige.
+        this.standby = true;
+        this.h.onState?.("standby");
+        break;
+      case "jarvis.awake":
+        this.standby = false;
+        this.h.onState?.("listening");
         break;
       case "jarvis.tool":
         this.h.onTool?.(ev.name, !!ev.ok);
@@ -245,7 +257,7 @@ export class LiveLine {
       case "response.done":
         this.h.onSaid?.(this.said, true);
         // Satzteile können noch laufen; dann setzt onended den Zustand.
-        if (!this.queue.length) this.h.onState?.("listening");
+        if (!this.queue.length) this.h.onState?.(this.idleState());
         break;
       case "error":
         this.h.onError?.(ev.error?.message || "Fehler auf der Leitung.");
@@ -278,7 +290,7 @@ export class LiveLine {
       this.playHead = at + buffer.duration;
       this.queue.push(node);
       this.h.onState?.("speaking");
-      node.onended = () => { this.queue = this.queue.filter((n) => n !== node); if (!this.queue.length && generation === this.playbackGeneration) this.h.onState?.("listening"); };
+      node.onended = () => { this.queue = this.queue.filter((n) => n !== node); if (!this.queue.length && generation === this.playbackGeneration) this.h.onState?.(this.idleState()); };
       node.start(at);
     } catch { this.h.onError?.("Die Audioantwort konnte nicht wiedergegeben werden. Bitte Live Voice erneut starten."); }
   }

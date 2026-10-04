@@ -56,6 +56,7 @@ const ACTIVE_AGENT_STATES = new Set(["THINKING", "EXECUTING", "WAITING"]);
 const PHASE_LABEL: Record<string, string> = {
   closed: "inaktiv",
   connecting: "verbindet",
+  standby: "Standby – sag „Hey Mia“",
   listening: "hört zu",
   thinking: "denkt",
   speaking: "spricht",

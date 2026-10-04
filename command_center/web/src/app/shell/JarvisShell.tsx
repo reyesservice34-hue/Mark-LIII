@@ -11,8 +11,7 @@ import { ApprovalDialog } from "@/modules/approvals/ApprovalDialog";
 import { Sidebar } from "./Sidebar";
 import { TopStatusBar } from "./TopStatusBar";
 import { LiveBar } from "./LiveBar";
-import { armHeyMia } from "@/app/voice/wake";
-import { announce } from "@/app/voice/liveStore";
+import { announce, isLineOpen, openLine } from "@/app/voice/liveStore";
 
 export function JarvisShell() {
   const { modules, logout } = useAuth();
@@ -21,20 +20,20 @@ export function JarvisShell() {
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("jcc.sidebar") === "1"; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem("jcc.sidebar", collapsed ? "1" : "0"); } catch { /* ignore */ } }, [collapsed]);
 
-  // Browsers require a real user gesture before microphone recognition may start.
-  // After the first click/key press, keep the lightweight "Hey MIA" listener armed.
+  // „Hey Mia“ überall: Nach einer echten Nutzergeste (Browser-Pflicht für Mikrofon und Ton) öffnet sich die
+  // Sprachleitung von selbst. Der Server hält MIA im Standby und weckt sie beim Weckwort. Ist die Leitung zu
+  // (beendet, Fehler, Netz), öffnet die nächste Geste sie wieder. Aus: localStorage „mia.listen“ = "0".
   useEffect(() => {
-    let done = false;
-    const arm = () => {
-      if (done) return;
-      done = true;
-      try { armHeyMia(); } catch { /* unsupported/permission denied */ }
-      window.removeEventListener("pointerdown", arm);
-      window.removeEventListener("keydown", arm);
+    let lastTry = 0;
+    const listen = () => {
+      try { if (localStorage.getItem("mia.listen") === "0") return; } catch { /* ohne Speicher: an */ }
+      if (isLineOpen() || Date.now() - lastTry < 10000) return;
+      lastTry = Date.now();
+      void openLine().catch(() => { /* Mikrofon verweigert oder Server weg: nächste Geste versucht es neu */ });
     };
-    window.addEventListener("pointerdown", arm, { once: true });
-    window.addEventListener("keydown", arm, { once: true });
-    return () => { window.removeEventListener("pointerdown", arm); window.removeEventListener("keydown", arm); };
+    window.addEventListener("pointerdown", listen);
+    window.addEventListener("keydown", listen);
+    return () => { window.removeEventListener("pointerdown", listen); window.removeEventListener("keydown", listen); };
   }, []);
 
   // Commands from backend modules + shell-level ones.
