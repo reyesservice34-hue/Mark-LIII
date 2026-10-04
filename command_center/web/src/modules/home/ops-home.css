@@ -30,7 +30,7 @@
 .ops-core-state { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-2); }
 .ops-core-stage {
   position: relative;
-  height: 330px;
+  height: 660px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -145,7 +145,7 @@
   .ops-grid-3, .mia-work-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
-  .ops-core-stage { height: 250px; }
+  .ops-core-stage { height: 500px; }
   .ops-hud.bl, .ops-hud.br { display: none; }
   .ops-grid-3, .mia-work-grid { grid-template-columns: 1fr; }
   .ops-alerts { grid-template-columns: 1fr; gap: 6px; }

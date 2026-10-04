@@ -79,7 +79,7 @@ export function BrainCore({ thinking = false }: { thinking?: boolean }) {
       const r = cv.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
       W = Math.max(200, r.width); H = Math.max(200, r.height);
       cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      cx = W / 2; cy = H / 2 - 6; R = Math.min(W * 0.78, H) * 0.34;
+      cx = W / 2; cy = H / 2 - 6; R = Math.min(W * 0.9, H) * 0.34;
       if (reduce) frame(performance.now());
     };
 
