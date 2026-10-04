@@ -127,6 +127,14 @@ _CLAIMED_FAILURE = re.compile(
     re.I)
 
 
+# Versprechen, sich später zu melden. MIA läuft nach ihrer Antwort nicht weiter; ohne task.remind ist es leer.
+_PROMISED_FOLLOWUP = re.compile(
+    r"\b(ich melde mich|melde mich (bei dir |dann |gleich |sp(ä|ae)ter |wieder |sobald|wenn)|"
+    r"(ich )?(gebe?|sage?) dir (dann |sp(ä|ae)ter |gleich )?bescheid|ich komme? (darauf |sp(ä|ae)ter )?(auf dich )?zur(ü|ue)ck|"
+    r"halte dich auf dem laufenden|du h(ö|oe)rst (gleich |sp(ä|ae)ter |dann )?von mir|ich informiere dich,? (sobald|wenn))",
+    re.I)
+
+
 _CLAIMED_TOOLS = re.compile(r"(werkzeuge? aufgerufen|tool[s_ ]*(called|aufgerufen)|[a-z]+[._][a-z_]+`?\s*(→|->)\s*(status\s*)?\d{3})", re.I)
 
 
@@ -838,6 +846,7 @@ class MasterRuntime:
             if handle.task_id:
                 tasks.set_status(handle.task_id, "COMPLETED", output=text, note="Task completed")
             st.agents.bump(handle.agent_id, "completed")
+            self._notify_long_run_done(handle, user_message, text)
             comm = st.services.get("communication")
             if comm is not None and handle.understanding:
                 try:
@@ -894,6 +903,28 @@ class MasterRuntime:
             st.bus.publish("run.finished", {**handle.public(), "error": error})
             # keep finished runs briefly for late subscribers, then drop
             asyncio.get_running_loop().call_later(120, self._runs.pop, handle.id, None)
+
+    def _notify_long_run_done(self, handle: RunHandle, user_message: dict | None, text: str) -> None:
+        """Lange Aufträge melden sich am Ende von selbst (der Master ist vielleicht weggegangen).
+
+        Nur Hauptläufe eines Nutzers, nicht im Sprachchat (dort hört er die Antwort ohnehin).
+        Schwelle MIA_LONG_RUN_NOTIFY_S (Standard 60 s, 0 = aus).
+        """
+        try:
+            limit = float(os.environ.get("MIA_LONG_RUN_NOTIFY_S", "60") or 0)
+            if limit <= 0 or handle.voice or handle.parent_run_id or handle.principal.kind != "user":
+                return
+            started = datetime.fromisoformat(handle.started_at.replace("Z", "+00:00"))
+            if (datetime.now(timezone.utc) - started).total_seconds() < limit:
+                return
+            goal = " ".join(str((user_message or {}).get("content") or "Auftrag").split())
+            self.state.services["notifications"].notify(
+                category="task", severity="success", title=f"Fertig: {goal[:80]}",
+                body=(text or "").strip()[:600],
+                link=f"/chat/{handle.conversation_id}" if handle.conversation_id else "/tasks",
+                user_id=handle.principal.id, meta={"push": True, "speak": True})
+        except Exception:  # noqa: BLE001 — eine Meldung darf den Lauf nie stören
+            pass
 
     def _set_status(self, handle: RunHandle, status: str, activity: str = "", error: str = "") -> None:
         handle.status = status
@@ -1032,6 +1063,7 @@ class MasterRuntime:
         text_out: list[str] = []
         used_tools: list[str] = []
         honesty_nudged = False  # Ehrlichkeitsprüfung: höchstens ein Nachfassen pro Lauf
+        followup_nudged = False  # "ich melde mich" ohne task.remind: höchstens ein Nachfassen pro Lauf
         # A local CPU model digests ~15 tokens/s: a 12k-character tool result costs minutes, so it gets a short one.
         result_cap = 2500 if stable else 12000
         last_flush = 0.0
@@ -1116,6 +1148,20 @@ class MasterRuntime:
                                     "geprüft. Bitte stell die Frage noch einmal (am besten in einem neuen Gespräch), "
                                     "dann prüfe ich es wirklich.")
                     break
+                if (not followup_nudged and tool_defs and seg_text and "task.remind" not in used_tools
+                        and _PROMISED_FOLLOWUP.search(seg_text)):
+                    # Leeres Versprechen (2026-10-04): MIA sagte oft "ich melde mich", meldete sich aber nie.
+                    followup_nudged = True
+                    if text_out and text_out[-1] == seg_text:
+                        text_out.pop()
+                    self._step(handle, "plan", "Versprechen geprüft: 'ich melde mich' ohne Erinnerung")
+                    messages.append({"role": "user", "content": [{"type": "text", "text":
+                        "[system] Du hast angekündigt, dich später zu melden. Nach dieser Antwort läufst du aber "
+                        "nicht weiter, es passiert später nichts von selbst. Entweder setzt du jetzt mit "
+                        "task.remind eine Erinnerung (Zeitpunkt und was du dann meldest), oder du schreibst die "
+                        "Antwort ohne dieses Versprechen neu und sagst ehrlich, was erledigt ist und was offen "
+                        "bleibt. Gib danach deine vollständige Antwort an den Master."}]})
+                    continue
                 if stop_reason == "max_tokens":
                     text_out.append("…[response cut off by the token limit]")
                 break

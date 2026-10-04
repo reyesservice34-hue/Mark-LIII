@@ -32,6 +32,6 @@ class RemindersService:
             "SELECT * FROM reminders WHERE fired=0 AND due_at<=? ORDER BY due_at", (now,))
         for r in due:
             self.notifications.notify(
-                category="task", severity="info", title="Reminder",
-                body=r["message"], user_id=r["user_id"], meta={"push": True, "call": True})
+                category="task", severity="info", title="Erinnerung",
+                body=r["message"], user_id=r["user_id"], meta={"push": True, "call": True, "speak": True})
             self.db.update("reminders", r["id"], {"fired": 1})

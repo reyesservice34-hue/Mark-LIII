@@ -308,6 +308,48 @@ def register_builtin_tools(reg: ToolRegistry, state: "AppState") -> None:
                                 "priority": _s("low|normal|high|critical"),
                                 "agent": _s("agent id to queue it for (omit to work on it yourself)")},
                                ["title"]), category="tasks", risk="low", handler=task_create))
+    async def task_remind(ctx: ToolContext, args: dict):
+        # Einziger Weg, sich wirklich später zu melden: MIA läuft nach ihrer Antwort nicht weiter.
+        from datetime import timedelta
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(os.environ.get("CALENDAR_TIMEZONE", "").strip() or "Europe/Berlin")
+        now = datetime.now(tz)
+        msg = str(args.get("message") or "").strip()[:500]
+        if not msg:
+            return {"error": "message fehlt: was soll zur Zeit gemeldet werden?"}
+        try:
+            if args.get("in_minutes") not in (None, ""):
+                due = now + timedelta(minutes=float(args["in_minutes"]))
+            elif str(args.get("at") or "").strip():
+                at = str(args["at"]).strip()
+                if re.fullmatch(r"\d{1,2}:\d{2}", at):
+                    h, m = (int(x) for x in at.split(":"))
+                    due = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                    if due <= now:
+                        due += timedelta(days=1)
+                else:
+                    due = datetime.fromisoformat(at)
+                    if due.tzinfo is None:
+                        due = due.replace(tzinfo=tz)
+            else:
+                return {"error": "in_minutes oder at angeben"}
+        except (ValueError, OverflowError) as e:
+            return {"error": f"Zeitangabe nicht verstanden: {e}"}
+        if due <= now:
+            return {"error": "Der Zeitpunkt liegt in der Vergangenheit."}
+        due_utc = due.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        row = st.services["reminders"].create(
+            message=msg, due_at=due_utc, user_id=ctx.principal.id if ctx.principal.kind == "user" else "*")
+        return {"reminder_id": row["id"], "faellig": due.astimezone(tz).strftime("%d.%m.%Y um %H:%M Uhr")}
+
+    reg.register(ToolSpec("task.remind",
+                          "Set a reminder / follow-up: at the given time MIA really reports back to the user "
+                          "(notification, phone push, and she speaks it in the Command Center). Use this whenever you "
+                          "promise to report back later ('ich melde mich'); without it nothing happens later.",
+                          _obj({"message": _s("what to tell the user at that time (German)"),
+                                "in_minutes": _i("minutes from now"),
+                                "at": _s("alternatively a Berlin local time: 'HH:MM' or 'YYYY-MM-DDTHH:MM'")},
+                               ["message"]), category="tasks", risk="low", handler=task_remind))
     reg.register(ToolSpec("task.update", "Update a task's status, fields, output or add a progress note.",
                           _obj({"task_id": _s("task id"), "status": _s("QUEUED|PLANNING|RUNNING|PAUSED|COMPLETED|FAILED|CANCELLED"),
                                 "output": _s("result text"), "error": _s("error text"), "note": _s("progress note"),

@@ -49,6 +49,7 @@ from .services.files import FileService
 from .services.improve import ImprovementService
 from .services.metrics import MetricsService
 from .services.notifications import NotificationService
+from .services.reminders import RemindersService
 from .services.mcp import McpRegistry
 from .services.selfext import SelfExtension
 from .services.skills import SkillLibrary
@@ -84,6 +85,7 @@ def build_state(settings: Settings | None = None) -> AppState:
                                 timeout_minutes=settings.approval_timeout_minutes)
     state.services.update({
         "tasks": tasks, "notifications": notifications, "approvals": approvals,
+        "reminders": RemindersService(db, notifications),
         "chat": ChatStore(db, bus),
         "files": FileService(settings.workspace_dir, db, bus, max_upload_mb=settings.max_upload_mb),
         "metrics": MetricsService(db, bus, docker_socket=settings.docker_socket,
@@ -130,6 +132,10 @@ def build_state(settings: Settings | None = None) -> AppState:
         log.info("selfext", f"{restored} selbstgeschriebene(s) Werkzeug(e) wieder geladen")
         state.tools.snapshot(db)
     state.scheduler = Scheduler(bus, log)
+    state.scheduler.add("mia:reminders", "MIA Erinnerungen", 20,
+                        state.services["reminders"].check_due,
+                        description="Löst fällige Erinnerungen (task.remind) als Meldung aus; MIA spricht sie an.",
+                        silent=True, run_immediately=True)
     state.scheduler.add("mia:self-heal", "MIA Self-Healing", 120,
                         state.services["self_healing"].run_once,
                         description="Prüft MIA-Dienste und repariert nur allowlistete sichere Fehler.",
