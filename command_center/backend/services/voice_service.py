@@ -46,6 +46,14 @@ _log = logging.getLogger("jarvis.cc")
 GEMINI_TTS_MAX_CHARS = 1500
 GEMINI_TTS_TIMEOUT = 25.0
 GEMINI_TTS_RATE = 24000
+# Gratis-Gemini erlaubt nur 10 Stimm-Anfragen am Tag. Nach einem Ausfall wird es eine
+# Weile übersprungen, statt bei jedem Satz erneut eine halbe Sekunde auf das 429 zu warten.
+GEMINI_TTS_PAUSE_S = 600.0
+
+OPENAI_TTS_URL = "https://api.openai.com/v1/audio/speech"
+OPENAI_TTS_TIMEOUT = 30.0
+DEFAULT_OPENAI_TTS_INSTRUCTIONS = ("Sprich natürliches Hochdeutsch, warm, freundlich und klug, "
+                                   "in ruhigem Gesprächstempo.")
 
 ELEVEN_URL = "https://api.elevenlabs.io/v1/text-to-speech"
 # 24 kHz mono: klein genug für die Leitung, gut genug für eine Stimme.
@@ -125,8 +133,16 @@ class VoiceService:
         self.gemini_key = _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")
         self.gemini_tts_model = _env("JARVIS_CC_GEMINI_TTS_MODEL", "gemini-3.8-flash-lite-tts")
         self.gemini_tts_voice = _env("JARVIS_CC_GEMINI_TTS_VOICE") or _env("JARVIS_CC_REALTIME_VOICE") or "Aoede"
-        self.gemini_tts_on = bool(self.gemini_key) and _env("JARVIS_CC_TTS_PROVIDER", "local").lower() == "gemini"
+        provider = _env("JARVIS_CC_TTS_PROVIDER", "local").lower()
+        # OpenAI ist bezahlt und ohne Tageslimit; Gemini bleibt dahinter als Ersatz, dann Piper.
+        self.openai_tts_key = _env("OPENAI_API_KEY")
+        self.openai_tts_model = _env("JARVIS_CC_OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+        self.openai_tts_voice = _env("JARVIS_CC_OPENAI_TTS_VOICE", "coral")
+        self.openai_tts_instructions = _env("JARVIS_CC_OPENAI_TTS_INSTRUCTIONS", DEFAULT_OPENAI_TTS_INSTRUCTIONS)
+        self.openai_tts_on = bool(self.openai_tts_key) and provider == "openai"
+        self.gemini_tts_on = bool(self.gemini_key) and provider in ("gemini", "openai")
         self._gemini_client = None
+        self._gemini_pause_until = 0.0
 
     # ── capabilities ─────────────────────────────────────────────────────
     def stt_available(self) -> bool:
@@ -137,11 +153,13 @@ class VoiceService:
         return bool(self.eleven_key and self.eleven_voice)
 
     def tts_available(self) -> bool:
-        return bool(self.eleven_available() or self.gemini_tts_on or self.tts_url)
+        return bool(self.eleven_available() or self.openai_tts_on or self.gemini_tts_on or self.tts_url)
 
     def tts_provider(self) -> str:
         if self.eleven_available():
             return "elevenlabs"
+        if self.openai_tts_on:
+            return "openai"
         if self.gemini_tts_on:
             return "gemini"
         return "openai-compatible" if self.tts_url else ""
@@ -169,6 +187,12 @@ class VoiceService:
             return {"available": True, "configured": True, "provider": "elevenlabs",
                     "model": self.eleven_model, "voice": self.eleven_voice,
                     "detail": f"Stimme über ElevenLabs ({self.eleven_model})"}
+        if self.openai_tts_on:
+            return {"available": True, "configured": True, "provider": "openai",
+                    "model": self.openai_tts_model, "voice": self.openai_tts_voice,
+                    "detail": f"Stimme über OpenAI ({self.openai_tts_model}/{self.openai_tts_voice})"
+                              + (", bei Ausfall Gemini" if self.gemini_tts_on else "")
+                              + (", dann Piper" if self.tts_url else "")}
         if self.gemini_tts_on:
             return {"available": True, "configured": True, "provider": "gemini",
                     "model": self.gemini_tts_model, "voice": self.gemini_tts_voice,
@@ -308,6 +332,22 @@ class VoiceService:
             return data, "audio/wav"
         return self._wav(data, rate=GEMINI_TTS_RATE), "audio/wav"
 
+    async def _speak_openai(self, text: str) -> tuple[bytes, str]:
+        """Liest `text` mit OpenAI-TTS vor. Nur die Stimme, kein eigenes Denken."""
+        spoken = re.sub(r"[*`]+|^#+\s*", "", text, flags=re.M).strip()
+        body = {"model": self.openai_tts_model, "voice": self.openai_tts_voice, "input": spoken,
+                "response_format": "mp3"}
+        if self.openai_tts_instructions:
+            body["instructions"] = self.openai_tts_instructions
+        async with httpx.AsyncClient(timeout=OPENAI_TTS_TIMEOUT) as c:
+            r = await c.post(OPENAI_TTS_URL, json=body,
+                             headers={"Authorization": f"Bearer {self.openai_tts_key}"})
+        if r.status_code >= 400:
+            raise VoiceError(f"OpenAI-Stimme antwortete mit HTTP {r.status_code}: {r.text[:200]}")
+        if not r.content:
+            raise VoiceError("OpenAI hat kein Audio geliefert.")
+        return r.content, "audio/mpeg"
+
     async def speak(self, text: str, voice: str = "") -> tuple[bytes, str]:
         if not self.tts_available():
             raise VoiceError(self._tts_capabilities()["detail"])
@@ -320,11 +360,19 @@ class VoiceService:
         # ElevenLabs geht vor, wenn es eingerichtet ist: eine Stimme, nicht zwei.
         if self.eleven_available():
             return await self._speak_eleven(text, voice)
-        if self.gemini_tts_on and len(text) <= GEMINI_TTS_MAX_CHARS:
+        if self.openai_tts_on:
+            try:
+                return await self._speak_openai(text)
+            except Exception as e:  # noqa: BLE001 - jeder Ausfall führt zum Ersatz, nie zu Stille
+                _log.warning("OpenAI-TTS fehlgeschlagen, Ersatzstimme springt ein: %s", e)
+        loop_now = asyncio.get_running_loop().time()
+        if self.gemini_tts_on and len(text) <= GEMINI_TTS_MAX_CHARS and loop_now >= self._gemini_pause_until:
             try:
                 return await self._speak_gemini(text)
             except Exception as e:  # noqa: BLE001 - jeder Ausfall führt zu Piper, nie zu Stille
-                _log.warning("Gemini-TTS fehlgeschlagen, Piper springt ein: %s", e.__class__.__name__)
+                self._gemini_pause_until = loop_now + GEMINI_TTS_PAUSE_S
+                _log.warning("Gemini-TTS fehlgeschlagen, Piper springt ein (Pause %d s): %s",
+                             GEMINI_TTS_PAUSE_S, e.__class__.__name__)
                 if not self.tts_url:
                     raise VoiceError("Die Gemini-Stimme ist nicht erreichbar und es ist kein lokaler Rückfall eingerichtet.")
         if not self.tts_url:

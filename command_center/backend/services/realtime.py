@@ -26,18 +26,22 @@ import asyncio
 import contextlib
 import json
 import os
+import time
 from typing import Any, Awaitable, Callable
 
 from ..ai.base import ToolNameMap
 from ..orchestrator.tool_registry import sanitize_schema
 
 REALTIME_URL = "wss://api.openai.com/v1/realtime"
-DEFAULT_MODEL = "gpt-realtime-2.1"
-DEFAULT_VOICE = "cedar"
+# mini: gemessen 0,6 s bis zum ersten Ton, deutlich günstiger als das große Modell.
+DEFAULT_MODEL = "gpt-realtime-mini"
+DEFAULT_VOICE = "marin"
 # The live session is a conversation, not a batch job: a tool that stops to ask
 # for approval would otherwise hold the line open in silence. After this it
 # says so out loud and the approval is decided in the dashboard.
 TOOL_TIMEOUT = 25.0
+# Länger darf das Nachschlagen von Regeln und Gedächtnis vor einer Sprachantwort nicht dauern.
+ENRICH_TIMEOUT = 2.5
 
 
 class RealtimeError(Exception):
@@ -61,8 +65,8 @@ def unavailable_reason() -> str:
 
 def settings() -> dict:
     return {
-        "model": _env("JARVIS_CC_REALTIME_MODEL") or DEFAULT_MODEL,
-        "voice": _env("JARVIS_CC_REALTIME_VOICE") or DEFAULT_VOICE,
+        "model": _env("MIA_REALTIME_MODEL") or _env("JARVIS_CC_REALTIME_MODEL") or DEFAULT_MODEL,
+        "voice": _env("MIA_REALTIME_VOICE") or DEFAULT_VOICE,
         "url": _env("JARVIS_CC_REALTIME_URL") or REALTIME_URL,
     }
 
@@ -111,7 +115,11 @@ class RealtimeSession:
     """One live conversation. Owns the upstream socket and the tool loop."""
 
     def __init__(self, state, principal, *, instructions: str = "", conversation_id: str = "",
-                 send_down: Callable[[dict], Awaitable[None]]) -> None:
+                 send_down: Callable[[dict], Awaitable[None]],
+                 enrich: Callable[[str], Awaitable[str]] | None = None) -> None:
+        # enrich: holt pro Nutzeraussage Verhaltensregeln und Gedächtnis (wie der Text-Chat bei jeder
+        # Nachricht). Ist es gesetzt, antwortet das Modell erst, nachdem dieser Kontext eingefügt ist.
+        self.enrich = enrich
         self.state = state
         self.principal = principal
         self.instructions = instructions
@@ -162,8 +170,9 @@ class RealtimeSession:
                         # The model decides when a turn ended. That is what
                         # makes it a conversation instead of push-to-talk,
                         # and it is also what allows talking over it.
-                        "turn_detection": {"type": "semantic_vad", "interrupt_response": True},
-                        "transcription": {"model": "whisper-1"},
+                        "turn_detection": {"type": "semantic_vad", "interrupt_response": True,
+                                           "create_response": self.enrich is None},
+                        "transcription": {"model": "gpt-4o-mini-transcribe", "language": "de"},
                     },
                     "output": {"format": {"type": "audio/pcm", "rate": 24000},
                                "voice": settings()["voice"]},
@@ -210,7 +219,11 @@ class RealtimeSession:
                 text = str(ev.get("transcript") or "").strip()
                 if text:
                     self.state.services["chat"].add_message(self.conversation_id, "user", text, meta={"via": "voice", "actor": self.principal.actor})
-            elif t == "response.created":
+            if t == "conversation.item.input_audio_transcription.completed" and self.enrich is not None:
+                asyncio.create_task(self._respond_with_context(str(ev.get("transcript") or "").strip()))
+            elif t == "conversation.item.input_audio_transcription.failed" and self.enrich is not None:
+                asyncio.create_task(self._up({"type": "response.create"}))
+            if t == "response.created":
                 self._assistant_text = ""
             elif t == "response.output_audio_transcript.delta":
                 self._assistant_text += str(ev.get("delta") or "")
@@ -226,6 +239,24 @@ class RealtimeSession:
                 detail = (ev.get("error") or {}).get("message") or "unknown error"
                 self.state.log.warning("realtime", f"live line: {detail}")
             await self.send_down(ev)
+
+    async def _respond_with_context(self, text: str) -> None:
+        """Kontext zur Aussage einfügen, dann antworten. Fehlt er oder dauert zu lange: trotzdem antworten."""
+        ctx = ""
+        started = time.monotonic()
+        if text and self.enrich is not None:
+            try:
+                ctx = await asyncio.wait_for(self.enrich(text), timeout=ENRICH_TIMEOUT)
+            except Exception as e:  # noqa: BLE001 - Kontext darf die Antwort nie verhindern
+                self.state.log.warning("realtime", f"Gedächtnis für Sprachantwort fehlgeschlagen: {e.__class__.__name__}")
+        print("[MIA_VOICE_LATENCY] " + json.dumps({"conversation_id": self.conversation_id, "stage": "realtime_context",
+                                                  "enrich_ms": round((time.monotonic() - started) * 1000, 1),
+                                                  "context_chars": len(ctx)}), flush=True)
+        if ctx:
+            await self._up({"type": "conversation.item.create", "item": {
+                "type": "message", "role": "system",
+                "content": [{"type": "input_text", "text": ctx[:6000]}]}})
+        await self._up({"type": "response.create"})
 
     # ── tools ────────────────────────────────────────────────────────────
     async def _run_tool(self, item: dict) -> None:
