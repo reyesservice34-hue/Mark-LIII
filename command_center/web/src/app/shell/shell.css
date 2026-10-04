@@ -50,7 +50,7 @@ body .brand-text strong {
 }
 body .brand-text .label { font-size: 8.5px; letter-spacing: 0.26em; color: var(--accent); }
 .core { position: relative; width: 24px; height: 24px; flex: none; display: grid; place-items: center; }
-.core::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1px dashed rgba(76, 201, 240, 0.35); animation: spin 18s linear infinite; }
+.core::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1px dashed rgba(139, 157, 255, 0.35); animation: spin 18s linear infinite; }
 .core .ring { position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--accent); opacity: 0.85; animation: breathe 3s ease-in-out infinite; }
 .core .ring.reconnecting, .core .ring.connecting { border-color: var(--warn); border-style: dashed; animation: spin 2s linear infinite; }
 .core .ring.offline { border-color: var(--err); animation: none; opacity: 0.6; }
@@ -96,8 +96,8 @@ body .nav-item svg { flex: none; color: var(--text-3); filter: none; }
 body .nav-item:hover svg { color: var(--text-2); }
 body .nav-item.active {
   color: var(--text);
-  border-color: rgba(76, 201, 240, 0.26);
-  background: linear-gradient(90deg, rgba(76, 201, 240, 0.16), rgba(76, 201, 240, 0.02));
+  border-color: rgba(139, 157, 255, 0.26);
+  background: linear-gradient(90deg, rgba(139, 157, 255, 0.16), rgba(139, 157, 255, 0.02));
   box-shadow: none;
 }
 body .nav-item.active svg { color: var(--accent); filter: none; }
@@ -163,7 +163,7 @@ body .topbar::after {
   position: absolute;
   left: 0; right: 0; bottom: -1px;
   height: 1px;
-  background: linear-gradient(90deg, rgba(76, 201, 240, 0.55), transparent 45%);
+  background: linear-gradient(90deg, rgba(139, 157, 255, 0.55), transparent 45%);
 }
 .topbar .status-group { display: flex; align-items: center; gap: 0; min-width: 0; overflow: hidden; height: 100%; }
 .topbar .status-group.right { margin-left: auto; flex: none; gap: 2px; }
@@ -249,7 +249,7 @@ body .live-bar {
   font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.04em;
   background: rgba(8, 22, 30, 0.94);
   color: var(--accent);
-  border-bottom: 1px solid rgba(76, 201, 240, 0.3);
+  border-bottom: 1px solid rgba(139, 157, 255, 0.3);
   backdrop-filter: none;
 }
 .live-bar-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 auto; animation: live-bar-pulse 1.6s ease-in-out infinite; }

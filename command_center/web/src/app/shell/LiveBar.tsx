@@ -29,7 +29,7 @@ export function LiveBar() {
     return (
       <div className="live-bar phase-closed" role="status">
         <span className="live-bar-dot" aria-hidden />
-        <button className="live-bar-label" onClick={() => { setListenEnabled(true); void openLine().catch(() => undefined); }}
+        <button className="live-bar-label" onClick={() => { setListenEnabled(true); void openLine("", { auto: true }).catch(() => undefined); }}
           title="Mikrofon an: MIA wartet im Standby auf „Hey Mia“">
           <Mic size={14} />
           MIA hört nicht zu – tippen zum Aktivieren

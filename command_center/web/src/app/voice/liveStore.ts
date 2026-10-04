@@ -26,9 +26,17 @@ export interface LiveSnapshot {
   open: boolean;
   muted: boolean;
   conversationId: string;
+  /**
+   * Das Gespräch ist wirklich da: MIA wurde mit „Hey Mia“ geweckt oder jemand hat auf „Sprechen“
+   * gedrückt. Eine Leitung im Standby zählt nicht – die wartet nur still auf das Weckwort.
+   */
+  engaged: boolean;
 }
 
-const EMPTY: LiveSnapshot = { phase: "closed", heard: "", said: "", tools: [], error: "", open: false, muted: false, conversationId: "" };
+const EMPTY: LiveSnapshot = { phase: "closed", heard: "", said: "", tools: [], error: "", open: false, muted: false, conversationId: "", engaged: false };
+const AWAKE: LiveState[] = ["listening", "thinking", "speaking"];
+/** Von Hand geöffnet (Knopf), nicht still im Hintergrund für „Hey Mia“. */
+let explicit = false;
 
 let snapshot: LiveSnapshot = EMPTY;
 let line: LiveLine | null = null;
@@ -65,21 +73,52 @@ export function isLineOpen(): boolean {
  * Leitung öffnen. Ein zweiter Aufruf, während sie schon steht, tut nichts —
  * zwei offene Mikrofone auf dieselbe Sitzung wären nur Rückkopplung.
  */
-export async function openLine(conversationId = ""): Promise<void> {
+let opening: Promise<void> | null = null;
+
+export async function openLine(conversationId = "", opts: { auto?: boolean } = {}): Promise<void> {
+  // Läuft schon ein Aufbau, nicht parallel einen zweiten starten (zwei Mikrofone, zwei Sitzungen).
+  if (opening) {
+    if (opts.auto) return opening;
+    await opening.catch(() => undefined);
+  }
+  const run = openNow(conversationId, opts);
+  opening = run;
+  try { await run; } finally { if (opening === run) opening = null; }
+}
+
+async function openNow(conversationId: string, opts: { auto?: boolean }): Promise<void> {
+  if (!opts.auto) {
+    // Ein Knopfdruck macht auch eine schon wartende Leitung zum Gespräch.
+    explicit = true;
+    if (snapshot.open && conversationId && conversationId !== snapshot.conversationId) {
+      // Wartende Leitung gehört zu einem anderen Gespräch: neu aufbauen, nicht umbiegen.
+      await closeLine();
+      explicit = true;
+    } else if (snapshot.open) { set({ engaged: true }); line?.wake(); return; }
+  }
   if (snapshot.open || snapshot.phase === "connecting") return;
   conversationId = conversationId || snapshot.conversationId;
   if (!conversationId) {
     const result = await api.get<{ conversation: { id: string } }>("/api/chat/main");
     conversationId = result.conversation.id;
   }
-  set({ heard: "", said: "", tools: [], error: "", phase: "connecting", open: true, muted: false, conversationId });
+  set({ heard: "", said: "", tools: [], error: "", phase: "connecting", open: true, muted: false, conversationId, engaged: explicit });
   const l = new LiveLine({
-    onState: (phase) => set({ phase, open: phase !== "closed" }),
+    onState: (phase) => set({ phase, open: phase !== "closed", engaged: explicit || AWAKE.includes(phase) || (snapshot.engaged && phase !== "standby" && phase !== "closed") }),
+    onReady: (wakeword) => {
+      // Knopfdruck: MIA soll sofort zuhören, nicht erst auf „Hey Mia“ warten.
+      if (wakeword && explicit) l.wake();
+      // Ohne Weckwort-Erkennung auf dem Server wäre jede still geöffnete Leitung sofort ein offenes
+      // Gespräch. Dann nur auf Knopfdruck – die Hintergrund-Leitung wird wieder geschlossen.
+      if (!wakeword && opts.auto && !explicit) {
+        void closeLine().then(() => set({ error: "„Hey Mia“ ist auf dem Server nicht verfügbar – zum Sprechen „Mit MIA sprechen“ drücken." }));
+      }
+    },
     onHeard: (heard) => set({ heard, said: "" }),
     onSaid: (said) => set({ said }),
     onTool: (name, ok) => set({ tools: [...snapshot.tools.slice(-4), { name, ok }] }),
     onError: (error) => set({ error }),
-    onClose: () => { line = null; set({ phase: "closed", open: false, muted: false }); },
+    onClose: () => { line = null; explicit = false; set({ phase: "closed", open: false, muted: false, engaged: false }); },
   }, conversationId);
   line = l;
   try {
@@ -87,7 +126,8 @@ export async function openLine(conversationId = ""): Promise<void> {
   } catch (e: any) {
     await l.stop();
     line = null;
-    set({ phase: "closed", open: false, muted: false, error: e?.message || "Die Leitung kam nicht zustande." });
+    explicit = false;
+    set({ phase: "closed", open: false, muted: false, engaged: false, error: e?.message || "Die Leitung kam nicht zustande." });
     throw e;
   }
 }
@@ -123,8 +163,18 @@ export function setListenEnabled(on: boolean): void {
 export async function closeLine(): Promise<void> {
   const l = line;
   line = null;
+  explicit = false;
   await l?.stop();
-  set({ phase: "closed", open: false, muted: false });
+  set({ phase: "closed", open: false, muted: false, engaged: false });
+}
+
+/**
+ * Gespräch beenden. Ist Zuhören erlaubt, wartet MIA danach wieder still im Standby auf „Hey Mia“;
+ * die Leitung wird dafür neu aufgebaut, damit der Server sicher nicht mehr wach mithört.
+ */
+export async function endConversation(): Promise<void> {
+  await closeLine();
+  if (listenEnabled()) void openLine("", { auto: true }).catch(() => undefined);
 }
 
 export function setLineMuted(muted: boolean): void {

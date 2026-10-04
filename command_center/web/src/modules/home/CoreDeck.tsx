@@ -35,7 +35,7 @@ const ANBIETER: [string, string][] = [
   ["remote_control_plane", "Fernsteuerung"],
 ];
 
-export function CoreDeck() {
+export function CoreDeck({ onTalk }: { onTalk?: () => void } = {}) {
   const settings = useApi<SettingsPayload>("/api/settings", { interval: 120000 });
   const health = useApi<HealthPayload>("/api/health", { interval: 60000, refreshOn: ["master.status"] });
   const nav = useNavigate();
@@ -46,13 +46,14 @@ export function CoreDeck() {
   const verbunden = Object.values(settings.data?.providers || {}).filter(Boolean).length;
 
   const sprechen = async () => {
-    if (live.open) { nav("/"); return; }
+    if (onTalk) { onTalk(); return; }
+    if (live.engaged) { nav("/"); return; }
     try { await openLine(); } catch { /* der Grund steht in der Konsole */ }
   };
 
   return (
     <>
-      <Panel title="Denkapparat" icon={<Cpu size={15} />}
+      <Panel className="aur-brainbox" title="Denkapparat" icon={<Cpu size={15} />}
         actions={<Link className="btn sm ghost" to="/settings">Verwalten</Link>}
         foot={gw ? `${gw.detail || ""}` : undefined}>
         {!settings.data ? <div className="panel-body"><Skeleton rows={3} /></div> : (
@@ -78,10 +79,10 @@ export function CoreDeck() {
         )}
       </Panel>
 
-      <Panel title="Schnellbefehle" icon={<Zap size={15} />}>
+      <Panel className="aur-quick" title="Schnellbefehle" icon={<Zap size={15} />}>
         <div className="quick-grid">
           <button className="quick" onClick={sprechen}>
-            <Mic size={16} /><span>{live.open ? "Zur laufenden Leitung" : "Sprechen"}</span>
+            <Mic size={16} /><span>{live.engaged ? "Zum Gespräch" : "Sprechen"}</span>
           </button>
           <button className="quick" onClick={() => nav("/tasks?new=1")}>
             <Plus size={16} /><span>Neue Aufgabe</span>
