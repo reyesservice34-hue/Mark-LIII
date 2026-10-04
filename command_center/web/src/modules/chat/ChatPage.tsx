@@ -54,6 +54,16 @@ export default function ChatPage() {
 
   useEffect(() => { setListOpen(false); setQueued([]); }, [conversationId]);
 
+  // ── /chat ohne Sitzung: das eine MIA-Hauptgespräch öffnen ────────────
+  useEffect(() => {
+    if (conversationId || params.get("new") === "1") return;
+    api.get<{ conversation: Conversation }>("/api/chat/main").then((r) => {
+      const rest = params.toString();
+      nav(`/chat/${r.conversation.id}${rest ? `?${rest}` : ""}`, { replace: true });
+    }).catch((e) => toast({ title: "MIA-Gespräch konnte nicht geöffnet werden", body: e.message, tone: "err" }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, params]);
+
   // ── new conversation from ?new=1 (optionally ?q=) ────────────────────
   useEffect(() => {
     if (params.get("new") !== "1") return;

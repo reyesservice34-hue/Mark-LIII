@@ -119,9 +119,7 @@ export default function HomePage() {
     if (openingSession || sessionId) return;
     setOpeningSession(true);
     try {
-      const response = await api.post<{ conversation: { id: string } }>("/api/chat/conversations", {
-        title: "MIA Live-Sitzung",
-      });
+      const response = await api.get<{ conversation: { id: string } }>("/api/chat/main");
       const id = response.conversation.id;
 
       setSessionMessages([]);
@@ -174,7 +172,7 @@ export default function HomePage() {
     if (sessionId) {
       await sendInSession(value, []);
     } else {
-      nav(`/chat?new=1&q=${encodeURIComponent(value)}`);
+      nav(`/chat?q=${encodeURIComponent(value)}`);
     }
     setCommand("");
   };
@@ -367,7 +365,7 @@ export default function HomePage() {
                   ? "Verbindung wird aufgebaut"
                   : "Mit MIA sprechen"}
             </button>
-            <Link className="btn" to={sessionId ? `/chat/${sessionId}` : "/chat?new=1"}>
+            <Link className="btn" to={sessionId ? `/chat/${sessionId}` : "/chat"}>
               <MessageSquare size={14} /> Chat öffnen
             </Link>
             <Link className="btn ghost" to="/memory">

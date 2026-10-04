@@ -65,6 +65,19 @@ async def list_conversations(q: str = "", archived: bool = False, state: AppStat
     return {"conversations": state.services["chat"].list_conversations(principal.id, q=q, archived=archived)}
 
 
+@router.get("/main")
+async def main_conversation(state: AppState = Depends(get_state), principal: Principal = Depends(current_principal)):
+    """Das eine fortlaufende MIA-Gespräch des Nutzers: Startseite, Chat und Sprache teilen es, auf jedem Gerät."""
+    chat = state.services["chat"]
+    key = f"main_conversation:{principal.id}"
+    conv_id = str(state.db.get_setting(key, "") or "")
+    conv = chat.get_conversation(conv_id, principal.id) if conv_id else None
+    if conv is None:
+        conv = chat.create_conversation(principal.id, "MIA", actor=principal.actor)
+        state.db.set_setting(key, conv["id"])
+    return {"conversation": conv}
+
+
 @router.post("/conversations", status_code=201)
 async def create_conversation(body: ConversationCreate, state: AppState = Depends(get_state),
                               principal: Principal = Depends(current_principal)):
@@ -280,7 +293,7 @@ async def upload_attachment(file: UploadFile = File(...), state: AppState = Depe
 
 
 MODULE = ModuleSpec(
-    id="chat", title="Sitzungsverläufe", router=router, icon="message-square", path="/chat", order=20, nav=True, mobile_priority=100,
+    id="chat", title="MIA-Chat", router=router, icon="message-square", path="/chat", order=20, nav=True, mobile_priority=100,
     description="Gespeicherte MIA-Sitzungen und Live-Gespräche",
     commands=[{"id": "chat.new", "title": "MIA-Sitzung öffnen", "path": "/chat?new=1", "shortcut": "g c"}],
 )

@@ -69,7 +69,7 @@ export async function openLine(conversationId = ""): Promise<void> {
   if (snapshot.open || snapshot.phase === "connecting") return;
   conversationId = conversationId || snapshot.conversationId;
   if (!conversationId) {
-    const result = await api.post<{ conversation: { id: string } }>("/api/chat/conversations", { title: "MIA Sitzung" });
+    const result = await api.get<{ conversation: { id: string } }>("/api/chat/main");
     conversationId = result.conversation.id;
   }
   set({ heard: "", said: "", tools: [], error: "", phase: "connecting", open: true, muted: false, conversationId });
