@@ -23,7 +23,7 @@ import { EmptyState, ErrorState, Panel, Skeleton, StatusIndicator } from "@/comp
 import type { StatusPayload } from "@/app/shell/TopStatusBar";
 import { AgentCard, type Agent } from "@/modules/agents/AgentCard";
 import { TaskTimeline } from "@/modules/tasks/TaskTimeline";
-import { closeLine, openLine, sayOnLine, selectConversation, useLive } from "@/app/voice/liveStore";
+import { closeLine, openLine, sayOnLine, selectConversation, setListenEnabled, useLive } from "@/app/voice/liveStore";
 import { MessageList } from "@/modules/chat/MessageList";
 import { ChatComposer } from "@/modules/chat/ChatComposer";
 import type { Attachment, Message, RunState } from "@/modules/chat/types";
@@ -132,6 +132,7 @@ export default function HomePage() {
   const endMiaSession = async () => {
     const id = sessionId;
     if (!id) return;
+    setListenEnabled(false);
     await closeLine();
     selectConversation("");
     await api.patch(`/api/chat/conversations/${id}`, { archived: false });

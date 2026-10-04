@@ -88,6 +88,11 @@ export class LiveLine {
   private muted = false;
   // Server meldet Standby („Hey Mia“ nötig); Ruhezustand der Anzeige richtet sich danach.
   private standby = false;
+  /** Nach einer Nutzergeste: Browser geben Ton erst danach frei. */
+  resumeAudio(): void {
+    void this.ctxOut?.resume().catch(() => undefined);
+    void this.ctxIn?.resume().catch(() => undefined);
+  }
   private idleState(): LiveState { return this.standby ? "standby" : "listening"; }
   private playbackGeneration = 0;
   private stopped = false;

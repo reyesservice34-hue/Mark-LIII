@@ -11,7 +11,7 @@ import { ApprovalDialog } from "@/modules/approvals/ApprovalDialog";
 import { Sidebar } from "./Sidebar";
 import { TopStatusBar } from "./TopStatusBar";
 import { LiveBar } from "./LiveBar";
-import { announce, isLineOpen, openLine } from "@/app/voice/liveStore";
+import { announce, isLineOpen, listenEnabled, openLine, resumeLine } from "@/app/voice/liveStore";
 
 export function JarvisShell() {
   const { modules, logout } = useAuth();
@@ -26,11 +26,14 @@ export function JarvisShell() {
   useEffect(() => {
     let lastTry = 0;
     const listen = () => {
-      try { if (localStorage.getItem("mia.listen") === "0") return; } catch { /* ohne Speicher: an */ }
-      if (isLineOpen() || Date.now() - lastTry < 10000) return;
+      resumeLine();
+      if (!listenEnabled() || isLineOpen() || Date.now() - lastTry < 10000) return;
       lastTry = Date.now();
       void openLine().catch(() => { /* Mikrofon verweigert oder Server weg: nächste Geste versucht es neu */ });
     };
+    // Mikrofon schon erlaubt: gleich beim Laden verbinden; den Ton gibt der Browser mit der ersten Geste frei.
+    void navigator.permissions?.query({ name: "microphone" as PermissionName })
+      .then((p) => { if (p.state === "granted") listen(); }).catch(() => undefined);
     window.addEventListener("pointerdown", listen);
     window.addEventListener("keydown", listen);
     return () => { window.removeEventListener("pointerdown", listen); window.removeEventListener("keydown", listen); };

@@ -15,7 +15,7 @@ import { ExecutionPanel } from "./ExecutionPanel";
 import type { Attachment, Conversation, Message, RunState } from "./types";
 import "./chat.css";
 import "./chat-noir.css";
-import { closeLine, openLine, sayOnLine, toggleLineMuted, selectConversation, useLive } from "@/app/voice/liveStore";
+import { closeLine, openLine, sayOnLine, setListenEnabled, toggleLineMuted, selectConversation, useLive } from "@/app/voice/liveStore";
 
 const LABELS: Record<string, string> = { planning: "ANFRAGE WIRD GEPRÜFT", executing: "AUFGABE WIRD BEARBEITET", waiting: "WARTET AUF FREIGABE", completed: "AUFGABE ERLEDIGT", failed: "AUFGABE FEHLGESCHLAGEN", cancelled: "ABGEBROCHEN", delegated: "AN SPEZIALAGENT ÜBERGEBEN" };
 
@@ -218,7 +218,7 @@ export default function ChatPage() {
             {runActive && <span className="state-line" style={{ padding: 0 }}><span className="dot info live" />{LABELS[run?.status || ""] || run?.label}</span>}
             {!runActive && !busy && <span className="state-line" style={{ padding: 0, color: masterOffline ? "var(--err)" : "var(--text-3)" }}>{masterOffline ? "MASTER-AGENT OFFLINE" : "MIA BEREIT"}</span>}
             {conversationId && live.open && live.conversationId === conversationId && <button className={`btn sm ${live.muted ? "primary" : "ghost"}`} onClick={toggleLineMuted} title={live.muted ? "Mikrofon einschalten" : "Mikrofon stummschalten"}>{live.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}{live.muted ? "Stumm" : "Mikrofon an"}</button>}
-            {conversationId && <button className={`btn sm ${live.open && live.conversationId === conversationId ? "danger" : "ghost"}`} onClick={() => live.open ? void closeLine() : void openLine(conversationId).catch((e: any) => toast({ title: "Sprachchat konnte nicht gestartet werden", body: e?.message, tone: "err" }))} title={live.open ? "Sprachchat beenden" : "Sprachchat mit Mikrofon starten"}><Mic size={14} />{live.open && live.conversationId === conversationId ? "Sprachchat beenden" : "Sprachchat starten"}</button>}
+            {conversationId && <button className={`btn sm ${live.open && live.conversationId === conversationId ? "danger" : "ghost"}`} onClick={() => { setListenEnabled(!live.open); return live.open ? void closeLine() : void openLine(conversationId).catch((e: any) => toast({ title: "Sprachchat konnte nicht gestartet werden", body: e?.message, tone: "err" })); }} title={live.open ? "Sprachchat beenden" : "Sprachchat mit Mikrofon starten"}><Mic size={14} />{live.open && live.conversationId === conversationId ? "Sprachchat beenden" : "Sprachchat starten"}</button>}
             <button className={`btn icon sm ${panelOpen ? "" : "ghost"}`} onClick={() => setPanelOpen((v) => !v)} title="Arbeitsschritte anzeigen" aria-label="Arbeitsschritte ein- oder ausblenden"><Activity /></button>
           </div>
         </div>

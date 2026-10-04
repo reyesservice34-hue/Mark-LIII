@@ -255,6 +255,10 @@ body .live-bar {
 .live-bar-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 auto; animation: live-bar-pulse 1.6s ease-in-out infinite; }
 .live-bar.phase-speaking .live-bar-dot { animation-duration: 0.55s; }
 body .live-bar.phase-thinking { color: var(--warn); border-bottom-color: rgba(255, 180, 84, 0.3); background: rgba(30, 20, 6, 0.94); }
+body .live-bar.phase-closed { color: var(--text-2); background: rgba(12, 14, 18, 0.94); border-bottom-color: var(--line); }
+.live-bar.phase-closed .live-bar-dot { animation: none; opacity: 0.5; }
+body .live-bar.phase-standby { color: var(--text-2); }
+.live-bar.phase-standby .live-bar-dot { animation-duration: 3s; }
 .live-bar-label { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 0; white-space: nowrap; }
 .live-bar-label:hover { text-decoration: underline; }
 .live-bar-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }

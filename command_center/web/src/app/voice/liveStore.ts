@@ -107,6 +107,19 @@ export async function announce(notificationId: string): Promise<void> {
   line?.announce(notificationId);
 }
 
+export function resumeLine(): void {
+  line?.resumeAudio();
+}
+
+/** Dauerhaftes Zuhören (Standby mit „Hey Mia“) an- oder abschalten; gilt für diesen Browser. */
+export function listenEnabled(): boolean {
+  try { return localStorage.getItem("mia.listen") !== "0"; } catch { return true; }
+}
+
+export function setListenEnabled(on: boolean): void {
+  try { localStorage.setItem("mia.listen", on ? "1" : "0"); } catch { /* ohne Speicher: nur diese Sitzung */ }
+}
+
 export async function closeLine(): Promise<void> {
   const l = line;
   line = null;

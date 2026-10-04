@@ -8,7 +8,7 @@
  */
 import { useNavigate } from "@/lib/router";
 import { Mic, Square, Volume2, VolumeX } from "@/lib/icons";
-import { closeLine, toggleLineMuted, useLive } from "@/app/voice/liveStore";
+import { closeLine, openLine, setListenEnabled, toggleLineMuted, useLive } from "@/app/voice/liveStore";
 import type { LiveState } from "@/app/voice/live";
 
 const LABEL: Record<LiveState, string> = {
@@ -24,7 +24,20 @@ const LABEL: Record<LiveState, string> = {
 export function LiveBar() {
   const live = useLive();
   const nav = useNavigate();
-  if (!live.open) return null;
+  if (!live.open) {
+    // Ohne offene Leitung reagiert „Hey Mia“ nicht – das muss man sehen.
+    return (
+      <div className="live-bar phase-closed" role="status">
+        <span className="live-bar-dot" aria-hidden />
+        <button className="live-bar-label" onClick={() => { setListenEnabled(true); void openLine().catch(() => undefined); }}
+          title="Mikrofon an: MIA wartet im Standby auf „Hey Mia“">
+          <Mic size={14} />
+          MIA hört nicht zu – tippen zum Aktivieren
+        </button>
+        {live.error && <span className="live-bar-text">{live.error}</span>}
+      </div>
+    );
+  }
 
   const spoken = live.said || live.heard;
   return (
@@ -42,8 +55,9 @@ export function LiveBar() {
         {live.muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
         {live.muted ? "Stumm" : "Mikrofon an"}
       </button>
-      <button className="btn sm danger" onClick={() => void closeLine()}>
-        <Square size={13} />Sprachchat beenden
+      <button className="btn sm danger" onClick={() => { setListenEnabled(false); void closeLine(); }}
+        title="Mikrofon aus, bis du wieder aktivierst">
+        <Square size={13} />Zuhören beenden
       </button>
     </div>
   );
