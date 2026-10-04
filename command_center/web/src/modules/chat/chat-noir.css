@@ -9,12 +9,12 @@
 .chat-layout .messages { padding: 22px max(18px, calc((100% - 860px) / 2)) 18px; gap: 20px; overscroll-behavior: contain; }
 .chat-layout .msg { max-width: 860px; }
 .chat-layout .msg.user { max-width: 680px; }
-.chat-layout .msg-avatar { border-radius: var(--r-sm); width: 30px; height: 30px; background: var(--accent-soft); border-color: rgba(76, 201, 240, 0.28); color: var(--accent); }
+.chat-layout .msg-avatar { border-radius: var(--r-sm); width: 30px; height: 30px; background: var(--accent-soft); border-color: rgba(139, 157, 255, 0.28); color: var(--accent); }
 .chat-layout .msg.user .msg-avatar { background: var(--bg-3); border-color: var(--line-2); color: var(--text-2); }
 .chat-layout .msg.assistant .bubble { background: transparent; border-color: transparent; padding: 4px 0 8px; font-size: 14px; line-height: 1.7; }
 .chat-layout .msg.user .bubble {
-  background: linear-gradient(180deg, rgba(76, 201, 240, 0.14), rgba(76, 201, 240, 0.05));
-  border-color: rgba(76, 201, 240, 0.3);
+  background: linear-gradient(180deg, rgba(139, 157, 255, 0.14), rgba(139, 157, 255, 0.05));
+  border-color: rgba(139, 157, 255, 0.3);
   border-radius: var(--r-lg);
   padding: 10px 14px;
   color: var(--text);
@@ -29,32 +29,32 @@
    (2026-10-03, später) von Bernstein auf Cyan umgestellt. Die Farbe hängt an diesen drei Variablen. */
 .chat-layout .composer {
   --chat-accent: var(--accent);
-  --chat-accent-soft: rgba(76, 201, 240, 0.1);
-  --chat-line: rgba(76, 201, 240, 0.34);
+  --chat-accent-soft: rgba(139, 157, 255, 0.1);
+  --chat-line: rgba(139, 157, 255, 0.34);
   padding: 18px max(20px, calc((100% - 880px) / 2)) 14px;
   background: linear-gradient(180deg, transparent, rgba(5, 7, 10, 0.88) 38%);
-  border-top: 1px solid rgba(76, 201, 240, 0.16);
+  border-top: 1px solid rgba(139, 157, 255, 0.16);
   gap: 10px;
 }
 .chat-layout .composer-box {
   align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-radius: 18px;
   border: 1px solid var(--chat-line); background: rgba(255, 255, 255, 0.012);
 }
-.chat-layout .composer-box:focus-within { border-color: var(--chat-accent); box-shadow: 0 0 0 2px var(--chat-accent-soft), 0 0 26px rgba(76, 201, 240, 0.12); }
+.chat-layout .composer-box:focus-within { border-color: var(--chat-accent); box-shadow: 0 0 0 2px var(--chat-accent-soft), 0 0 26px rgba(139, 157, 255, 0.12); }
 .chat-layout .composer-box textarea { padding: 11px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.03); }
-.chat-layout .composer-box .btn.icon.primary { width: 38px; height: 38px; border-radius: 12px; background: transparent; color: var(--chat-accent); border: 1px solid var(--chat-accent); box-shadow: 0 0 14px rgba(76, 201, 240, 0.16); }
+.chat-layout .composer-box .btn.icon.primary { width: 38px; height: 38px; border-radius: 12px; background: transparent; color: var(--chat-accent); border: 1px solid var(--chat-accent); box-shadow: 0 0 14px rgba(139, 157, 255, 0.16); }
 .chat-layout .composer-box .btn.icon.primary:hover:not(:disabled) { background: var(--chat-accent-soft); }
 .chat-layout .composer-box .btn.icon.primary:disabled { opacity: 0.5; box-shadow: none; }
 .chat-layout .composer-box .btn.icon.ghost { color: var(--text-2); }
 .chat-layout .composer .hint { justify-content: space-between; font-family: inherit; font-size: 11.5px; color: var(--text-3); line-height: 1.5; padding: 0 4px; }
 .chat-layout .conv-item { border-bottom-color: var(--line); margin: 0; padding: 10px 14px; border-radius: 0; }
-.chat-layout .conv-item.active { background: linear-gradient(90deg, rgba(76, 201, 240, 0.14), rgba(76, 201, 240, 0.02)); box-shadow: inset 2px 0 var(--accent); }
+.chat-layout .conv-item.active { background: linear-gradient(90deg, rgba(139, 157, 255, 0.14), rgba(139, 157, 255, 0.02)); box-shadow: inset 2px 0 var(--accent); }
 .chat-layout .conv-item .title { line-height: 1.5; }
 .chat-layout .conv-item .preview { line-height: 1.5; }
 .chat-layout .exec-panel { background: linear-gradient(180deg, var(--bg-2), var(--bg-1)); border: 1px solid var(--line-2); }
 .chat-layout .exec-panel .panel-head h2 { font-size: 11px; }
 .chat-layout .tool-chip { border-radius: var(--r-sm); }
-.chat-layout .tool-chip.pending { border-color: rgba(76, 201, 240, 0.4); color: var(--accent); }
+.chat-layout .tool-chip.pending { border-color: rgba(139, 157, 255, 0.4); color: var(--accent); }
 @media (max-width: 1100px) {
   .chat-layout, .chat-layout.no-panel, .chat-layout.no-list, .chat-layout.no-list.no-panel { grid-template-columns: minmax(0, 1fr); }
   .chat-layout > .side.open { background: var(--bg-1); }

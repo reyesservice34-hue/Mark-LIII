@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "@/lib/router";
 import { useApi } from "@/lib/useApi";
 import { api } from "@/lib/api";
 import { useEvent } from "@/lib/events";
+import { useAuth } from "@/lib/auth";
 import {
   AlertTriangle,
+  MoveRight,
   Bot,
   Calendar,
   Cpu,
@@ -17,13 +19,15 @@ import {
   Play,
   Plug,
   Search,
+  Send,
   Sparkles,
+  X,
 } from "@/lib/icons";
-import { EmptyState, ErrorState, Panel, Skeleton, StatusIndicator } from "@/components/ui";
+import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/ui";
 import type { StatusPayload } from "@/app/shell/TopStatusBar";
 import { AgentCard, type Agent } from "@/modules/agents/AgentCard";
 import { TaskTimeline } from "@/modules/tasks/TaskTimeline";
-import { closeLine, openLine, sayOnLine, selectConversation, setListenEnabled, useLive } from "@/app/voice/liveStore";
+import { endConversation, openLine, sayOnLine, setListenEnabled, useLive } from "@/app/voice/liveStore";
 import { MessageList } from "@/modules/chat/MessageList";
 import { ChatComposer } from "@/modules/chat/ChatComposer";
 import type { Attachment, Message, RunState } from "@/modules/chat/types";
@@ -54,12 +58,13 @@ interface CalendarPayload {
 
 const ACTIVE_AGENT_STATES = new Set(["THINKING", "EXECUTING", "WAITING"]);
 const PHASE_LABEL: Record<string, string> = {
-  closed: "inaktiv",
-  connecting: "verbindet",
-  standby: "Standby – sag „Hey Mia“",
-  listening: "hört zu",
-  thinking: "denkt",
-  speaking: "spricht",
+  closed: "Ruht",
+  connecting: "Verbindet",
+  reconnecting: "Verbindet neu",
+  standby: "Wartet auf „Hey Mia“",
+  listening: "Hört zu",
+  thinking: "Denkt nach",
+  speaking: "Spricht",
 };
 const pad = (value: number) => String(value).padStart(2, "0");
 const uptime = (seconds: number) => {
@@ -75,15 +80,45 @@ const eventTime = (event: CalendarEvent) => {
   const options: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
   return `${start.toLocaleTimeString("de-DE", options)}–${end.toLocaleTimeString("de-DE", options)}`;
 };
+const greeting = (date: Date) => {
+  const h = date.getHours();
+  return h < 5 ? "Gute Nacht" : h < 11 ? "Guten Morgen" : h < 17 ? "Hallo" : h < 22 ? "Guten Abend" : "Gute Nacht";
+};
+
+/** Kleiner Ring für Prozentwerte (Server-Last). */
+function Ring({ value, tone }: { value: number; tone: string }) {
+  const r = 17;
+  const c = 2 * Math.PI * r;
+  const v = Math.max(0, Math.min(100, value));
+  return (
+    <svg className={`aur-ring ${tone}`} viewBox="0 0 44 44" aria-hidden>
+      <defs>
+        <linearGradient id="aur-ring-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#22d3ee" />
+          <stop offset="55%" stopColor="#8b7bff" />
+          <stop offset="100%" stopColor="#f472b6" />
+        </linearGradient>
+      </defs>
+      <circle cx="22" cy="22" r={r} className="track" />
+      <circle cx="22" cy="22" r={r} className="bar" strokeDasharray={`${(v / 100) * c} ${c}`} />
+    </svg>
+  );
+}
 
 export default function HomePage() {
   const nav = useNavigate();
-  const [openingSession, setOpeningSession] = useState(false);
+  const { user } = useAuth();
   const liveSession = useLive();
-  const sessionId = liveSession.conversationId;
+  const [mainId, setMainId] = useState("");
+  // Getippte Unterhaltung auf der Startseite; das Sprachgespräch zeigt sich nur, wenn MIA wirklich wach ist.
+  const [textOpen, setTextOpen] = useState(false);
   const [sessionMessages, setSessionMessages] = useState<Message[]>([]);
   const [sessionBusy, setSessionBusy] = useState(false);
   const [command, setCommand] = useState("");
+  const [starting, setStarting] = useState(false);
+
+  const sessionId = liveSession.conversationId || mainId;
+  const sessionVisible = liveSession.engaged || textOpen;
 
   const today = useMemo(() => new Date(), []);
   const tomorrow = useMemo(() => {
@@ -109,58 +144,56 @@ export default function HomePage() {
     { refreshOn: ["calendar.changed"], interval: 30000 },
   );
 
+  const mainConversation = async () => {
+    if (sessionId) return sessionId;
+    const response = await api.get<{ conversation: { id: string } }>("/api/chat/main");
+    setMainId(response.conversation.id);
+    return response.conversation.id;
+  };
+
   const loadSession = async (id: string) => {
     if (!id) return;
     const response = await api.get<{ messages: Message[] }>(`/api/chat/conversations/${id}`);
     setSessionMessages(response.messages || []);
   };
 
-  const openMiaSession = useCallback(async () => {
-    if (openingSession || sessionId) return;
-    setOpeningSession(true);
+  const scrollToSession = () => window.setTimeout(() => {
+    document.querySelector(".aur-session")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 80);
+
+  /** Ausdrücklich sprechen: Knopf, „Hey Mia“ im Browser oder ?wake=1. */
+  const talk = async () => {
+    if (starting) return;
+    setStarting(true);
     try {
-      const response = await api.get<{ conversation: { id: string } }>("/api/chat/main");
-      const id = response.conversation.id;
-
-      setSessionMessages([]);
-      selectConversation(id);
+      setListenEnabled(true);
+      await openLine(await mainConversation());
+      scrollToSession();
+    } catch {
+      /* Grund steht in der Leiste oben */
     } finally {
-      setOpeningSession(false);
+      setStarting(false);
     }
-  }, [openingSession, sessionId]);
-
-  const endMiaSession = async () => {
-    const id = sessionId;
-    if (!id) return;
-    setListenEnabled(false);
-    await closeLine();
-    selectConversation("");
-    await api.patch(`/api/chat/conversations/${id}`, { archived: false });
-    setSessionMessages([]);
   };
 
-  const focusMiaSession = async () => {
-    if (!sessionId) await openMiaSession();
-    window.setTimeout(() => {
-      document.querySelector(".mia-inline-session")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 80);
+  const endMiaSession = async () => {
+    setTextOpen(false);
+    if (liveSession.engaged) await endConversation();
   };
 
   const sendInSession = async (text: string, attachments: Attachment[]) => {
     const value = text.trim();
-    if (!sessionId || (!value && !attachments.length)) return;
-    if (!attachments.length && liveSession.open) {
+    if (!value && !attachments.length) return;
+    const id = await mainConversation();
+    setTextOpen(true);
+    if (!attachments.length && liveSession.engaged && liveSession.conversationId === id) {
       sayOnLine(value);
       return;
     }
     setSessionBusy(true);
     try {
-      await api.post(`/api/chat/conversations/${sessionId}/messages`, {
-        content: value,
-        attachments,
-        stream: false,
-      });
-      await loadSession(sessionId);
+      await api.post(`/api/chat/conversations/${id}/messages`, { content: value, attachments, stream: false });
+      await loadSession(id);
     } finally {
       setSessionBusy(false);
     }
@@ -170,33 +203,29 @@ export default function HomePage() {
     event.preventDefault();
     const value = command.trim();
     if (!value) return;
-    if (sessionId) {
-      await sendInSession(value, []);
-    } else {
-      nav(`/chat?q=${encodeURIComponent(value)}`);
-    }
     setCommand("");
+    await sendInSession(value, []);
+    scrollToSession();
   };
 
   useEffect(() => {
-    if (sessionId) void loadSession(sessionId);
-  }, [sessionId, liveSession.heard, liveSession.said]);
+    if (sessionVisible && sessionId) void loadSession(sessionId);
+  }, [sessionVisible, sessionId, liveSession.heard, liveSession.said]);
 
   useEffect(() => {
-    const wake = () => {
-      if (!sessionId) void openMiaSession();
-    };
+    const wake = () => { void talk(); };
     window.addEventListener("mia:wake", wake);
     return () => window.removeEventListener("mia:wake", wake);
-  }, [openMiaSession, sessionId]);
+  });
 
   useEffect(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.get("wake") !== "1") return;
     url.searchParams.delete("wake");
     window.history.replaceState({}, "", url.pathname + url.search + url.hash);
-    if (!sessionId) void openMiaSession();
-  }, [openMiaSession, sessionId]);
+    void talk();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEvent(
     "message.created",
@@ -233,7 +262,9 @@ export default function HomePage() {
   const approvalsPending = system?.approvals_pending ?? 0;
   const serverOk = !!system?.server?.connected;
   const serverLevel = !serverOk ? "" : system!.server.cpu >= 90 ? "err" : system!.server.cpu >= 75 ? "warn" : "ok";
-
+  const miaTone = !master ? "idle" : master.online ? "ok" : "err";
+  const phase = liveSession.phase;
+  const awake = phase === "listening" || phase === "thinking" || phase === "speaking";
 
   const todayEvents = [...(calendar.data?.events || [])].sort(
     (a, b) => +new Date(a.start) - +new Date(b.start),
@@ -252,161 +283,154 @@ export default function HomePage() {
       : null,
   ].filter(Boolean) as { text: string; path: string }[];
 
+  const name = String(user?.name || "").split(" ")[0];
+
   return (
-    <div className="page ops-home">
+    <div className="page aur-home">
       <ErrorState error={status.error} retry={() => status.reload(false)} />
 
       {criticalMessages.length > 0 && (
-        <section className="ops-alerts" aria-label="Kritische Hinweise">
-          <div className="ops-alerts-title">
-            <AlertTriangle size={14} />
-            <span>Kritische Hinweise</span>
-            <small>nur reale, bestätigte Zustände</small>
-          </div>
-          <div className="ops-alert-list">
-            {criticalMessages.map((message) => (
-              <Link key={`${message.path}-${message.text}`} to={message.path} className="ops-alert">
-                <span className="dot warn" />
-                <span>{message.text}</span>
-                <span aria-hidden>→</span>
-              </Link>
-            ))}
-          </div>
+        <section className="aur-alerts" aria-label="Kritische Hinweise">
+          {criticalMessages.map((message) => (
+            <Link key={`${message.path}-${message.text}`} to={message.path} className="aur-alert">
+              <span className="aur-alert-icon"><AlertTriangle size={14} /></span>
+              <span className="aur-alert-text">{message.text}</span>
+              <MoveRight size={14} />
+            </Link>
+          ))}
         </section>
       )}
 
-      <section className="ops-telemetry" aria-label="Lage auf einen Blick">
-        <Link className={`ops-tile ${!master ? "" : master.online ? "ok" : "err"}`} to="/chat">
-          <span className="ops-tile-label"><Sparkles size={13} /> MIA</span>
-          <strong className="ops-tile-value">{!master ? "—" : master.online ? "ONLINE" : "OFFLINE"}</strong>
-          <small>{master?.provider?.label || "kein KI-Provider verbunden"}</small>
-        </Link>
-        <Link className={`ops-tile ${blockedTasks > 0 ? "warn" : ""}`} to="/tasks">
-          <span className="ops-tile-label"><ListChecks size={13} /> Aufträge</span>
-          <strong className="ops-tile-value">{system ? openTasks : "—"}</strong>
-          <small>{runningTasks} laufen · {queuedTasks} wartend · {blockedTasks} blockiert</small>
-        </Link>
-        <Link className="ops-tile" to="/agents">
-          <span className="ops-tile-label"><Bot size={13} /> Agenten</span>
-          <strong className="ops-tile-value">{system ? activeAgents : "—"}</strong>
-          <small>{system ? `${system.agents.enabled}/${system.agents.total} einsatzbereit` : "wird geladen"}</small>
-        </Link>
-        <Link className={`ops-tile ${approvalsPending > 0 ? "warn" : ""}`} to="/approvals">
-          <span className="ops-tile-label"><ShieldCheck size={13} /> Freigaben</span>
-          <strong className="ops-tile-value">{system ? approvalsPending : "—"}</strong>
-          <small>{approvalsPending > 0 ? "warten auf Entscheidung" : "nichts offen"}</small>
-        </Link>
-        <Link className={`ops-tile ${serverLevel}`} to="/server">
-          <span className="ops-tile-label"><Cpu size={13} /> Server</span>
-          <strong className="ops-tile-value">{serverOk ? `${Math.round(system!.server.cpu)}%` : "—"}</strong>
-          <span className={`meter ${serverLevel}`}><span style={{ width: `${serverOk ? Math.min(100, system!.server.cpu) : 0}%` }} /></span>
-          <small>{serverOk ? `CPU · RAM ${Math.round(system!.server.ram)}% · Disk ${Math.round(system!.server.disk)}%` : "nicht bestätigt"}</small>
-        </Link>
-        <Link className="ops-tile" to="/calendar">
-          <span className="ops-tile-label"><Calendar size={13} /> Termine heute</span>
-          <strong className="ops-tile-value">{calendar.loading && !calendar.data ? "—" : todayEvents.length}</strong>
-          <small>{calendar.data?.available === false ? "nicht eingerichtet" : "Kalender öffnen"}</small>
-        </Link>
-      </section>
+      <section className="aur-hero">
+        {/* ── MIA Kern ─────────────────────────────────────────── */}
+        <div className={`aur-core phase-${phase}`}>
+          <div className="aur-core-bg" aria-hidden />
+          <header className="aur-core-head">
+            <div>
+              <div className="aur-kicker">
+                {today.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}
+              </div>
+              <h1 className="aur-title">
+                {greeting(today)}{name ? `, ${name}` : ""}.
+                <span> Was soll MIA erledigen?</span>
+              </h1>
+            </div>
+            <div className={`aur-pill ${miaTone}`}>
+              <span className="aur-pill-dot" />
+              {!master ? "Lädt …" : master.online ? "MIA bereit" : "MIA offline"}
+            </div>
+          </header>
 
-      {/* Das Feld "Ereignisse" ist auf Wunsch des Nutzers von der MIA-Seite entfernt (Protokoll bleibt unter /logs);
-          deshalb nur noch eine Spalte. */}
-      <div className="ops-main" style={{ gridTemplateColumns: "minmax(0, 1fr)" }}>
-        <Panel
-          className="ops-core"
-          title="MIA Kern"
-          icon={<Sparkles size={14} />}
-          actions={
-            <span className="ops-core-state">
-              <StatusIndicator
-                status={!master ? "muted" : master.online ? "ok" : "err"}
-                live={!!master?.active_runs?.length}
-              />
-              {!master ? "Status wird geladen" : master.online ? "bereit" : "offline"}
-            </span>
-          }
-          foot={
-            <nav className="ops-areas" aria-label="MIA Kernbereiche">
-              <Link to="/workflows"><Search size={12} /> Analyse</Link>
-              <Link to="/memory"><HardDrive size={12} /> Gedächtnis</Link>
-              <Link to="/tasks"><Layers size={12} /> Planung</Link>
-              <Link to="/chat"><MessageSquare size={12} /> Kommunikation</Link>
-              <Link to="/agents"><Play size={12} /> Ausführung</Link>
-              <Link to="/integrations"><Plug size={12} /> Integration</Link>
-            </nav>
-          }
-        >
-          <div className="ops-core-stage" aria-label="MIA Gehirn">
-            <BrainCore thinking={liveSession.phase === "thinking"} />
-            <div className="ops-hud tl"><b>Zustand</b><span>{PHASE_LABEL[liveSession.phase] || liveSession.phase}</span></div>
-            <div className="ops-hud tr"><b>Leitung</b><span>{liveSession.open ? "LIVE" : sessionId ? "TEXT" : "frei"}</span></div>
-            <div className="ops-hud bl"><b>Modell</b><span>{master?.provider?.label || "—"}</span></div>
-            <div className="ops-hud br"><b>Laufzeit</b><span>{system ? uptime(system.jarvis.uptime_seconds) : "—"}</span></div>
+          <div className="aur-stage" aria-label="MIA Kern">
+            <BrainCore thinking={phase === "thinking"} />
+            <div className="aur-orbit-chips">
+              <span className={`aur-chip ${awake ? "live" : ""}`}><b>Zustand</b>{PHASE_LABEL[phase] || phase}</span>
+              <span className="aur-chip"><b>Modell</b>{master?.provider?.label || "—"}</span>
+              <span className="aur-chip"><b>Laufzeit</b>{system ? uptime(system.jarvis.uptime_seconds) : "—"}</span>
+            </div>
+            <div className="aur-mic-wrap">
+            <button
+              type="button"
+              className={`aur-mic ${awake ? "awake" : ""}`}
+              onClick={() => (liveSession.engaged ? scrollToSession() : void talk())}
+              disabled={starting}
+              aria-label={liveSession.engaged ? "Zum laufenden Gespräch" : "Mit MIA sprechen"}
+              title={liveSession.engaged ? "Zum laufenden Gespräch" : "Mit MIA sprechen"}
+            >
+              <span className="aur-mic-halo" aria-hidden />
+              <Mic size={22} />
+            </button>
+            <div className="aur-mic-hint">
+              {liveSession.engaged ? "Gespräch läuft" : starting ? "Verbinde …" : "Tippen oder „Hey Mia“ sagen"}
+            </div>
+            </div>
           </div>
 
-          <form className="ops-console" onSubmit={submitCommand}>
-            <span className="ops-prompt" aria-hidden>&gt;</span>
+          <form className="aur-command" onSubmit={submitCommand}>
+            <Sparkles size={16} className="aur-command-icon" />
             <input
               value={command}
               onChange={(event) => setCommand(event.target.value)}
               placeholder="Sag MIA, was erledigt werden soll …"
               aria-label="Auftrag an MIA"
             />
-            <button className="btn primary" type="submit" disabled={!command.trim()}>
-              <Sparkles size={14} /> Senden
+            <button className="aur-send" type="submit" disabled={!command.trim()} aria-label="Senden">
+              <Send size={15} />
             </button>
           </form>
 
-          <div className="ops-actions">
-            <button className="btn primary" type="button" onClick={() => void focusMiaSession()} disabled={openingSession}>
-              <Mic size={14} />
-              {sessionId
-                ? "MIA-Sitzung anzeigen"
-                : openingSession
-                  ? "Verbindung wird aufgebaut"
-                  : "Mit MIA sprechen"}
-            </button>
-            <Link className="btn" to={sessionId ? `/chat/${sessionId}` : "/chat"}>
-              <MessageSquare size={14} /> Chat öffnen
-            </Link>
-            <Link className="btn ghost" to="/memory">
-              <Sparkles size={14} /> Gedächtnis
-            </Link>
-          </div>
-        </Panel>
+          <nav className="aur-areas" aria-label="MIA Kernbereiche">
+            <Link to="/workflows"><Search size={13} /> Analyse</Link>
+            <Link to="/memory"><HardDrive size={13} /> Gedächtnis</Link>
+            <Link to="/tasks"><Layers size={13} /> Planung</Link>
+            <Link to={sessionId ? `/chat/${sessionId}` : "/chat"}><MessageSquare size={13} /> Chat</Link>
+            <Link to="/agents"><Play size={13} /> Ausführung</Link>
+            <Link to="/integrations"><Plug size={13} /> Integration</Link>
+          </nav>
+        </div>
 
-      </div>
+        {/* ── Lage auf einen Blick ─────────────────────────────── */}
+        <div className="aur-kpis" aria-label="Lage auf einen Blick">
+          <Link className={`aur-kpi ${miaTone}`} to="/chat">
+            <span className="aur-kpi-head"><span className="aur-kpi-icon c1"><Sparkles size={16} /></span><span className="aur-kpi-label">MIA</span></span>
+            <strong className="aur-kpi-value">{!master ? "—" : master.online ? "Online" : "Offline"}</strong>
+            <small>{master?.provider?.label || "kein KI-Anbieter verbunden"}</small>
+          </Link>
+          <Link className={`aur-kpi ${blockedTasks > 0 ? "warn" : ""}`} to="/tasks">
+            <span className="aur-kpi-head"><span className="aur-kpi-icon c2"><ListChecks size={16} /></span><span className="aur-kpi-label">Aufträge</span></span>
+            <strong className="aur-kpi-value">{system ? openTasks : "—"}</strong>
+            <small>{runningTasks} laufen · {queuedTasks} wartend · {blockedTasks} blockiert</small>
+          </Link>
+          <Link className="aur-kpi" to="/agents">
+            <span className="aur-kpi-head"><span className="aur-kpi-icon c3"><Bot size={16} /></span><span className="aur-kpi-label">Agenten aktiv</span></span>
+            <strong className="aur-kpi-value">{system ? activeAgents : "—"}</strong>
+            <small>{system ? `${system.agents.enabled}/${system.agents.total} einsatzbereit` : "wird geladen"}</small>
+          </Link>
+          <Link className={`aur-kpi ${approvalsPending > 0 ? "warn" : ""}`} to="/approvals">
+            <span className="aur-kpi-head"><span className="aur-kpi-icon c4"><ShieldCheck size={16} /></span><span className="aur-kpi-label">Freigaben</span></span>
+            <strong className="aur-kpi-value">{system ? approvalsPending : "—"}</strong>
+            <small>{approvalsPending > 0 ? "warten auf Entscheidung" : "nichts offen"}</small>
+          </Link>
+          <Link className={`aur-kpi ${serverLevel}`} to="/server">
+            <span className="aur-kpi-head"><span className="aur-kpi-icon c5"><Cpu size={16} /></span><span className="aur-kpi-label">Server</span></span>
+            <div className="aur-kpi-ring">
+              <Ring value={serverOk ? system!.server.cpu : 0} tone={serverLevel} />
+              <strong className="aur-kpi-value">{serverOk ? `${Math.round(system!.server.cpu)}%` : "—"}</strong>
+            </div>
+            <small>{serverOk ? `RAM ${Math.round(system!.server.ram)}% · Platte ${Math.round(system!.server.disk)}%` : "nicht bestätigt"}</small>
+          </Link>
+          <Link className="aur-kpi" to="/calendar">
+            <span className="aur-kpi-head"><span className="aur-kpi-icon c6"><Calendar size={16} /></span><span className="aur-kpi-label">Termine heute</span></span>
+            <strong className="aur-kpi-value">{calendar.loading && !calendar.data ? "—" : todayEvents.length}</strong>
+            <small>{calendar.data?.available === false ? "nicht eingerichtet" : "Kalender öffnen"}</small>
+          </Link>
+        </div>
+      </section>
 
-      {sessionId && (
-        <section className="mia-inline-session panel" aria-label="Aktive MIA-Sitzung">
-          <div className="mia-inline-head">
-            <div>
-              <div className="eyebrow">Aktive MIA-Sitzung</div>
-              <strong>
-                {liveSession.phase === "speaking"
-                  ? "MIA spricht"
-                  : liveSession.phase === "thinking"
-                    ? "MIA denkt"
-                    : liveSession.phase === "listening"
-                      ? "MIA hört zu"
-                      : "Verbunden"}
-              </strong>
+      {sessionVisible && (
+        <section className="aur-session" aria-label="Gespräch mit MIA">
+          <header className="aur-session-head">
+            <div className="aur-session-title">
+              <span className={`aur-wave ${awake ? "on" : ""}`} aria-hidden><i /><i /><i /><i /></span>
+              <div>
+                <div className="aur-kicker">Gespräch mit MIA</div>
+                <strong>
+                  {liveSession.engaged ? PHASE_LABEL[phase] || "Verbunden" : "Textgespräch"}
+                </strong>
+              </div>
             </div>
             <div className="row wrap">
-              <span className="state-line">
-                <span className={`dot ${liveSession.open ? "ok live" : "warn"}`} />
-                {liveSession.open ? "LIVE" : "TEXT"}
-              </span>
-              {!liveSession.open && (
-                <button className="btn sm" type="button" onClick={() => void openLine(sessionId).catch(() => undefined)}>
-                  Live Voice starten
+              {!liveSession.engaged && (
+                <button className="btn sm" type="button" onClick={() => void talk()}>
+                  <Mic size={13} /> Sprechen
                 </button>
               )}
+              <Link className="btn sm ghost" to={sessionId ? `/chat/${sessionId}` : "/chat"}>Im Chat öffnen</Link>
               <button className="btn sm danger" type="button" onClick={() => void endMiaSession()}>
-                Sitzung beenden
+                <X size={13} /> Beenden
               </button>
             </div>
-          </div>
+          </header>
           {liveSession.error && <div role="alert" className="mia-voice-error">{liveSession.error}</div>}
           <div className="mia-inline-chat chat-col">
             {sessionMessages.length ? (
@@ -428,16 +452,12 @@ export default function HomePage() {
         </section>
       )}
 
-      <div className="ops-grid ops-grid-3">
-        <CoreDeck />
-        <HeartbeatTile />
-      </div>
-
-      <div className="mia-work-grid">
+      <section className="aur-bento">
         <Panel
-          title={`Kalender · ${todayEvents.length} Termine heute`}
+          className="aur-cal"
+          title={`Heute · ${todayEvents.length} Termin${todayEvents.length === 1 ? "" : "e"}`}
           icon={<Calendar size={15} />}
-          actions={<Link className="btn sm ghost" to="/calendar">Kalender & Aufgaben</Link>}
+          actions={<Link className="btn sm ghost" to="/calendar">Kalender</Link>}
         >
           {calendar.error ? (
             <ErrorState error={calendar.error} retry={() => calendar.reload(false)} />
@@ -467,9 +487,10 @@ export default function HomePage() {
         </Panel>
 
         <Panel
+          className="aur-tasks"
           title={`Aufgaben · ${openTasks} offen`}
           icon={<ListChecks size={15} />}
-          actions={<Link className="btn sm ghost" to="/tasks">Aufgabenverlauf</Link>}
+          actions={<Link className="btn sm ghost" to="/tasks">Verlauf</Link>}
           flush
         >
           {timeline.error ? (
@@ -485,28 +506,33 @@ export default function HomePage() {
           )}
         </Panel>
 
-      <Panel
-        title={`Agenten · ${activeAgents} aktiv`}
-        icon={<Bot size={15} />}
-        actions={<Link className="btn sm ghost" to="/agents">Alle Abteilungen</Link>}
-      >
-        {agents.error ? (
-          <ErrorState error={agents.error} retry={() => agents.reload(false)} />
-        ) : !agents.data ? (
-          <Skeleton rows={3} />
-        ) : prioritizedAgents.length === 0 ? (
-          <EmptyState icon={<Bot size={25} />} title="Keine Agenten eingerichtet">
-            Es werden nur Agenten angezeigt, die das Backend tatsächlich meldet.
-          </EmptyState>
-        ) : (
-          <div className="grid auto-sm mia-agent-grid">
-            {prioritizedAgents.map((agent) => (
-              <AgentCard key={agent.id} agent={agent} compact onClick={() => nav(`/agents/${agent.id}`)} />
-            ))}
-          </div>
-        )}
-      </Panel>
-      </div>
+        <HeartbeatTile />
+
+        <Panel
+          className="aur-agents"
+          title={`Agenten · ${activeAgents} aktiv`}
+          icon={<Bot size={15} />}
+          actions={<Link className="btn sm ghost" to="/agents">Alle</Link>}
+        >
+          {agents.error ? (
+            <ErrorState error={agents.error} retry={() => agents.reload(false)} />
+          ) : !agents.data ? (
+            <Skeleton rows={3} />
+          ) : prioritizedAgents.length === 0 ? (
+            <EmptyState icon={<Bot size={25} />} title="Keine Agenten eingerichtet">
+              Es werden nur Agenten angezeigt, die das Backend tatsächlich meldet.
+            </EmptyState>
+          ) : (
+            <div className="grid auto-sm mia-agent-grid">
+              {prioritizedAgents.map((agent) => (
+                <AgentCard key={agent.id} agent={agent} compact onClick={() => nav(`/agents/${agent.id}`)} />
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <CoreDeck onTalk={() => void talk()} />
+      </section>
     </div>
   );
 }

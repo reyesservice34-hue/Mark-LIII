@@ -274,6 +274,13 @@ async def _realtime_line(ws: WebSocket, state: AppState, principal: Principal, c
             except ValueError:
                 continue
             t = event.get("type")
+            if t == "jarvis.wake":
+                # Knopf „Mit MIA sprechen“: wach werden ohne Weckwort und ohne eigene Antwort.
+                if session is None:
+                    await wake_up()
+                else:
+                    last_activity = time.monotonic()
+                continue
             if t == "jarvis.announce":
                 # Wichtige Meldung weckt MIA. Text kommt aus der DB, nicht vom Browser.
                 nid = str(event.get("notification_id") or "")[:64]
@@ -513,6 +520,9 @@ async def live(ws: WebSocket):
                 if text:
                     await set_awake(True)
                     await texts.put(text)
+            elif event.get("type") == "jarvis.wake":
+                # Knopf „Mit MIA sprechen“: wach werden ohne Weckwort.
+                await set_awake(True)
             elif event.get("type") == "jarvis.announce":
                 # Wichtige Meldung weckt MIA, sie spricht sie von selbst an. Text kommt aus der DB, nicht vom Browser.
                 nid = str(event.get("notification_id") or "")[:64]

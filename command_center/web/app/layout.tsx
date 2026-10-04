@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import "@/design/base.css";
 import "@/design/ops-wall.css";
+import "@/design/aurora.css";
 
 export const metadata = { title: "Mia Command Center" };
 

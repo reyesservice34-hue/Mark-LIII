@@ -29,7 +29,8 @@ export function JarvisShell() {
       resumeLine();
       if (!listenEnabled() || isLineOpen() || Date.now() - lastTry < 10000) return;
       lastTry = Date.now();
-      void openLine().catch(() => { /* Mikrofon verweigert oder Server weg: nächste Geste versucht es neu */ });
+      // Still im Standby: Das Gespräch selbst beginnt erst mit „Hey Mia“ oder dem Knopf „Mit MIA sprechen“.
+      void openLine("", { auto: true }).catch(() => { /* Mikrofon verweigert oder Server weg: nächste Geste versucht es neu */ });
     };
     // Mikrofon schon erlaubt: gleich beim Laden verbinden; den Ton gibt der Browser mit der ersten Geste frei.
     void navigator.permissions?.query({ name: "microphone" as PermissionName })

@@ -6,7 +6,7 @@ import {
   Download, Copy, RotateCcw, Paperclip, Filter, LogOut, Terminal, Network, Layers, Eye, CircleAlert, Wifi,
   WifiOff, ChevronUp, Plus, FolderPlus, Pencil, MoveRight, KeyRound, UserRound, Circle, Monitor,
   GraduationCap, BookOpen, CircleStop, Volume2, VolumeX, AudioLines, Puzzle, Keyboard,
-  Lightbulb,
+  Lightbulb, Brain,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -33,5 +33,5 @@ export {
   Server, Settings, ShieldCheck, Sparkles, Square, Timer, Trash2, Upload, Workflow, X, Zap, Play, Pause, Download,
   Copy, RotateCcw, Paperclip, Filter, LogOut, Terminal, Network, Layers, Eye, CircleAlert, Wifi, WifiOff, Plus,
   FolderPlus, Pencil, MoveRight, KeyRound, UserRound, Circle, MessageSquare, Radio, Monitor,
-  GraduationCap, BookOpen, CircleStop, Volume2, VolumeX, AudioLines, Puzzle, Keyboard, Lightbulb,
+  GraduationCap, BookOpen, CircleStop, Volume2, VolumeX, AudioLines, Puzzle, Keyboard, Lightbulb, Brain,
 };

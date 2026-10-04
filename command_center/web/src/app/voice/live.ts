@@ -31,6 +31,8 @@ export interface LiveHandlers {
   onTool?: (name: string, ok: boolean) => void;
   onError?: (detail: string) => void;
   onClose?: () => void;
+  /** Server meldet, ob er auf „Hey Mia“ wartet (true) oder sofort zuhört (false). */
+  onReady?: (wakeword: boolean) => void;
 }
 
 function floatToPcm16(input: Float32Array): Int16Array {
@@ -87,7 +89,8 @@ export class LiveLine {
   private open = false;
   private muted = false;
   // Server meldet Standby („Hey Mia“ nötig); Ruhezustand der Anzeige richtet sich danach.
-  private standby = false;
+  // Bis der Server sich meldet gilt Standby – sonst stünde kurz „hört zu“ da, ohne dass jemand „Hey Mia“ sagte.
+  private standby = true;
   /** Nach einer Nutzergeste: Browser geben Ton erst danach frei. */
   resumeAudio(): void {
     void this.ctxOut?.resume().catch(() => undefined);
@@ -112,6 +115,7 @@ export class LiveLine {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("Dieser Browser kann kein Audio aufnehmen.");
     }
+    this.stopped = false;
     this.h.onState?.("connecting");
     this.ctxOut = new AudioContext({ sampleRate: RATE });
     this.ctxIn = new AudioContext();
@@ -124,11 +128,13 @@ export class LiveLine {
     } catch {
       throw new Error("Zugriff auf das Mikrofon wurde abgelehnt.");
     }
+    // Während des Wartens geschlossen (z. B. Server ohne „Hey Mia“): nichts mehr aufbauen, Mikrofon sofort aus.
+    if (this.stopped) { this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; return; }
 
-    this.stopped = false;
     await this.connect();
+    if (this.stopped || !this.ctxOut || !this.ctxIn || !this.stream) return;
 
-    this.playHead = this.ctxOut!.currentTime;
+    this.playHead = this.ctxOut.currentTime;
 
     const ctxIn = this.ctxIn!;
     this.ctxIn = ctxIn;
@@ -221,6 +227,10 @@ export class LiveLine {
     let ev: any;
     try { ev = JSON.parse(raw); } catch { return; }
     switch (ev.type) {
+      case "jarvis.ready":
+        if (!ev.wakeword) this.standby = false;
+        this.h.onReady?.(!!ev.wakeword);
+        break;
       case "jarvis.unavailable":
         this.h.onError?.(ev.detail || "Die Live-Leitung ist nicht verfügbar.");
         void this.stop();
@@ -333,6 +343,13 @@ export class LiveLine {
       item: { type: "message", role: "user", content: [{ type: "input_text", text }] },
     }));
     this.ws.send(JSON.stringify({ type: "response.create" }));
+  }
+
+  /** Ohne „Hey Mia“ aufwecken (Knopfdruck); wartet kurz, falls die Leitung noch aufgebaut wird. */
+  wake(tries = 0) {
+    const ws = this.ws;
+    if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "jarvis.wake" })); return; }
+    if (tries < 40 && !this.stopped) setTimeout(() => this.wake(tries + 1), 250);
   }
 
   /** Wichtige Meldung von MIA ansprechen lassen; wartet kurz, falls die Leitung noch aufgebaut wird. */
