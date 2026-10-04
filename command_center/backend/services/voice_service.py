@@ -70,7 +70,10 @@ _EXT = {"audio/webm": "webm", "video/webm": "webm", "audio/ogg": "ogg", "audio/m
         "audio/x-wav": "wav", "audio/wave": "wav", "audio/flac": "flac"}
 
 
-DEFAULT_STT_PROMPT = "Mia, Master, Reyes Service, Lexware, Umsatzsteuer-Voranmeldung, Beleg, Baustelle, Kalender, Neuberg, Karben."
+DEFAULT_STT_PROMPT = ("Hey Mia, Master, Reyes Service, Lexware, Plancraft, Umsatzsteuer-Voranmeldung, Beleg, Baustelle, "
+                      "Google Kalender, Kalenderbrücke, Herzschlag, Dashboard, Command Center, Ollama, n8n, Gedächtnis, "
+                      "Verhaltensgedächtnis, Neuberg, Karben.")
+OPENAI_STT_URL = "https://api.openai.com/v1/audio/transcriptions"
 
 class VoiceError(Exception):
     """Something the user needs to hear, phrased plainly."""
@@ -125,6 +128,9 @@ class VoiceService:
         self.tts_format = _env("JARVIS_CC_TTS_FORMAT", "mp3")
         self.tts_speed = _env("JARVIS_CC_TTS_SPEED")
         self.language = _env("JARVIS_CC_STT_LANGUAGE")
+        # JARVIS_CC_STT_PROVIDER=openai: Erkennung über OpenAI (~0,5–1 s statt 3–4 s lokal), lokal bleibt Ersatz.
+        self.openai_stt_on = bool(_env("OPENAI_API_KEY")) and _env("JARVIS_CC_STT_PROVIDER", "local").lower() == "openai"
+        self.openai_stt_model = _env("JARVIS_CC_OPENAI_STT_MODEL", "gpt-4o-mini-transcribe")
         self.eleven_key = _env("ELEVENLABS_API_KEY")
         self.eleven_voice = _env("ELEVENLABS_VOICE_ID")
         self.eleven_model = _env("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
@@ -146,7 +152,7 @@ class VoiceService:
 
     # ── capabilities ─────────────────────────────────────────────────────
     def stt_available(self) -> bool:
-        return bool(self.stt_url)
+        return bool(self.stt_url or self.openai_stt_on)
 
     def eleven_available(self) -> bool:
         """Ein Schlüssel ohne Stimme nützt nichts — beides oder keins."""
@@ -280,11 +286,20 @@ class VoiceService:
         lang = language or self.language
         if lang:
             data["language"] = lang
+        hint = os.environ.get("JARVIS_CC_STT_PROMPT")
+        hint = DEFAULT_STT_PROMPT if hint is None else hint.strip()
+        if self.openai_stt_on:
+            try:
+                return await self._transcribe_openai(files, lang, hint)
+            except Exception as e:  # noqa: BLE001 - jeder Ausfall führt zur lokalen Erkennung
+                if isinstance(e, VoiceError) and "nichts verstanden" in str(e):
+                    raise
+                _log.warning("OpenAI-Erkennung fehlgeschlagen, lokal weiter: %s", e)
+                if not self.stt_url:
+                    raise VoiceError("Die Spracherkennung ist gerade nicht erreichbar.")
         # Ein Wortvorrat als Hinweis: Das kleine Erkennungsmodell versteht „Jarvis“ sonst als „ja, Wiss“ und „Lexware“ als
         # „Lex wer“. Gemessen: mit Hinweis kamen Jarvis, Voranmeldung, Lexware und Neuberg richtig an. Abschalten oder ändern:
         # JARVIS_CC_STT_PROMPT (leer = aus).
-        hint = os.environ.get("JARVIS_CC_STT_PROMPT")
-        hint = DEFAULT_STT_PROMPT if hint is None else hint.strip()
         if hint:
             data["prompt"] = hint
         headers = {"Authorization": f"Bearer {self.stt_key}"} if self.stt_key else {}
@@ -306,6 +321,22 @@ class VoiceService:
         if not text:
             raise VoiceError("Ich habe in der Aufnahme nichts verstanden. Bitte noch einmal etwas länger sprechen.")
         return {"text": text, "language": payload.get("language", lang), "model": self.stt_model}
+
+    async def _transcribe_openai(self, files: dict, lang: str, hint: str) -> dict:
+        data = {"model": self.openai_stt_model, "response_format": "json"}
+        if lang:
+            data["language"] = lang
+        if hint:
+            data["prompt"] = hint
+        async with httpx.AsyncClient(timeout=20.0) as c:
+            r = await c.post(OPENAI_STT_URL, files=files, data=data,
+                             headers={"Authorization": f"Bearer {_env('OPENAI_API_KEY')}"})
+        if r.status_code >= 400:
+            raise VoiceError(f"OpenAI-Erkennung antwortete mit HTTP {r.status_code}: {r.text[:200]}")
+        text = (r.json().get("text") or "").strip()
+        if not text:
+            raise VoiceError("Ich habe in der Aufnahme nichts verstanden. Bitte noch einmal etwas länger sprechen.")
+        return {"text": text, "language": lang, "model": self.openai_stt_model}
 
     # ── text to speech ───────────────────────────────────────────────────
     async def _speak_gemini(self, text: str) -> tuple[bytes, str]:

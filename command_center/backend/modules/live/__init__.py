@@ -66,6 +66,7 @@ def _use_realtime() -> bool:
 # hört nur lokal (Whisper) auf das Weckwort. Aus mit MIA_VOICE_WAKEWORD=0, dann ist die Leitung immer offen.
 _WAKE = re.compile(r"\b(?:(?:hey|hei|hej|he|hallo|hi|ok|okay)[\s,!.]*)?(?:mia|mija|miya|maya|mja)\b[\s,!.:?]*", re.I)
 _SLEEP = re.compile(r"\b(?:tschüss|tschüs|bis später|bis dann|das wär'?s|das war'?s|standby|ruhemodus)\b", re.I)
+_STOP = re.compile(r"^\W*(?:stopp?|halt|abbrechen|brich ab|hör auf|sei still)\b", re.I)
 _IDLE_S = float(os.environ.get("MIA_VOICE_IDLE_S", "45") or 45)
 _WAKE_MAX_BYTES = 24000 * 2 * 15
 _WAKE_MIN_BYTES = 24000 * 2 * 4 // 10
@@ -347,10 +348,30 @@ async def live(ws: WebSocket):
     preroll = bytearray()
     silent_samples = 0
     speaking = False
-    interrupt_samples = 0
     turn: asyncio.Task | None = None
     active_run = ""
     announced: set[str] = set()
+    # Standby mit „Hey Mia“ (aus mit MIA_VOICE_WAKEWORD=0). Gesprochenes wird der Reihe nach beantwortet;
+    # Sprechen während MIA arbeitet bricht ihren Lauf nicht mehr ab, nur ein ausdrückliches „Stopp“.
+    wake_on = os.environ.get("MIA_VOICE_WAKEWORD", "1").strip() != "0"
+    awake = not wake_on
+    sleep_after = False
+    last_activity = time.monotonic()
+    texts: asyncio.Queue = asyncio.Queue()
+    hear_lock = asyncio.Lock()
+    stt_tasks: set[asyncio.Task] = set()
+
+    def log(stage: str, **extra) -> None:
+        print("[MIA_VOICE_LATENCY] " + json.dumps({"conversation_id": conv_id, "stage": stage, **extra}), flush=True)
+
+    async def set_awake(on: bool) -> None:
+        nonlocal awake, last_activity
+        last_activity = time.monotonic()
+        if awake == on:
+            return
+        awake = on
+        log("wake" if on else "standby")
+        await send({"type": "jarvis.awake" if on else "jarvis.standby"})
 
     async def respond(text):
         response_started = time.monotonic()
@@ -426,8 +447,10 @@ async def live(ws: WebSocket):
                 sub.close()
             active_run = ""
 
-    async def audio_turn(raw):
-        try:
+    async def hear(raw: bytes) -> None:
+        """Erkennen, Weckwort/Stopp/Schlusswort prüfen, dann zur Antwort einreihen."""
+        nonlocal sleep_after, last_activity, turn
+        async with hear_lock:
             buf = io.BytesIO()
             with wave.open(buf, "wb") as wav:
                 wav.setnchannels(1)
@@ -435,96 +458,113 @@ async def live(ws: WebSocket):
                 wav.setframerate(24000)
                 wav.writeframes(raw)
             stt_started = time.monotonic()
-            result = await voice.transcribe(buf.getvalue(), "audio/wav")
-            print("[MIA_VOICE_LATENCY] " + json.dumps({"conversation_id": conv_id, "stage": "stt", "audio_seconds": round(len(raw)/48000,2), "stt_ms": round((time.monotonic()-stt_started)*1000,1)}), flush=True)
-            text = result.get("text", "").strip()
-            if text:
-                await send({"type": "conversation.item.input_audio_transcription.completed", "transcript": text})
-                await respond(text)
-        except VoiceError as exc:
-            print("[MIA_VOICE_LATENCY] " + json.dumps({"conversation_id": conv_id, "stage": "stt_failed", "audio_seconds": round(len(raw)/48000,2), "error": str(exc)[:160]}), flush=True)
-            await send({"type": "error", "error": {"message": str(exc)}})
+            try:
+                text = (await voice.transcribe(buf.getvalue(), "audio/wav")).get("text", "").strip()
+            except VoiceError as exc:
+                log("stt_failed", awake=awake, audio_seconds=round(len(raw)/48000, 2), error=str(exc)[:160])
+                if awake:
+                    await send({"type": "error", "error": {"message": str(exc)}})
+                return
+            log("stt", awake=awake, audio_seconds=round(len(raw)/48000, 2),
+                stt_ms=round((time.monotonic()-stt_started)*1000, 1), chars=len(text))
+            if not text:
+                return
+            if not awake:
+                m = _WAKE.search(text)
+                log("wake_check", matched=bool(m))
+                if not m:
+                    return
+                await set_awake(True)
+                rest = text[m.end():].strip()
+                text = rest if len(rest) >= 3 else text
+            if _STOP.search(text) and turn and not turn.done():
+                run_to_cancel = active_run
+                log("stop_cancel")
+                turn.cancel()
+                if run_to_cancel:
+                    await state.runtime.cancel_run(run_to_cancel, by=principal.actor)
+                return
+            if _SLEEP.search(text):
+                sleep_after = True
+            last_activity = time.monotonic()
+            await send({"type": "conversation.item.input_audio_transcription.completed", "transcript": text})
+            await texts.put(text)
 
-    await send({"type": "jarvis.ready", "provider": "local", "conversation_id": conv_id})
+    async def worker() -> None:
+        nonlocal turn, sleep_after, last_activity
+        while True:
+            text = await texts.get()
+            turn = asyncio.create_task(respond(text))
+            await asyncio.wait({turn})
+            last_activity = time.monotonic()
+            if sleep_after and texts.empty():
+                sleep_after = False
+                await set_awake(False)
+
+    await send({"type": "jarvis.ready", "provider": "local", "conversation_id": conv_id, "wakeword": wake_on})
+    if wake_on:
+        await send({"type": "jarvis.standby"})
+    work = asyncio.create_task(worker())
     try:
         while True:
             event = json.loads(await ws.receive_text())
             if event.get("type") == "conversation.item.create":
-                if turn and not turn.done():
-                    await send({"type": "error", "error": {"message": "MIA beantwortet noch die vorherige Nachricht."}})
-                    continue
                 text = " ".join(c.get("text", "") for c in event.get("item", {}).get("content", []))[:16000].strip()
                 if text:
-                    turn = asyncio.create_task(respond(text))
+                    await set_awake(True)
+                    await texts.put(text)
             elif event.get("type") == "jarvis.announce":
-                # Wichtige Meldung: MIA spricht sie von selbst an. Text kommt aus der DB, nicht vom Browser.
+                # Wichtige Meldung weckt MIA, sie spricht sie von selbst an. Text kommt aus der DB, nicht vom Browser.
                 nid = str(event.get("notification_id") or "")[:64]
                 note = state.services["notifications"].get(principal.id, nid) if nid and nid not in announced else None
                 if note:
                     announced.add(nid)
-                    prev = turn
-
-                    async def announce(prev=prev, text=_announce_text(note)):
-                        if prev and not prev.done():
-                            with contextlib.suppress(Exception):
-                                await asyncio.shield(prev)
-                        await respond(text)
-                    turn = asyncio.create_task(announce())
+                    await set_awake(True)
+                    await texts.put(_announce_text(note))
             elif event.get("type") == "input_audio_buffer.append":
                 raw = base64.b64decode(event.get("audio", ""), validate=True)
                 if len(raw) > 65536 or len(raw) % 2:
                     continue
+                if wake_on and awake and not speaking and texts.empty() and (turn is None or turn.done()) \
+                        and not stt_tasks and time.monotonic() - last_activity > _IDLE_S:
+                    await set_awake(False)
                 samples = struct.unpack(f"<{len(raw)//2}h", raw)
                 rms = math.sqrt(sum(s*s for s in samples) / max(1, len(samples)))
-                if turn and not turn.done():
-                    # Require sustained speech before interrupting work; reject
-                    # single clicks/noise while retaining the beginning of speech.
-                    interrupt_samples = interrupt_samples + len(samples) if rms > 450 else 0
-                    preroll.extend(raw)
-                    del preroll[:-24000]
-                    if interrupt_samples < 7200:
-                        continue
-                    run_to_cancel = active_run
-                    print("[MIA_VOICE_LATENCY] " + json.dumps({"conversation_id": conv_id, "stage": "barge_in_cancel"}), flush=True)
-                    turn.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await turn
-                    if run_to_cancel:
-                        await state.runtime.cancel_run(run_to_cancel, by=principal.actor)
-                    turn = None
-                    interrupt_samples = 0
-                    # raw is already in preroll; avoid duplicating this frame.
-                    raw = b""
                 if rms > 450:
                     if not speaking:
                         pcm.extend(preroll)
                         speaking = True
-                        await send({"type": "input_audio_buffer.speech_started"})
+                        if awake:
+                            await send({"type": "input_audio_buffer.speech_started"})
                     silent_samples = 0
                 elif speaking:
                     silent_samples += len(samples)
                 if speaking:
                     pcm.extend(raw)
                     if silent_samples > _END_SILENCE_SAMPLES or len(pcm) > 24000 * 2 * 30:
-                        # Keep the conversational pause for endpointing, but don't send
-                        # all of it to speech recognition. Retain 200 ms.
+                        # Pause fürs Satzende behalten, aber nur 200 ms davon an die Erkennung geben.
                         trim_bytes = max(0, silent_samples - 4800) * 2
                         utterance = bytes(pcm[:-trim_bytes]) if trim_bytes else bytes(pcm)
-                        turn = asyncio.create_task(audio_turn(utterance))
                         pcm.clear()
                         preroll.clear()
                         speaking = False
                         silent_samples = 0
+                        if len(utterance) >= _WAKE_MIN_BYTES:
+                            task = asyncio.create_task(hear(utterance))
+                            stt_tasks.add(task)
+                            task.add_done_callback(stt_tasks.discard)
                 else:
                     preroll.extend(raw)
                     del preroll[:-14400]
     except (WebSocketDisconnect, ValueError):
         pass
     finally:
-        # Trennung (Netz, Neustart) bricht MIAs Antwort nicht ab: der Lauf endet
-        # regulär und steht danach im Gespräch; der Browser verbindet sich neu.
+        # Trennung (Netz, Neustart): der Lauf endet regulär im Gespräch; der Browser verbindet sich neu.
+        work.cancel()
+        for task in list(stt_tasks):
+            task.cancel()
         if turn and not turn.done():
-            print("[MIA_VOICE_LATENCY] " + json.dumps({"conversation_id": conv_id, "stage": "disconnect_during_turn"}), flush=True)
+            log("disconnect_during_turn")
             turn.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await turn
