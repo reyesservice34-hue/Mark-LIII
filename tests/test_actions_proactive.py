@@ -75,15 +75,23 @@ def test_build_prompt_labels_time_of_day(monkeypatch, hour, expected):
 
 
 # ── build_prompt(): Rotation der Fokus-Bereiche ──────────────────────────────
-def test_build_prompt_rotates_through_three_focus_areas(frozen_time):
+def test_build_prompt_rotates_through_four_focus_areas(frozen_time):
     engine = proactive.ProactiveEngine()
     prompts = []
-    for _ in range(3):
+    for _ in range(4):
         prompts.append(engine.build_prompt(memory={}))
         engine.mark_triggered()
     assert "active projects" in prompts[0]
     assert "wellbeing" in prompts[1]
-    assert "interesting or useful" in prompts[2]
+    assert "the people in this person's life" in prompts[2]
+    assert "interesting or useful" in prompts[3]
+
+
+def test_build_prompt_relationship_focus_falls_back_when_nobody_stored(frozen_time):
+    engine = proactive.ProactiveEngine()
+    engine._rotation = 2
+    prompt = engine.build_prompt(memory={})
+    assert "fall back to something interesting or useful" in prompt
 
 
 # ── build_prompt(): optionaler Kontext ────────────────────────────────────────
