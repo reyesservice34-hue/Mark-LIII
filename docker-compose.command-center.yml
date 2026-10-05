@@ -59,6 +59,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
+      # Hermes-Werkzeugbinaries (chromium, ffmpeg, ripgrep, node, uv), nur lesen.
+      - /root/Mark-LIII/hermes/tools:/data/hermes/tools:ro
       - jarvis-cc-data:/data
       # Optional: let the Server page see and (with JARVIS_CC_ALLOW_DOCKER_ACTIONS=true) restart containers.
       # Read-only mount still allows list/stats/logs; restarts need :rw. Remove the line to disable docker entirely.

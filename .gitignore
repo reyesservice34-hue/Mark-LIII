@@ -117,3 +117,4 @@ config/whatsapp_web/
 *.bak-*
 /mia-pairing*.png
 core/prompt-versionen/
+command_center/hermes_runtime/

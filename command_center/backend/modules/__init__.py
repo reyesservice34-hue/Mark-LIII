@@ -20,7 +20,7 @@ from fastapi import APIRouter
 DEFAULT_MODULES = [
     "auth", "health", "events", "chat", "agents", "agents_office", "tasks", "teach", "workflows", "automations",
     "server", "desktop", "files", "integrations", "logs", "notifications", "approvals", "analytics",
-    "settings", "gateway", "voice", "live", "extensions", "memory", "mia_core", "calendar", "training", "heartbeat", "maillearn", "buchhaltung", "standort", "meldungen",
+    "settings", "gateway", "voice", "live", "extensions", "memory", "mia_core", "calendar", "training", "heartbeat", "maillearn", "buchhaltung", "standort", "meldungen", "hermes_archive",
     "knowledge_sync", "whatsapp",
 ]
 

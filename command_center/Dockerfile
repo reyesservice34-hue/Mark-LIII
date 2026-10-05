@@ -14,17 +14,30 @@ COPY command_center/frontend/ ./
 RUN npx tsc --noEmit -p tsconfig.json && npx vite build --outDir /build/dist --emptyOutDir
 
 # ── stage 2: backend ─────────────────────────────────────────────────────
-FROM python:3.12-slim AS runtime
+# Hermes unterstützt nur Python 3.14 (hermes-agent/pyproject.toml), daher 3.14.
+FROM python:3.14-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
     JARVIS_CC_DATA_DIR=/data JARVIS_CC_WORKSPACE_DIR=/data/workspace \
     JARVIS_CC_STATIC_DIR=/app/command_center/backend/static JARVIS_CC_PORT=8080
 WORKDIR /app
 # git gehört dazu, seit er Repositories in den Arbeitsbereich klonen kann.
 # Ohne das meldet repo.clone ehrlich, dass es fehlt — aber dann fehlt es eben.
-RUN apt-get update && apt-get install -y --no-install-recommends curl tini git fonts-dejavu-core && rm -rf /var/lib/apt/lists/* \
+# Bibliotheken für die Hermes-Chromium-Binary (Browser-Werkzeuge), sonst startet sie nicht.
+RUN apt-get update && apt-get install -y --no-install-recommends curl tini git fonts-dejavu-core \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 libcups2 libdrm2 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
+    libx11-6 libxext6 libxcb1 libdbus-1-3 libglib2.0-0 && rm -rf /var/lib/apt/lists/* \
     && groupadd -r jarvis && useradd -r -g jarvis -d /app -s /usr/sbin/nologin jarvis
 COPY command_center/requirements.txt /app/command_center/requirements.txt
 RUN pip install -r /app/command_center/requirements.txt
+# Hermes-Laufzeit (Werkzeuge, Browser-/Terminal-/Kanban-/Cron-Logik) im selben Container.
+# Editierbarer Install: hermes-agent blockiert Wheel-Builds bewusst (setup.py), editierbar ist erlaubt.
+# Quelle: `bash command_center/scripts/sync_hermes_runtime.sh` vor dem Build.
+COPY command_center/hermes_runtime/src /opt/hermes-agent
+COPY command_center/hermes_runtime/user_skills /opt/hermes-skills
+RUN pip install -e "/opt/hermes-agent[mcp]"
+ENV HERMES_HOME=/data/hermes HERMES_SKILLS_DIR=/opt/hermes-skills
+COPY command_center/docker/hermes_tools_bridge.py command_center/docker/entrypoint.sh /app/command_center/docker/
 # Only what the server needs from the repo: the command center and the shared core client/persona.
 COPY command_center/backend /app/command_center/backend
 COPY command_center/__init__.py /app/command_center/__init__.py
@@ -84,5 +97,5 @@ VOLUME ["/data"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD curl -fsS http://127.0.0.1:8080/api/health || exit 1
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/app/command_center/docker/entrypoint.sh"]
 CMD ["uvicorn", "command_center.backend.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "*"]
