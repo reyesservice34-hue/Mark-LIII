@@ -233,6 +233,29 @@ services:
   #
   # Das Modell einmal holen (sonst antwortet Ollama, kennt aber nichts):
   #   docker compose ... exec ollama ollama pull qwen2.5:7b
+  #
+  # ── Alternative: Qwen3 über das bereits laufende OmniRoute-Gateway ────────
+  # OmniRoute (/opt/omniroute, Netz "omniroute" oben) ist bereits da und reicht
+  # dieselbe Anfrage an ein lokales Ollama weiter — ohne dass dieser Stack
+  # selbst ein zweites Ollama starten muss. Qwen3 kann Denken ein-/ausschalten
+  # (free.py: no_think() setzt reasoning_effort="none"), gut für "schnell UND
+  # denkt". OpenAI bleibt als Rückfall, falls OmniRoute/Qwen3 mal ausfällt.
+  #
+  # In command_center/.env:
+  #   JARVIS_AI_PROVIDER=omniroute
+  #   OMNIROUTE_URL=http://omniroute:20128/v1
+  #   OMNIROUTE_API_KEY=<bestehender OmniRoute-Key>
+  #   OMNIROUTE_MODEL=qwen3:14b          # 8b bei wenig VRAM, 30b-a3b bei 24GB+
+  #   JARVIS_ALLOW_PAID=1                 # sonst ersetzt _make_free() das Modell
+  #                                        # durch die feste Gratis-Kette (free.py)
+  #   MIA_TEXT_OPENAI_FALLBACK_MODEL=gpt-4.1-mini
+  #   MIA_GROQ_MODELS=
+  #   MIA_GEMINI_FALLBACK_MODEL=
+  #   MIA_ANTHROPIC_FALLBACK=0
+  #   MIA_CHAT_LOCAL_FALLBACK=0
+  #
+  # Modell auf dem Ollama hinter OmniRoute einmal holen:
+  #   ollama pull qwen3:14b
   ollama:
     image: ollama/ollama:latest
     container_name: jarvis-ollama

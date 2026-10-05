@@ -64,8 +64,12 @@ async def embed(texts: list[str], timeout: float = 20.0) -> list[list[float]] | 
         return None
     base, key = _endpoint()
     out: list[list[float]] = []
+    # Getrennte Fristen: Ist der Dienst gar nicht da, soll das schnell auffallen (connect).
+    # Ist er da, aber noch am Laden (lokales Modell, kalter Start), braucht die Antwort
+    # selbst mehr Luft als die Verbindung — sonst reißt jede frühe Anfrage per ReadTimeout ab.
+    budget = httpx.Timeout(timeout, connect=min(5.0, timeout))
     try:
-        async with httpx.AsyncClient(timeout=timeout) as http:
+        async with httpx.AsyncClient(timeout=budget) as http:
             for i in range(0, len(texts), BATCH):
                 chunk = [t[:MAX_CHARS] or " " for t in texts[i:i + BATCH]]
                 r = await http.post(base + "/v1/embeddings", headers={"Authorization": "Bearer " + key},
@@ -287,10 +291,12 @@ async def recall_text(db, goal: str, limit: int = 6) -> str:
     Leer, wenn nichts passt.
 
     Kurze Timeouts: Das läuft vor jeder Antwort, und ein träger Embedding-Dienst darf sie nicht aufhalten.
+    3 s reichten für einen warmen Dienst, waren aber knapper als der kalte Start eines lokalen
+    Embedding-Modells (Laden ins RAM/VRAM) braucht — jede erste Anfrage riss dann per ReadTimeout ab.
     """
     if len((goal or "").strip()) < 12:
         return ""
-    hits = await search_all(db, goal, limit=limit, min_score=0.33, include_pinned=False, timeout=3.0)
+    hits = await search_all(db, goal, limit=limit, min_score=0.33, include_pinned=False, timeout=8.0)
     if not hits:
         return ""
     lines = [f"- [{h['source']}] {h['text'][:700 if h['source'] not in ('Gedächtnis', 'Hauptgedächtnis') else 300]}"

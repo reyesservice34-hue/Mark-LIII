@@ -408,6 +408,22 @@ class VoiceService:
                     raise VoiceError("Die Gemini-Stimme ist nicht erreichbar und es ist kein lokaler Rückfall eingerichtet.")
         if not self.tts_url:
             raise VoiceError("Dieser Text ist für die Gemini-Stimme zu lang und es ist kein lokaler Rückfall eingerichtet.")
+        try:
+            return await self._speak_local(text, voice)
+        except VoiceError as e:
+            # Die lokale Stimme (z. B. ein edge-tts-Wrapper) ist ein Dienst von vielen und kann
+            # ausfallen (Netz, Rate-Limit, Container neu gestartet). Ein vorhandener OpenAI-Schlüssel
+            # wurde oben nur versucht, wenn JARVIS_CC_TTS_PROVIDER=openai gesetzt ist — sonst bleibt
+            # er als stiller Rückfall ungenutzt, und ein lokaler Ausfall würde sonst ganz verstummen.
+            if self.openai_tts_key and not self.openai_tts_on:
+                try:
+                    return await self._speak_openai(text)
+                except Exception as e2:  # noqa: BLE001
+                    _log.warning("Lokale Stimme (%s) und OpenAI-Ersatz fehlgeschlagen: %s", e, e2)
+            raise
+
+    async def _speak_local(self, text: str, voice: str = "") -> tuple[bytes, str]:
+        """Liest `text` über den konfigurierten OpenAI-kompatiblen Dienst vor (JARVIS_CC_TTS_URL)."""
         headers = {"Authorization": f"Bearer {self.tts_key}"} if self.tts_key else {}
         body = {"model": self.tts_model, "voice": voice or self.tts_voice, "input": text,
                 "response_format": self.tts_format}
