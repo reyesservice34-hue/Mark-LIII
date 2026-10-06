@@ -16,6 +16,9 @@ import httpx
 from .base import ProviderInfo, ToolDef, ToolNameMap
 
 
+_NO_THINK = "\n\n/no_think"
+
+
 class OpenAICompatProvider:
     def __init__(self, provider_id: str, base_url: str, api_key: str, model: str):
         self.base_url = base_url.rstrip("/")
@@ -27,6 +30,11 @@ class OpenAICompatProvider:
         self.read_timeout = (float(os.environ.get("LOCAL_LLM_TIMEOUT") or 1500) if provider_id == "local" else 300.0)
         self.info = ProviderInfo(id=provider_id, model=model,
                                  label=f"{'OpenAI' if provider_id == 'openai' else 'Local model'} · {model}")
+
+    def _skip_thinking(self) -> bool:
+        """Local Qwen3 answers without the thinking phase unless LOCAL_LLM_THINK=1."""
+        return (self.info.id == "local" and self.info.model.lower().startswith("qwen3")
+                and os.environ.get("LOCAL_LLM_THINK", "") != "1")
 
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (compatible; jarvis-cc/1.0)"}
@@ -107,14 +115,15 @@ class OpenAICompatProvider:
         names = ToolNameMap((t.name for t in tools), limit=64)
         body: dict = {
             "model": self.info.model, "stream": True, "max_tokens": max_tokens,
-            "messages": self._convert_messages(system, messages, names.wire),
+            "messages": self._convert_messages(system + _NO_THINK if self._skip_thinking() else system,
+                                                  messages, names.wire),
         }
         if self.info.model.startswith("ddgw/"):
             body["messages"] = self._text_tool_history(body["messages"])
-        # Qwen3 on a local Ollama "thinks" first: a plain chat turn produced ~3000 hidden tokens (~50 s on a
-        # 6 GB GPU). reasoning_effort="none" skips that (same switch as ai/free.no_think); LOCAL_LLM_THINK=1 opts back in.
-        if (self.info.id == "local" and self.info.model.lower().startswith("qwen3")
-                and os.environ.get("LOCAL_LLM_THINK", "") != "1"):
+        # Qwen3 on a local Ollama "thinks" first (~3000 hidden tokens, ~50 s on a 6 GB GPU, and the text can
+        # leak into the chat). Ollama ignores reasoning_effort for it, so the model's own soft switch /no_think
+        # is appended to the system prompt above; reasoning_effort stays as a second hint for servers that honour it.
+        if self._skip_thinking():
             body["reasoning_effort"] = "none"
         if getattr(self, "include_usage", False):
             body["stream_options"] = {"include_usage": True}
