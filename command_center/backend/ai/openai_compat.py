@@ -111,6 +111,11 @@ class OpenAICompatProvider:
         }
         if self.info.model.startswith("ddgw/"):
             body["messages"] = self._text_tool_history(body["messages"])
+        # Qwen3 on a local Ollama "thinks" first: a plain chat turn produced ~3000 hidden tokens (~50 s on a
+        # 6 GB GPU). reasoning_effort="none" skips that (same switch as ai/free.no_think); LOCAL_LLM_THINK=1 opts back in.
+        if (self.info.id == "local" and self.info.model.lower().startswith("qwen3")
+                and os.environ.get("LOCAL_LLM_THINK", "") != "1"):
+            body["reasoning_effort"] = "none"
         if getattr(self, "include_usage", False):
             body["stream_options"] = {"include_usage": True}
         if tools:
