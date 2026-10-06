@@ -453,13 +453,16 @@ def _trim_to_limit(memory: dict) -> dict:
     for cat, key, _ in entries:
         if len(json.dumps(memory, ensure_ascii=False)) <= MEMORY_MAX_CHARS:
             break
+        # Trimming only shrinks the always-loaded store; the fact stays recallable
+        # through the semantic archive + FTS index (search_memory / recall_memory).
+        _archive_semantic_fact(cat, key, _entry_value(memory[cat][key]), source="trim")
         del memory[cat][key]
         dropped.append(f"{cat}/{key}")
         print(f"[Memory] Trimmed {cat}/{key}")
     if dropped and _trim_notifier:
         try:
             _trim_notifier(
-                f"SYS: Memory full — forgot {len(dropped)} oldest entries "
+                f"SYS: Memory full — archived {len(dropped)} oldest entries (still searchable) "
                 f"({', '.join(dropped[:3])}{'…' if len(dropped) > 3 else ''})"
             )
         except Exception:
