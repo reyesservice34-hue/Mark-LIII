@@ -5,7 +5,7 @@ hält Gedächtnis und Dienste, der eigene Rechner liefert die Rechenleistung fü
 
 | Läuft auf dem Server (immer an) | Läuft auf dem Rechner (GPU/CPU) |
 |---|---|
-| Command Center, Mias Logik | Ollama mit `qwen3:14b` (oder `qwen3:8b`) |
+| Command Center, Mias Logik | Ollama mit `qwen3:4b` (läuft auf der RTX 2060 mit 6 GB komplett auf der GPU; `qwen3:8b` nur teilweise) |
 | Qdrant, SQLite (Gedächtnis) | Embedding-Modell |
 | n8n, WhatsApp/Twilio | Spracherkennung/-ausgabe (optional) |
 | OmniRoute (Verteiler) | |
